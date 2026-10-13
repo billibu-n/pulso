@@ -155,6 +155,47 @@ construye el aviso de recuperación, **no un pulso en reposo que no hay**.
 
 ---
 
+## 4-bis. La composición corporal: HAY camino, y no es teclear
+
+**El dueño lo dijo claro, y tenía razón**: *«la idea es que él mismo pueda hacerlo cuando tenga la
+aplicación a mano, pues nosotros solo tenemos acceso a la aplicación; no tiene sentido que yo meta algo
+a mano»*. **Y LO TIENE**: si alguien tiene que teclear los datos, **la aplicación está mal hecha**.
+
+**Medido primero lo obvio**: las actividades de Garmin (`ACTIVITIES_LIST`) traen distancia, desnivel y
+velocidad — **nada de composición corporal**. Ya se sabía: el peso y la grasa **solo salen de la báscula
+de Huawei**, y esa es la razón de que existan los dos ecosistemas.
+
+**Y ENTONCES APARECIÓ LA SALIDA, y es oficial:**
+
+> **Huawei tiene una EXPORTACIÓN DE DATOS DE SALUD.** Se pide desde el Centro de Privacidad de Huawei
+> (`https://privacy.consumer.huawei.com/tool`) → *«Request Your Data»* → **Health**. Huawei manda por
+> correo un **ZIP con el JSON crudo**, dentro de la carpeta *«Health detail data & description»*.
+>
+> **Confirmado por un proyecto real que hace exactamente eso**:
+> `https://github.com/christianeirich/huawei-health-to-health-connect` — exporta el peso y la grasa
+> corporal **desde ese mismo JSON** (licencia MIT). Es el mismo camino del que salió su captura.
+
+**Por qué esto es MEJOR que lo que proponía el encargo** (Health Sync → Garmin, Terra API, Sahha):
+
+| | la exportación oficial | lo que proponía el encargo |
+|---|---|---|
+| **qué trae** | peso, grasa **y también agua corporal, músculo y masa ósea** | peso y grasa, y nada más |
+| **intermediarios** | **ninguno** | Health Sync + Garmin + un agregador de pago |
+| **si se cae** | no se cae: es un fichero | tres servicios que pueden cambiar o cerrar |
+| **el dato llega a** | **nuestra aplicación** | la nube de Garmin, y de ahí a nosotros |
+
+**LO QUE ESTO CAMBIA EN EL PLAN**: la regla A del cliente (agua corporal < 54 %) **deja de depender de
+que nadie teclee nada**. Se lee **de su exportación de Huawei**, igual que sus entrenamientos se leen de
+sus FIT. **Un fichero más, en la misma carpeta.** Y él lo pide cuando quiere, desde su teléfono.
+
+**Lo que sigue haciendo falta decidir, y es suyo**: **cada cuánto pide la exportación.** No es
+automático — Huawei la prepara y la manda por correo, así que tarda horas o días. Para la regla del agua
+corporal eso significa que **el aviso trabaja con el último dato que él haya traído**, y la aplicación
+**tiene que decir de qué día es** ese dato. Un aviso de hidratación con un dato de hace tres semanas
+**no es un aviso: es un adorno**, y la norma del proyecto prohíbe enseñar un número sin decir de cuándo es.
+
+---
+
 ## 5. Lo que NO se va a construir, y por qué
 
 **El encargo pide un «agente de IA que ejecuta un bucle cada mañana y noche».** No hace falta, y hay

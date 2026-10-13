@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod adaptador;
+pub mod contexto;
 pub mod datos;
 pub mod esfuerzo;
 pub mod fit;
@@ -28,6 +29,7 @@ pub mod rango;
 pub mod tendencia;
 pub mod umbral;
 
+pub use contexto::{Comida, Contexto, Escenario, Fuente};
 pub use datos::{Dato, Persona, Sesion};
 pub use esfuerzo::{NivelSalto, Salto};
 pub use fuentes::{Consenso, Procedencia, Valor};

@@ -6,9 +6,9 @@
 // «cannot find type Ventana». **Un solo punto de entrada, y todo se importa desde aqui.**
 
 import { Ventana } from "ventana.slint";
-import { PruebaIcono } from "prueba-icono.slint";
+import { PruebaWidgets } from "prueba-widgets.slint";
 // `Icono` NO se exporta, y Slint tiene razon en avisarlo: exportar un componente que no es
 // ventana esta obsoleto. Se importa donde haga falta, y aqui solo se compila.
 import { Icono, NombresDeIcono } from "iconos.slint";
 
-export { Ventana, PruebaIcono, NombresDeIcono }
+export { Ventana, PruebaWidgets, NombresDeIcono }

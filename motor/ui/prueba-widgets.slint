@@ -1,0 +1,45 @@
+// EXPERIMENTO CONSERVADO: ¿que se puede y que no con los widgets de serie?
+//
+// NO es un resto de pruebas: se queda porque **demuestra tres decisiones** con codigo que compila.
+// Y tiene una prueba que lo mide: `tests/medir-interfaz.rs`.
+//
+// NACE DE UN HALLAZGO GRANDE: el proyecto tiene DOS TEMAS PROPIOS (claro calido y negro OLED) y los
+// widgets de serie **no aceptan nuestros colores**. Slint lo dice al compilar: «Unknown property
+// background in Button». Eso hay que resolverlo con una decision, no parcheando.
+//
+// Y de paso se comprueban TRES dudas que la documentacion deja abiertas.
+import { Button, LineEdit, Switch, CheckBox, VerticalBox, Palette } from "std-widgets.slint";
+import { Claro } from "temas.slint";
+
+export component PruebaWidgets inherits Window {
+    width: 411px; height: 380px;
+    background: Claro.bg;
+
+    // DUDA 1: `private` es el default de una propiedad?
+    // La guia dice que SI («Private is the default value»); la referencia sugiere que NO.
+    // Aqui se declaran las tres formas y se comprueba despues desde Rust si se puede escribir.
+    in property <string> publica: "se puede escribir desde fuera";
+    private property <string> privada: "no deberia";
+    property <string> sin_cualificador: "depende de cual sea el default";
+
+    // DUDA 2: ¿Palette.color-scheme se puede escribir? (es la UNICA de las doce que no es de lectura)
+    init => { Palette.color-scheme = ColorScheme.dark; }
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 8px;
+
+        Text {
+            text: "Widgets de serie, sin poder recolorear";
+            color: Claro.fg;
+        }
+        Button { text: "Vincular cuenta"; }
+        LineEdit { placeholder-text: "Edad"; }
+        Switch { text: "Tema oscuro"; }
+        CheckBox { text: "Recordar"; }
+
+        // DUDA 3: `visible: false` libera el hueco? La documentacion dice que NO.
+        Rectangle { height: 40px; background: #ff0000; visible: false; }
+        Rectangle { height: 40px; background: #00ff00; }
+    }
+}

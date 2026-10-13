@@ -292,3 +292,97 @@ Android, no Rust. **Eso hay que cambiarlo en el `Cargo.toml` antes de intentar e
 
 **`slint-viewer --screenshot` merece mirarse**: sería **otra forma de ver la interfaz sin abrirla en la
 pantalla del dueño**.
+
+---
+
+## 11. Lo que apareció al estudiar los cuatro temas a fondo (2026-10-13)
+
+Se estudiaron **32 páginas oficiales** por temas: el núcleo del lenguaje, la disposición, los widgets, y
+la integración con Rust y Android. Aquí va **solo lo que cambia una decisión** — y **cada punto lleva si
+está citado de la fuente o COMPROBADO ejecutándolo**.
+
+### 11.1 · **Los widgets de serie NO aceptan nuestros colores.** Y esto obliga a decidir
+
+**Comprobado compilando.** Slint lo dice con estas palabras:
+
+```
+error: Unknown property background in Button
+error: Unknown property background in LineEdit
+error: Unknown property color in LineEdit
+```
+
+**La causa, en la fuente**: de las **doce** propiedades de `Palette`, **once son de solo lectura**. La
+única que se puede escribir es `color-scheme`. Y **la documentación no describe en ningún sitio cómo
+recolorear un widget de serie** — hay una propuesta **abierta** en el repositorio oficial
+([slint-ui/slint #5392](https://github.com/slint-ui/slint/issues/5392)) que lo llama *«a highly requested
+feature»*.
+
+**Y esto choca de frente con el proyecto, que tiene DOS TEMAS PROPIOS.** Un botón con los colores de
+Slint, en medio de una pantalla crema, **rompe los dos temas de golpe**.
+
+**Las tres salidas, y solo dos están documentadas**:
+
+| salida | qué cuesta | ¿documentada? |
+|---|---|---|
+| **(a)** elegir un estilo de serie y forzar el esquema con `Palette.color-scheme` | el botón **no** es nuestro | **sí** |
+| **(b)** **construir los controles** con `Rectangle` + `TouchArea` + `Text` | hay que hacerlos, **y hay que declararles la accesibilidad a mano** | **sí**, con ejemplos |
+| **(c)** escribir un estilo entero de Slint | **no está documentado** | **no** |
+
+**Comprobado que `Palette.color-scheme` funciona**: `init => { Palette.color-scheme = ColorScheme.dark; }`
+**compila**. Es la única palanca que existe.
+
+> **DECISIÓN PENDIENTE, y es del dueño, no mía**: o se aceptan los colores de Slint en los controles, o
+> se construyen los propios — **con su coste en accesibilidad**, que hay que pagar a mano.
+
+### 11.2 · `private` SÍ es el default, y es una trampa silenciosa
+
+**COMPROBADO, mirando el código que genera Slint.** La documentación **se contradice**: la guía dice
+*«Private is the default value»* y la referencia sugiere lo contrario. Se declararon las tres formas y se
+miró **qué setters existen**:
+
+| declarada como | setters generados |
+|---|---|
+| `in property <string> publica` | **`get_publica` y `set_publica`** |
+| `private property <string> privada` | **ninguno** |
+| `property <string> sin_cualificador` | **ninguno** |
+
+**La guía tenía razón.** Y la trampa es que **el compilador no avisa**: si te falta el `in`, simplemente
+**el setter no existe**, y el error sale lejos y con mala cara.
+
+**Regla para este proyecto**: **toda propiedad que el motor tenga que rellenar lleva `in` explícito.**
+
+### 11.3 · La contradicción de `x`/`y`, resuelta MIDIENDO
+
+**La fuente dice dos cosas que no encajan**: el catálogo, *«x, y — default: 0px»*; la guía, *«The default
+values for x and y properties **center** elements within their parent»*.
+
+**Medido** (una prueba que imprime dónde cae cada texto): **con el `padding` del diseño, todo sale en
+`x=16`, y el que no tiene `width` mide lo que mide su texto.** Ni cero ni centrado: **lo coloca el
+layout**.
+
+**La conclusión práctica**: **dentro de un layout, `x` e `y` NO se ponen.** Y **si se pone a un hijo y a
+otro no, cambia el tamaño del padre** — porque la fuente dice que *«if the element's x or y isn't set,
+these constraints are also automatically applied to the parent element»*. **Eso explica el desalineado.**
+
+### 11.4 · Otras cuatro trampas que hay que saber antes de escribir
+
+| trampa | consecuencia |
+|---|---|
+| **`-` y `_` son el MISMO carácter** en los identificadores | `mi-boton` y `mi_boton` **colisionan**; y en Rust el guion se vuelve guion bajo |
+| **`visible: false` NO libera el hueco** | *«still takes up layout space»* — para que desaparezca hay que quitarlo con `if` |
+| **`Text {};` con punto y coma NO compila** | el `;` es legal en un binding y letal en una instanciación |
+| **Los literales numéricos usan SIEMPRE el punto**, pero **`to-float()` usa el separador del idioma** | `"1.5".to-float()` devuelve **0** en un equipo alemán. **Código que funciona en Chile y falla en Alemania** |
+
+**Y la última es especialmente importante aquí**, porque el cliente podría usar el programa en otro
+idioma. **Se comprueba midiendo, no suponiendo.**
+
+### 11.5 · Y lo que hay que hacer distinto, por lo que se aprendió
+
+1. **`in` explícito en toda propiedad que rellene el motor** (§11.2).
+2. **Nada de `x`/`y` dentro de un layout**; `padding` y `spacing` (§11.3).
+3. **Los controles, o se aceptan como vienen, o se construyen** — decisión del dueño (§11.1).
+4. **Los estados, gobernados por una propiedad** (ya estaba: no hay `set_state` desde Rust).
+5. **`Timer` con `running: false` por defecto** explícito, que viene encendido.
+6. **`ScrollView` necesita `mouse-drag-pan-enabled: true`** en el móvil, o **no se desplaza con el dedo**.
+7. **`ListView` para las listas largas**, y **`ScrollView` para todo lo demás**: el segundo **instancia
+   todos los hijos**, y con 102 sesiones eso se nota.

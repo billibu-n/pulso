@@ -202,3 +202,4 @@ fn se_puede_buscar_por_accessible_id_sin_depender_del_nombre_interno() {
         cab.size().height
     );
 }
+

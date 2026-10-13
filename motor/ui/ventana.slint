@@ -1,0 +1,164 @@
+// La primera ventana del motor. Mínima, y con una regla: NO calcula nada.
+//
+// POR QUÉ EMPIEZA ASÍ: la norma dice que el motor calcula y la interfaz enseña. Esta ventana
+// recibe los números YA CALCULADOS por el motor y los coloca. Si aquí hubiera una sola cuenta,
+// el día que se cambie la fórmula la pantalla mentiría sin avisar.
+//
+// Y enseña lo que el motor produce: no solo el número, sino SU MARGEN y DE DÓNDE SALE.
+
+// Una zona: su nombre, su limite, su margen, de donde a donde va, y su NIVEL (0-100).
+// El nivel es para la barra: su ancho es PROPORCIONAL al limite, asi que si el limite sube la barra
+// crece, y eso se ve de un vistazo. No es decoracion.
+//
+// Las estructuras van A NIVEL DE FICHERO en Slint, no dentro del componente.
+struct Zona {
+    nombre: string,
+    limite: string,
+    margen: string,
+    desde: string,
+    hasta: string,
+    nivel: int,
+}
+
+export component Ventana inherits Window {
+    title: "Pulso — el motor";
+    width: 620px;
+    height: 560px;
+    background: #f7fafc;
+
+    in property <string> titulo;
+    in property <string> subtitulo;
+    in property <string> maxima;         // "166 ± 12 ppm"
+    in property <string> origen;         // de donde sale
+    in property <string> precision;      // alta / buena / aceptable / amplia
+    in property <string> significado;    // que significa esa precision
+    in property <string> falta;          // que haria falta para afinar
+    in property <string> datos;          // "datos que tiene: 4 de 7"
+    in property <[Zona]> zonas;
+
+    in-out property <int> elegido: 0;
+    callback cambiar(int);
+
+    VerticalLayout {
+        padding: 26px;
+        spacing: 16px;
+
+        // --- Cabecera ---
+        VerticalLayout {
+            spacing: 4px;
+            Text { text: root.titulo; font-size: 21px; font-weight: 700; color: #1a202c; }
+            Text { text: root.subtitulo; font-size: 13px; color: #718096; }
+        }
+
+        // --- El numero, con su margen, que es lo que este motor tiene de distinto ---
+        Rectangle {
+            background: white;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: #e2e8f0;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 8px;
+                Text { text: "Frecuencia cardíaca máxima"; font-size: 12px; color: #718096; }
+                Text { text: root.maxima; font-size: 32px; font-weight: 700; color: #2b6cb0; }
+                Text { text: root.origen; font-size: 12px; color: #4a5568; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        background: #ebf8ff; border-radius: 4px;
+                        HorizontalLayout {
+                            padding: 5px;
+                            Text { text: "precisión " + root.precision; font-size: 12px; color: #2b6cb0; font-weight: 600; }
+                        }
+                    }
+                    Text { text: root.datos; font-size: 12px; color: #718096; vertical-alignment: center; }
+                }
+                Text { text: root.significado; font-size: 12px; color: #4a5568; wrap: word-wrap; }
+            }
+        }
+
+        // --- Las zonas. Siempre estan: es lo que el motor garantiza ---
+        Text { text: "Zonas de intensidad"; font-size: 14px; font-weight: 600; color: #2d3748; }
+        VerticalLayout {
+            spacing: 6px;
+            for z in root.zonas : Rectangle {
+                height: 46px;
+                background: white;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: #e2e8f0;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 12px;
+                    Text {
+                        text: z.nombre; font-size: 13px; color: #2d3748;
+                        width: 74px; vertical-alignment: center;
+                    }
+                    // La barra: el ancho es PROPORCIONAL al limite. No es decoracion: si el limite
+                    // sube, la barra crece, y eso se ve de un vistazo.
+                    Rectangle {
+                        width: 150px; height: 22px;
+                        background: #edf2f7; border-radius: 4px;
+                        Rectangle {
+                            width: parent.width * z.nivel / 100;
+                            height: parent.height;
+                            background: #90cdf4; border-radius: 4px;
+                        }
+                    }
+                    Text {
+                        text: z.limite; font-size: 15px; font-weight: 700; color: #2b6cb0;
+                        vertical-alignment: center; horizontal-alignment: right;
+                        width: 74px;
+                    }
+                    Text {
+                        text: "± " + z.margen; font-size: 12px; color: #a0aec0;
+                        vertical-alignment: center; width: 46px;
+                    }
+                    Text {
+                        text: z.desde + " – " + z.hasta; font-size: 11px; color: #a0aec0;
+                        vertical-alignment: center; horizontal-alignment: right;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+
+        // --- Y lo que haria falta para afinar: la aplicacion DICE que hacer ---
+        Rectangle {
+            background: #fffaf0;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #feebc8;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 4px;
+                Text { text: "Para afinarlo"; font-size: 12px; font-weight: 600; color: #c05621; }
+                Text { text: root.falta; font-size: 13px; color: #744210; wrap: word-wrap; }
+            }
+        }
+
+        // --- Los botones: cambian los DATOS, no el calculo ---
+        Text { text: "Prueba con menos datos, y mira cómo se ensancha el margen:"; font-size: 12px; color: #718096; }
+        HorizontalLayout {
+            spacing: 8px;
+            for i in 4 : Rectangle {
+                height: 34px;
+                horizontal-stretch: 1;
+                background: i == root.elegido ? #2b6cb0 : white;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: i == root.elegido ? #2b6cb0 : #cbd5e0;
+                Text {
+                    text: i == 0 ? "sin datos" : (i == 1 ? "con la edad" : (i == 2 ? "con composición" : "con la máxima medida"));
+                    font-size: 11px;
+                    color: i == root.elegido ? white : #4a5568;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                }
+                TouchArea { clicked => { root.cambiar(i); } }
+            }
+        }
+    }
+}

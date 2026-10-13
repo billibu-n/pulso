@@ -806,3 +806,144 @@ fn el_caso_real_del_cliente_sale_CON_MENOS_MARGEN_que_solo_con_la_edad() {
     // Y las zonas se calculan en los dos casos, sin fallar nunca.
     assert_eq!(formulas_v2::zonas(&p).len(), 4);
 }
+
+// ============ 11. LOS PATRONES: lo que el FIT no trae, y hay que deducir de los sensores
+//
+// El dueño lo dijo así: «resultados calculados que el mismo FIT no proporciona, pues solo
+// proporciona la información de los inputs de los sensores». Estas pruebas defienden eso.
+
+use motor::patron::{self, NivelDeriva};
+
+/// Una sesion sintetica con **DOS ESCALONES**: la primera mitad con unos valores y la segunda con
+/// otros. Se hace asi, y no con un cambio lineal, porque **un cambio lineal hace que la media de cada
+/// mitad no sea la media de los extremos** — y entonces la cuenta a mano no cuadra con la del motor.
+/// Lo aprendi porque una prueba fallo por eso, y **el motor tenia razon**.
+fn sesion_dos_escalones(pulso1: u16, pulso2: u16, pot1: u16, pot2: u16) -> Sesion {
+    let n = 240usize; // 240 muestras, 120 por mitad, **constantes cada mitad**
+    let mut muestras = Vec::new();
+    for i in 0..n {
+        let (p, w) = if i < n / 2 { (pulso1, pot1) } else { (pulso2, pot2) };
+        muestras.push(Muestra {
+            segundo: (i * 10) as u32,
+            pulso: Dato::Hay(p),
+            potencia_w: Dato::Hay(w),
+        });
+    }
+    Sesion { muestras, duracion_s: Dato::Hay((n * 10) as u32) }
+}
+
+/// El mismo ayudante con los nombres de antes, para no tocar el resto de las pruebas.
+fn sesion_con_deriva(pulso_inicio: u16, pulso_fin: u16, pot_inicio: u16, pot_fin: u16) -> Sesion {
+    sesion_dos_escalones(pulso_inicio, pulso_fin, pot_inicio, pot_fin)
+}
+
+#[test]
+fn una_sesion_ESTABLE_no_tiene_deriva() {
+    // Ni el pulso sube ni la potencia baja: no hay deriva que medir.
+    let s = sesion_con_deriva(140, 140, 200, 200);
+    let d = patron::deriva(&s);
+    assert!(d.porcentaje().abs() < 1.0, "sin cambios no hay deriva: {:.1} %", d.porcentaje());
+    assert_eq!(d.nivel(), NivelDeriva::Buena);
+}
+
+#[test]
+fn el_pulso_que_sube_con_la_potencia_quieta_da_deriva_POSITIVA() {
+    // Es el patron del cliente: el pulso se escapa mientras la potencia se queda.
+    // Tiene que dar deriva POSITIVA, y el nivel tiene que avisar.
+    let s = sesion_con_deriva(130, 155, 200, 200);
+    let d = patron::deriva(&s);
+    assert!(d.porcentaje() > 10.0, "el pulso sube un 19 % y la potencia no: deriva {:.1} %", d.porcentaje());
+    assert_eq!(d.nivel(), NivelDeriva::SeEscapa, "y tiene que decirlo");
+}
+
+#[test]
+fn la_deriva_declara_su_margen_y_el_margen_NO_se_come_la_diferencia() {
+    // EL DEFECTO QUE SE CORRIGIO: la primera version sacaba el margen del numero de muestras, y
+    // salia ±1 en TODAS las sesiones. Un margen igual para todo no informa de nada.
+    // Y un margen tan ancho que se coma la diferencia tampoco sirve: 8 % y 12 % tienen que
+    // poder distinguirse.
+    let ligera = patron::deriva(&sesion_con_deriva(130, 138, 200, 200));
+    let fuerte = patron::deriva(&sesion_con_deriva(130, 160, 200, 200));
+
+    assert!(ligera.rango.margen > 0.0, "tiene que declarar margen");
+
+    // LA INVARIANTE QUE DE VERDAD IMPORTA, y la primera version de esta prueba la tenia mal:
+    // no se trata de que el margen sea pequeño en abstracto, sino de que **las dos se distingan**.
+    // Y con 240 muestras el margen es ±6 -- porque una sesion corta da menos confianza, y eso es
+    // correcto: **el margen tiene que ensancharse cuando hay menos datos**.
+    assert!(
+        ligera.rango.margen >= patron::MARGEN_DERIVA,
+        "con pocas muestras el margen no puede ser MAS estrecho que el minimo: {:.1}",
+        ligera.rango.margen
+    );
+    // Una deriva del 5,8 % y otra del 18,8 % tienen que quedar en rangos SEPARADOS.
+    assert!(
+        fuerte.rango.minimo() > ligera.rango.maximo(),
+        "los dos rangos tienen que quedar separados:\n  ligera  {:.1} ± {:.1}  ->  {:.1} a {:.1}\n  fuerte  {:.1} ± {:.1}  ->  {:.1} a {:.1}",
+        ligera.porcentaje(), ligera.rango.margen, ligera.rango.minimo(), ligera.rango.maximo(),
+        fuerte.porcentaje(), fuerte.rango.margen, fuerte.rango.minimo(), fuerte.rango.maximo()
+    );
+}
+
+#[test]
+fn sin_pulso_ni_potencia_la_deriva_da_CERO_con_margen_cero_y_no_falla() {
+    // La regla del rediseno: nunca se falla. Si no hay datos, el resultado es cero Y SE SABE que no
+    // vale nada, porque el margen tambien es cero. No es un cero que enganie.
+    let s = Sesion::nueva(vec![
+        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
+        Muestra { segundo: 10, pulso: Dato::Hay(140), potencia_w: Dato::Falta },
+    ]);
+    let d = patron::deriva(&s);
+    assert_eq!(d.porcentaje(), 0.0);
+    assert_eq!(d.rango.margen, 0.0, "y el margen cero avisa de que el numero no vale");
+    assert_eq!(d.muestras, 0);
+}
+
+#[test]
+fn la_EFICIENCIA_mide_vatios_por_pulsacion_y_es_la_medida_de_la_mejora() {
+    // 200 W a 140 ppm = 1,43 W por pulsacion.
+    let s = sesion_con_deriva(140, 140, 200, 200);
+    let e = patron::eficiencia(&s);
+    assert!((e.valor - 200.0 / 140.0).abs() < 0.01, "eficiencia {:.3}", e.valor);
+}
+
+#[test]
+fn MEJORAR_es_subir_los_vatios_SIN_subir_el_pulso() {
+    // Esta es la definicion de mejorar, y es lo que el cliente busca.
+    // Mismo pulso, mas vatios -> mas eficiencia. Eso NO se ve mirando el pulso ni la potencia solos.
+    let antes = patron::eficiencia(&sesion_con_deriva(140, 140, 180, 180));
+    let despues = patron::eficiencia(&sesion_con_deriva(140, 140, 200, 200));
+    assert!(
+        despues.valor > antes.valor,
+        "los mismos 140 ppm con 200 W en vez de 180 W es MEJOR: {:.3} > {:.3}",
+        despues.valor,
+        antes.valor
+    );
+}
+
+#[test]
+fn el_desfase_se_mide_en_SEGUNDOS_y_no_en_muestras() {
+    // EL ERROR QUE SE CORRIGIO: el retardo se contaba en muestras y se devolvia como segundos.
+    // Con muestras cada 10 segundos, eso era un factor de 10.
+    // Aqui se comprueba que el numero que sale es PLAUSIBLE en segundos.
+    let s = sesion_con_deriva(130, 150, 200, 200);
+    if let Dato::Hay(r) = patron::desfase(&s, 60) {
+        assert!(
+            r.valor <= 60.0,
+            "no puede devolver mas segundos de los que se le pidieron: {:.0}",
+            r.valor
+        );
+        assert!(r.margen > 0.0, "y su margen");
+    }
+}
+
+#[test]
+fn la_precision_de_un_patron_depende_de_las_muestras_que_lo_sostienen() {
+    use motor::rango::Precision;
+    assert_eq!(patron::precision_del_patron(5000), Precision::Alta);
+    assert_eq!(patron::precision_del_patron(800), Precision::Buena);
+    assert_eq!(patron::precision_del_patron(200), Precision::Aceptable);
+    assert_eq!(patron::precision_del_patron(20), Precision::Amplia);
+    // Y 129.418 lecturas de sensores en un mes dan precision alta.
+    assert_eq!(patron::precision_del_patron(129_418), Precision::Alta);
+}

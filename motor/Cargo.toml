@@ -9,3 +9,12 @@ license = "POR-DECIDIR"
 # Para leer el JSON del cliente. La version se fija AQUI y se sube a proposito, no sola.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# La interfaz. Version fijada a proposito, no flotante.
+slint = { version = "1", features = ["renderer-software"] }
+
+[[bin]]
+name = "ventana"
+path = "src/bin/ventana.rs"
+
+[build-dependencies]
+slint-build = "1"

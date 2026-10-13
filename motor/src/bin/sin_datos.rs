@@ -11,7 +11,7 @@
 //! margen se estrecha — que es exactamente lo que se pidió.
 
 use motor::datos::{Persona, Sexo};
-use motor::formulas_v2::{self, OrigenMaxima};
+use motor::formulas_v2;
 use motor::hay;
 
 fn main() {

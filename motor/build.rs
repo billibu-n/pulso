@@ -28,6 +28,9 @@ fn main() {
     let config = slint_build::CompilerConfiguration::new()
         // La información de depuración es lo que permite MEDIR la geometría desde las pruebas.
         .with_debug_info(true);
-    slint_build::compile_with_config("ui/ventana.slint", config)
+    // UN SOLO PUNTO DE ENTRADA. Compilar dos ficheros por separado NO vale: Slint genera un solo
+    // modulo con lo ULTIMO que compilas, y el primero desaparece. El sintoma es enganoso -- compila
+    // bien y luego el programa no encuentra el tipo.
+    slint_build::compile_with_config("ui/raiz.slint", config)
         .expect("la interfaz de Slint no compila");
 }

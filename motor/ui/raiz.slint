@@ -1,0 +1,14 @@
+// EL PUNTO DE ENTRADA de la interfaz.
+//
+// POR QUE EXISTE, y es un fallo que costo un rato: `build.rs` compilaba DOS ficheros por separado
+// (`ventana.slint` y otro), y **el segundo pisaba al primero** -- Slint genera un solo modulo con lo
+// ultimo que compilas. El sintoma era raro: el fichero compilaba bien y luego el programa decia
+// «cannot find type Ventana». **Un solo punto de entrada, y todo se importa desde aqui.**
+
+import { Ventana } from "ventana.slint";
+import { PruebaIcono } from "prueba-icono.slint";
+// `Icono` NO se exporta, y Slint tiene razon en avisarlo: exportar un componente que no es
+// ventana esta obsoleto. Se importa donde haga falta, y aqui solo se compila.
+import { Icono, NombresDeIcono } from "iconos.slint";
+
+export { Ventana, PruebaIcono, NombresDeIcono }

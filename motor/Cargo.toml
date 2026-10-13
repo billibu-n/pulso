@@ -1,0 +1,11 @@
+[package]
+name = "motor"
+version = "0.1.0"
+edition = "2021"
+description = "El motor de análisis de entrenamiento: calcula, decide qué se puede afirmar, y lo justifica."
+license = "POR-DECIDIR"
+
+[dependencies]
+# Para leer el JSON del cliente. La version se fija AQUI y se sube a proposito, no sola.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

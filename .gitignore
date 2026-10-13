@@ -1,0 +1,34 @@
+# Los datos NO se versionan NUNCA. Este repositorio es publico y no lleva datos de salud de nadie.
+#
+# La regla de este proyecto: **el CODIGO se publica; los DATOS de la persona, no.**
+# Si algun dia hace falta un dato real para una prueba, se convierte en sintetico primero.
+
+# Datos crudos de cualquier aparato (FIT, TCX, GPX) y bases de datos locales.
+*.fit
+*.tcx
+*.gpx
+*.db
+*.db-journal
+datos/
+**/datos/
+
+# Capturas y exportaciones de aplicaciones de salud.
+*.jpeg
+*.jpg
+captura-*
+*respaldo*
+*export*
+
+# Credenciales. NUNCA.
+.env
+*credencial*
+*token*
+
+# Lo que se compila: se regenera, no se publica.
+target/
+motor/target/
+
+# Sistema y editor.
+*.swp
+*~
+.DS_Store

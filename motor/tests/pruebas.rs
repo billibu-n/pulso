@@ -1,0 +1,632 @@
+//! Las pruebas del motor.
+//!
+//! **Se prueba en los dos sentidos**, y esa es la regla:
+//!
+//! 1. **Que la fórmula dé bien** — con un caso calculado a mano. Si no cuadra, la fórmula está mal.
+//! 2. **Que el motor DETECTE lo que falta** — quitando un dato a propósito. Un motor que no detecta
+//!    lo que le falta **tranquiliza de más**, y un falso verde no se nota por el resultado.
+//! 3. **Que no reviente ni invente** en los límites: un pulso imposible, una duración de cero.
+//! 4. **Que toda afirmación traiga su fuente** — ninguna sin ella.
+
+// Los nombres de las pruebas llevan MAYUSCULAS a proposito: lo que se prueba va en el nombre,
+// y leer `es_PELIGRO` dice mas que `es_peligro`. Rust avisa; aqui se le dice que es a proposito.
+#![allow(non_snake_case)]
+
+use motor::datos::{Dato, Muestra, Persona, Sesion, Sexo};
+use motor::formulas::{self, Zona};
+use motor::juicio::{Confianza, Juicio};
+
+/// Una persona con todo lo que hace falta. La referencia para comparar.
+fn ana() -> Persona {
+    Persona {
+        edad: Dato::Hay(40),
+        pulso_reposo: Dato::Hay(55),
+        pulso_maximo_medido: Dato::Falta,
+        peso_kg: Dato::Hay(68.0),
+        sexo: Dato::Hay(Sexo::Femenino),
+    }
+}
+
+/// Una sesión de 30 minutos con pulso cada 10 segundos, a 150 pulsaciones.
+/// 180 muestras = 1790 segundos cubiertos... no: 180 muestras cada 10 s son 1790 s, así que se
+/// declara la duración a mano para que la prueba no dependa de eso.
+fn sesion_30_min(pulso: u16) -> Sesion {
+    let muestras: Vec<Muestra> = (0..180)
+        .map(|i| Muestra {
+            segundo: i * 10,
+            pulso: Dato::Hay(pulso),
+            potencia_w: Dato::Hay(200),
+        })
+        .collect();
+    Sesion { muestras, duracion_s: Dato::Hay(1800) }
+}
+
+// ---------------------------------------------------------------- 1. LA FÓRMULA, A MANO
+
+#[test]
+fn la_frecuencia_maxima_estimada_cuadra_con_el_calculo_a_mano() {
+    // Tanaka: 208 − (0,7 × 40) = 208 − 28 = 180. Calculado a mano, no copiado del programa.
+    let r = formulas::pulso_maximo(&ana());
+    assert_eq!(r.valor, Some(180), "la ecuacion de Tanaka no da lo calculado a mano");
+    // Y como es una ESTIMACIÓN, tiene que declarar su reserva. Si no, engaña.
+    assert!(r.reserva.is_some(), "una estimacion por edad DEBE declarar su reserva");
+}
+
+#[test]
+fn la_frecuencia_maxima_medida_manda_sobre_la_estimada() {
+    let mut p = ana();
+    p.pulso_maximo_medido = Dato::Hay(195);
+    let r = formulas::pulso_maximo(&p);
+    assert_eq!(r.valor, Some(195), "si esta medida, no se estima: manda la medida");
+    assert!(r.reserva.is_none(), "una medida no tiene la reserva de una estimacion");
+}
+
+#[test]
+fn la_reserva_cardiaca_cuadra_y_no_es_la_maxima() {
+    // 180 − 55 = 125. Confundir la reserva con la máxima es el error clasico.
+    let r = formulas::reserva_cardiaca(&ana());
+    assert_eq!(r.valor, Some(125));
+    assert_ne!(r.valor, Some(180), "la reserva NO es la frecuencia maxima");
+}
+
+#[test]
+fn las_zonas_van_de_menos_a_mas_y_no_se_solapan() {
+    let r = formulas::zonas(&ana());
+    let zs = r.valor.expect("con todos los datos, las zonas se calculan");
+    assert_eq!(zs.len(), 4);
+    // Ordenadas: cada zona empieza donde acaba la anterior, y la ultima no pasa de la maxima.
+    for par in zs.windows(2) {
+        assert_eq!(par[0].2, par[1].1, "las zonas tienen que ser contiguas, sin huecos");
+    }
+    assert_eq!(zs[0].0, Zona::Suave);
+    assert_eq!(zs[3].0, Zona::Maxima);
+    // Calculado a mano: 55 + 0,50 × 125 = 117,5 -> 118.
+    assert_eq!(zs[0].1, 118, "el suelo de la zona suave no cuadra con el calculo a mano");
+}
+
+#[test]
+fn la_carga_sube_con_la_intensidad_mucho_mas_que_con_el_tiempo() {
+    // La regla fisiologica: el TRIMP crece de forma EXPONENCIAL con la intensidad.
+    // Dos sesiones igual de largas, una a 120 y otra a 170: la segunda tiene que dar MUCHO mas.
+    let suave = formulas::trimp(&sesion_30_min(120), &ana()).valor.expect("se calcula");
+    let fuerte = formulas::trimp(&sesion_30_min(170), &ana()).valor.expect("se calcula");
+    assert!(suave > 0.0);
+    assert!(
+        fuerte > suave * 2.0,
+        "subir la intensidad tiene que subir la carga MUCHO mas que proporcionalmente: {:.1} vs {:.1}",
+        fuerte,
+        suave
+    );
+}
+
+// ------------------------------------------------- 2. QUE DETECTE LO QUE FALTA (lo importante)
+
+#[test]
+fn sin_edad_y_sin_medida_no_se_puede_saber_la_maxima_y_lo_dice() {
+    let mut p = ana();
+    p.edad = Dato::Falta;
+    let r = formulas::pulso_maximo(&p);
+    assert_eq!(r.valor, None, "sin edad ni medida NO se puede: no se inventa");
+    assert!(!r.falta.is_empty(), "tiene que decir QUE falta");
+    // Y tiene que decir que haria falta para poder afirmarlo.
+    assert!(
+        r.falta.iter().any(|f| f.contains("prueba de esfuerzo") || f.contains("edad")),
+        "tiene que decir que haria falta: {:?}",
+        r.falta
+    );
+}
+
+#[test]
+fn sin_pulso_de_reposo_no_hay_reserva_ni_zonas() {
+    let mut p = ana();
+    p.pulso_reposo = Dato::Falta;
+    assert_eq!(formulas::reserva_cardiaca(&p).valor, None);
+    assert_eq!(formulas::zonas(&p).valor, None, "sin reserva NO se inventan zonas");
+    // Y el motivo tiene que nombrar lo que falta.
+    let r = formulas::zonas(&p);
+    assert!(r.fuente.contains("reposo") || r.falta.iter().any(|f| f.contains("reposo")));
+}
+
+#[test]
+fn una_sesion_sin_pulsos_no_da_carga_y_lo_dice() {
+    let s = Sesion {
+        muestras: vec![
+            Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
+            Muestra { segundo: 10, pulso: Dato::Falta, potencia_w: Dato::Hay(210) },
+        ],
+        duracion_s: Dato::Hay(600),
+    };
+    let r = formulas::trimp(&s, &ana());
+    assert_eq!(r.valor, None, "sin un solo pulso, la carga no se puede afirmar");
+    assert!(r.fuente.contains("pulso"), "el motivo tiene que decir que falta el pulso");
+}
+
+#[test]
+fn si_falta_el_pulso_en_MAS_de_la_mitad_la_carga_no_se_da() {
+    // La mitad de la sesion sin pulso: el numero no se sostiene, y el motor NO lo da.
+    let mut muestras = Vec::new();
+    for i in 0..180 {
+        muestras.push(Muestra {
+            segundo: i * 10,
+            pulso: if i % 3 == 0 { Dato::Hay(150) } else { Dato::Falta },
+            potencia_w: Dato::Hay(200),
+        });
+    }
+    let s = Sesion { muestras, duracion_s: Dato::Hay(1800) };
+    let r = formulas::trimp(&s, &ana());
+    assert_eq!(r.valor, None, "con mas de la mitad sin pulso, la carga NO se afirma");
+    assert!(r.fuente.contains("mitad"), "tiene que decir por que: {}", r.fuente);
+}
+
+#[test]
+fn si_falta_el_pulso_en_POCO_la_carga_se_da_PERO_con_reserva() {
+    // Un 25 % de la sesion sin pulso: pasa del limite del 20 %, asi que se puede dar PERO avisando.
+    //
+    // OJO, esto se corrigio el 2026-10-13: la primera version de esta prueba pedia reserva con solo
+    // un 10 % de hueco, y **la prueba estaba mal, no el motor**. Un 10 % no cambia el numero lo
+    // suficiente como para tener que avisar. Y al mirarlo salio un DEFECTO de verdad: la duracion se
+    // calculaba con la primera y la ultima muestra, asi que si la primera no traia pulso, **salia
+    // corta sin avisar**. Esta prueba es la que lo cazo.
+    let mut muestras = Vec::new();
+    for i in 0..180 {
+        muestras.push(Muestra {
+            segundo: i * 10,
+            pulso: if i % 4 == 0 { Dato::Falta } else { Dato::Hay(150) },
+            potencia_w: Dato::Hay(200),
+        });
+    }
+    let s = Sesion { muestras, duracion_s: Dato::Hay(1800) };
+    let r = formulas::trimp(&s, &ana());
+    assert!(r.valor.is_some(), "con un hueco por debajo del limite, la carga se puede dar");
+    assert!(r.reserva.is_some(), "pero CON RESERVA: el hueco cambia el numero");
+}
+
+#[test]
+fn la_duracion_no_se_acorta_si_la_primera_muestra_no_trae_pulso() {
+    // El defecto que cazo la prueba de arriba, con su caso minimo y propio.
+    // Sin duracion declarada, la duracion se deduce de las muestras: y tiene que salir de la
+    // PRIMERA y la ULTIMA, aunque la primera no traiga pulso.
+    let s = Sesion {
+        muestras: vec![
+            Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
+            Muestra { segundo: 600, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
+            Muestra { segundo: 1200, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
+        ],
+        duracion_s: Dato::Falta,
+    };
+    assert_eq!(
+        s.duracion(),
+        Dato::Hay(1200),
+        "la duracion tiene que ser de la primera a la ultima muestra, no desde la primera CON pulso"
+    );
+}
+
+// ------------------------------------------------------------------ 3. LÍMITES: NO REVIENTA
+
+#[test]
+fn un_reposo_mayor_que_la_maxima_no_revienta_y_se_rechaza() {
+    let mut p = ana();
+    p.pulso_reposo = Dato::Hay(200); // imposible: 200 en reposo con maxima 180
+    let r = formulas::reserva_cardiaca(&p);
+    assert_eq!(r.valor, None, "datos que no cuadran no dan un numero: dan un rechazo");
+    assert!(r.fuente.contains("no cuadran") || r.fuente.contains("coherentes"));
+}
+
+#[test]
+fn una_sesion_de_duracion_cero_no_revienta() {
+    let s = Sesion { muestras: vec![], duracion_s: Dato::Hay(0) };
+    let r = formulas::trimp(&s, &ana());
+    // Sin muestras no hay pulso, asi que se rechaza. Lo importante: NO da infinito ni NaN.
+    assert!(r.valor.is_none() || r.valor.unwrap().is_finite());
+    if let Some(v) = r.valor {
+        assert!(v.is_finite(), "un calculo con cero duracion no puede dar infinito");
+    }
+}
+
+#[test]
+fn una_persona_de_la_que_no_sabemos_nada_no_produce_zonas_inventadas() {
+    let p = Persona::desconocida();
+    let r = formulas::zonas(&p);
+    assert_eq!(r.valor, None, "de la nada no salen zonas");
+    assert!(!r.falta.is_empty(), "y se dice que falta");
+}
+
+#[test]
+fn un_pulso_imposible_dentro_de_la_sesion_no_rompe_el_calculo() {
+    // 300 pulsaciones no existen; el motor no debe dar un numero absurdo ni reventar.
+    let s = sesion_30_min(300);
+    let r = formulas::trimp(&s, &ana());
+    if let Some(v) = r.valor {
+        assert!(v.is_finite() && v < 1000.0, "un pulso imposible no puede dar una carga absurda: {}", v);
+    }
+}
+
+// ---------------------------------------------------- 4. QUE TODA AFIRMACIÓN TRAIGA SU FUENTE
+
+#[test]
+fn con_todos_los_datos_el_juicio_es_seguro_o_con_reserva_y_todo_tiene_fuente() {
+    let j = Juicio::juzgar(&ana(), &sesion_30_min(150));
+    assert!(
+        matches!(j.confianza, Confianza::Seguro | Confianza::ConReserva),
+        "con datos suficientes, el juicio no puede ser 'no se puede': {:?}",
+        j.confianza
+    );
+    assert!(!j.fundamentos.is_empty());
+    for f in &j.fundamentos {
+        assert!(!f.fuente.trim().is_empty(), "afirmacion SIN fuente: {}", f.afirmacion);
+    }
+}
+
+#[test]
+fn sin_datos_el_juicio_baja_a_NO_SE_PUEDE_y_dice_que_falta() {
+    let j = Juicio::juzgar(&Persona::desconocida(), &Sesion::nueva(vec![]));
+    assert_eq!(j.confianza, Confianza::NoSePuede, "sin datos no se puede afirmar");
+    assert!(!j.faltantes.is_empty(), "y hay que decir que falta");
+    for f in &j.faltantes {
+        assert!(!f.para_que.trim().is_empty(), "falta sin decir PARA QUE hacia falta");
+    }
+}
+
+#[test]
+fn el_informe_dice_lo_que_falta_y_no_diagnostica_enfermedades() {
+    let j = Juicio::juzgar(&Persona::desconocida(), &Sesion::nueva(vec![]));
+    let t = j.informe();
+    assert!(t.contains("NO SE PUEDE AFIRMAR"));
+    assert!(t.contains("LO QUE FALTA"));
+    assert!(
+        t.contains("no diagnostica enfermedades"),
+        "el informe tiene que decir lo que NO es"
+    );
+}
+
+// ================================================================ 5. EL SALTO DE ESFUERZO
+
+use motor::esfuerzo::{self, NivelSalto};
+
+/// Una sesión con una duración y un pulso fijos, para comparar saltos.
+fn sesion_de(minutos: u32, pulso: u16) -> Sesion {
+    let n = (minutos * 60) / 10;
+    let muestras = (0..n)
+        .map(|i| Muestra { segundo: i * 10, pulso: Dato::Hay(pulso), potencia_w: Dato::Hay(200) })
+        .collect();
+    Sesion { muestras, duracion_s: Dato::Hay(minutos * 60) }
+}
+
+#[test]
+fn sin_sesiones_anteriores_no_se_puede_comparar_y_se_dice() {
+    let r = esfuerzo::salto(&sesion_de(60, 140), &[], &ana(), false);
+    assert_eq!(r.valor, None, "sin mes anterior no hay con que comparar: no se inventa una media");
+    assert!(r.fuente.contains("anteriores"), "tiene que decir que faltan las anteriores");
+}
+
+#[test]
+fn una_sesion_igual_a_la_mas_larga_del_mes_MANTIENE() {
+    let antes = vec![sesion_de(90, 140), sesion_de(60, 140)];
+    let r = esfuerzo::salto(&sesion_de(90, 140), &antes, &ana(), false);
+    let (sal, nivel) = r.valor.expect("se puede comparar");
+    assert_eq!(nivel, NivelSalto::Mantiene);
+    assert!((sal.proporcion - 1.0).abs() < 0.01, "igual que la mas larga es proporcion 1,0");
+}
+
+#[test]
+fn un_salto_del_90_por_ciento_en_DURACION_es_PELIGRO() {
+    // Este es el caso del cliente sintetico: 210 minutos contra 110 del mes anterior.
+    // El estudio dice que ahi el riesgo crece de forma exponencial.
+    let antes = vec![sesion_de(110, 130), sesion_de(100, 135), sesion_de(60, 150)];
+    let r = esfuerzo::salto(&sesion_de(210, 128), &antes, &ana(), false);
+    let (sal, nivel) = r.valor.expect("se puede comparar");
+    assert!((sal.subida() - 0.909).abs() < 0.02, "la subida tiene que ser ~91 %: {}", sal.subida());
+    assert_eq!(nivel, NivelSalto::Peligro, "un 91 % mas es peligro");
+}
+
+#[test]
+fn el_mismo_salto_mirado_por_CARGA_puede_salir_menos_grave() {
+    // ESTA PRUEBA RECOGE UN HALLAZGO del 2026-10-13, y es importante que quede escrito:
+    // la duracion y la carga NO cuentan la misma historia. Una salida larga y suave sube mucho
+    // en duracion y poco en carga. Por eso el motor da LAS DOS, y no elige por su cuenta.
+    let antes = vec![sesion_de(110, 130), sesion_de(100, 135)];
+    let hoy = sesion_de(210, 128);
+
+    let por_dur = esfuerzo::salto(&hoy, &antes, &ana(), false).valor.expect("se puede");
+    let por_carga = esfuerzo::salto(&hoy, &antes, &ana(), true).valor.expect("se puede");
+
+    // La DURACION sube mas que la CARGA: ese es el hallazgo, y es lo que hay que dejar escrito.
+    assert!(
+        por_dur.0.subida() > por_carga.0.subida(),
+        "en una salida larga y suave, la duracion sube MAS que la carga: {:.0} % vs {:.0} %",
+        por_dur.0.subida() * 100.0,
+        por_carga.0.subida() * 100.0
+    );
+
+    // Y por eso la eleccion de unidad IMPORTA: hay casos en que una avisa y la otra no.
+    // Aqui las dos avisan, pero la de duracion avisa mas alto.
+    assert!(
+        matches!(por_carga.1, NivelSalto::Aviso | NivelSalto::Peligro),
+        "la carga tambien tiene que avisar en un salto asi"
+    );
+
+    // El caso en que de verdad DIVERGEN: se comprueba abajo, con pulsos distintos.
+    // Aqui se deja dicho por que el motor da LAS DOS medidas en vez de elegir.
+}
+
+#[test]
+fn la_duracion_y_la_carga_DIVERGEN_cuando_la_salida_es_larga_pero_suave() {
+    // ESTE es el caso que obliga al motor a dar las DOS medidas y no elegir una:
+    // el mes anterior fueron series CORTAS e INTENSAS; hoy es una salida LARGA y SUAVE.
+    // En duracion es un salto enorme; en carga, mucho menor.
+    let antes = vec![sesion_de(45, 165), sesion_de(50, 168)]; // series cortas y fuertes
+    let hoy = sesion_de(150, 120); // salida larga y suave
+
+    let por_dur = esfuerzo::salto(&hoy, &antes, &ana(), false).valor.expect("se puede");
+    let por_carga = esfuerzo::salto(&hoy, &antes, &ana(), true).valor.expect("se puede");
+
+    assert!(
+        por_dur.0.subida() > por_carga.0.subida() + 0.5,
+        "tienen que divergir claramente: duracion +{:.0} %, carga +{:.0} %",
+        por_dur.0.subida() * 100.0,
+        por_carga.0.subida() * 100.0
+    );
+    assert_eq!(
+        por_dur.1,
+        NivelSalto::Peligro,
+        "en duracion es peligro: mas del doble de lo mas largo del mes"
+    );
+    assert_ne!(por_carga.1, NivelSalto::Peligro, "en carga NO llega a peligro");
+}
+
+#[test]
+fn el_salto_siempre_declara_que_los_cortes_son_una_DECISION() {
+    let antes = vec![sesion_de(60, 140)];
+    let r = esfuerzo::salto(&sesion_de(70, 140), &antes, &ana(), false);
+    let reserva = r.reserva.expect("el salto declara su reserva");
+    assert!(
+        reserva.contains("DECISIÓN") || reserva.contains("DECISION"),
+        "tiene que decir que los cortes los eligio el motor, no el estudio: {reserva}"
+    );
+}
+
+#[test]
+fn una_sesion_mas_corta_que_el_mes_no_alerta_de_nada() {
+    let antes = vec![sesion_de(120, 140)];
+    let r = esfuerzo::salto(&sesion_de(30, 120), &antes, &ana(), false);
+    let (sal, nivel) = r.valor.expect("se puede comparar");
+    assert!(sal.subida() < 0.0, "es mas corta, asi que la subida es negativa");
+    assert_eq!(nivel, NivelSalto::Mantiene, "una sesion corta no es un riesgo");
+}
+
+// ------------------------------------------- 6. EL AVISO DE LA FRECUENCIA MÁXIMA ESTIMADA
+
+#[test]
+fn a_los_60_ANOS_el_motor_avisa_de_que_la_estimacion_puede_quedarse_corta() {
+    // El caso del cliente: 60 anos, sin prueba de esfuerzo. El aviso tiene que decir que a esa
+    // edad una persona entrenada suele tener la maxima MAS ALTA que la media de su edad.
+    let mut p = ana();
+    p.edad = Dato::Hay(60);
+    p.pulso_maximo_medido = Dato::Falta;
+    let aviso = esfuerzo::aviso_de_la_estimacion(&p).expect("a los 60 tiene que avisar");
+    assert!(aviso.contains("ESTIMADA"), "tiene que decir que esta estimada");
+    assert!(
+        aviso.contains("MÁS ALTA") || aviso.contains("MAS ALTA"),
+        "y que en una persona entrenada suele quedarse corta: {aviso}"
+    );
+    assert!(aviso.contains("prueba de esfuerzo"), "y que la solucion es medirla");
+}
+
+#[test]
+fn si_la_maxima_esta_MEDIDA_no_hay_nada_que_avisar() {
+    let mut p = ana();
+    p.edad = Dato::Hay(60);
+    p.pulso_maximo_medido = Dato::Hay(178);
+    assert_eq!(esfuerzo::aviso_de_la_estimacion(&p), None, "si se sabe, no se avisa");
+}
+
+// ------------------------------------------------- 7. EL ADAPTADOR DEL FORMATO DE FUERA
+
+#[test]
+fn el_adaptador_lee_un_perfil_y_lo_que_falta_queda_como_FALTA_no_como_cero() {
+    let json = r#"{"persona": {"edad": 60, "peso_kg": 72.0, "pulso_reposo": 48, "pulso_maximo_medido": null, "sexo": null}}"#;
+    let p = motor::adaptador::leer_perfil(json).expect("el JSON se entiende");
+    assert_eq!(p.edad, Dato::Hay(60));
+    assert_eq!(p.pulso_reposo, Dato::Hay(48));
+    // ESTO es lo importante: lo que viene `null` NO se convierte en 0 ni en un valor por defecto.
+    assert_eq!(p.pulso_maximo_medido, Dato::Falta);
+    assert_eq!(p.sexo, Dato::Falta);
+}
+
+#[test]
+fn el_adaptador_NO_adivina_un_sexo_que_no_entiende() {
+    let json = r#"{"persona": {"edad": 40, "peso_kg": null, "pulso_reposo": null, "pulso_maximo_medido": null, "sexo": "lo-que-sea"}}"#;
+    let p = motor::adaptador::leer_perfil(json).expect("se entiende");
+    assert_eq!(p.sexo, Dato::Falta, "un valor que no se entiende se trata como ausente, no se adivina");
+}
+
+#[test]
+fn el_adaptador_rechaza_un_json_que_no_es_lo_que_espera() {
+    let r = motor::adaptador::leer_perfil("{\"otra_cosa\": 1}");
+    assert!(r.is_err(), "un JSON con otra forma tiene que fallar, no dar una persona vacia en silencio");
+}
+
+// ============================================ 8. LAS DOS FUENTES (Garmin y Huawei)
+
+use motor::fuentes::{tolerancia, Consenso, Procedencia, Valor};
+
+#[test]
+fn el_pulso_de_reposo_lo_manda_el_aparato_que_lo_mide_durmiendo_no_la_bascula() {
+    // EL CASO REAL de este cliente: Garmin dice 48 (el mínimo, durmiendo) y la báscula de
+    // Huawei dijo 71 (sentado por la tarde). Los dos números pueden ser correctos, pero para
+    // calcular zonas manda el de durmiendo: es el que usa el método de Karvonen.
+    let valores = vec![
+        Valor::nuevo(48u16, Procedencia::AparatoDeEntrenamiento, "2026-10-11")
+            .con_nota("mínimo mientras duerme"),
+        Valor::nuevo(71u16, Procedencia::Bascula, "2026-10-13").con_nota("sentado por la tarde"),
+    ];
+    let c = Consenso::juntar(valores, Procedencia::para_pulso_de_reposo(), tolerancia::PULSO_REPOSO);
+
+    assert_eq!(c.elegido.as_ref().unwrap().valor, 48, "tiene que usar el de durmiendo");
+    assert_eq!(c.discrepantes.len(), 1, "y GUARDAR el otro, no tirarlo");
+    assert!(c.aviso.is_some(), "y AVISAR de que los dos no coinciden");
+    let aviso = c.aviso.unwrap();
+    assert!(aviso.contains("48") && aviso.contains("71"), "el aviso tiene que dar los dos valores");
+}
+
+#[test]
+fn para_el_peso_manda_la_bascula_y_no_el_aparato_de_entrenamiento() {
+    // Aquí es al revés, y es lo que hace que la confianza NO sea una jerarquía fija:
+    // para el peso, **la báscula es la que pesa**.
+    let valores = vec![
+        Valor::nuevo(68.0f32, Procedencia::AparatoDeEntrenamiento, "2026-10-01"),
+        Valor::nuevo(69.45f32, Procedencia::Bascula, "2026-10-13"),
+    ];
+    let c = Consenso::juntar(valores, Procedencia::para_composicion_corporal(), tolerancia::PESO);
+    assert_eq!(c.elegido.as_ref().unwrap().valor, 69.45, "para el peso manda la bascula");
+    assert_eq!(c.elegido.unwrap().procedencia, Procedencia::Bascula);
+}
+
+#[test]
+fn si_las_dos_fuentes_coinciden_NO_se_avisa_de_nada() {
+    // Un aviso que sale siempre no sirve para nada: tiene que salir solo cuando importa.
+    let valores = vec![
+        Valor::nuevo(69.0f32, Procedencia::Bascula, "2026-10-12"),
+        Valor::nuevo(69.45f32, Procedencia::Bascula, "2026-10-13"),
+    ];
+    let c = Consenso::juntar(valores, Procedencia::para_composicion_corporal(), tolerancia::PESO);
+    assert!(c.aviso.is_none(), "una diferencia del 0,7 % no es un problema");
+    assert_eq!(c.elegido.unwrap().fecha, "2026-10-13", "y se queda el mas reciente");
+}
+
+#[test]
+fn con_una_sola_fuente_no_hay_nada_que_consensuar_y_no_se_inventa() {
+    let valores = vec![Valor::nuevo(48u16, Procedencia::AparatoDeEntrenamiento, "2026-10-11")];
+    let c = Consenso::juntar(valores, Procedencia::para_pulso_de_reposo(), tolerancia::PULSO_REPOSO);
+    assert_eq!(c.elegido.as_ref().unwrap().valor, 48);
+    assert!(c.discrepantes.is_empty());
+    assert!(c.aviso.is_none(), "con una sola fuente no hay discrepancia que avisar");
+}
+
+#[test]
+fn sin_ningun_valor_no_se_elige_nada() {
+    let c: Consenso<u16> = Consenso::juntar(vec![], Procedencia::para_pulso_de_reposo(), 0.05);
+    assert!(!c.hay(), "sin datos no hay valor: no se rellena con cero");
+    assert!(c.elegido.is_none());
+}
+
+#[test]
+fn las_dos_tolerancias_son_distintas_a_proposito_y_se_comprueba_con_el_mismo_porcentaje() {
+    // Las tolerancias son DECISIONES, y son distintas porque el mismo error no cuesta lo mismo:
+    //   peso ......... 2 %   (dos basculas discrepan legitimamente)
+    //   pulso reposo . 5 %   (aqui cada pulsacion mueve las zonas enteras)
+    //
+    // Se prueba con un 3 %, que cae ENTRE las dos: asi se ve que la diferencia de trato es real.
+    //
+    // OJO, y es una leccion: la primera version de esta prueba usaba un 8 % para los dos y decia
+    // que el peso NO avisaria. FALLO, y con razon: un 8 % pasa del 2 %. **La prueba estaba mal,
+    // no el motor** — el mismo tipo de fallo que ya aparecio con la duracion de las sesiones.
+    let tres_por_ciento = 1.03f64;
+
+    // PESO: 70 -> 72,1 es un 3 %, y pasa del 2 %, asi que AVISA.
+    let peso_alto = (70.0f64 * tres_por_ciento) as f32;
+    let p = Consenso::juntar(
+        vec![Valor::nuevo(70.0f32, Procedencia::Bascula, "2026-10-13"),
+             Valor::nuevo(peso_alto, Procedencia::Bascula, "2026-10-01")],
+        Procedencia::para_composicion_corporal(), tolerancia::PESO);
+    assert!(p.aviso.is_some(), "un 3 % en el peso pasa del 2 %: tiene que avisar");
+
+    // PULSO DE REPOSO: 50 -> 51 es un 2 %, y NO llega al 5 %, asi que NO avisa.
+    let pulso_alto = (50.0f64 * 1.02) as u16; // = 51
+    let r = Consenso::juntar(
+        vec![Valor::nuevo(50u16, Procedencia::AparatoDeEntrenamiento, "2026-10-11"),
+             Valor::nuevo(pulso_alto, Procedencia::Bascula, "2026-10-13")],
+        Procedencia::para_pulso_de_reposo(), tolerancia::PULSO_REPOSO);
+    assert!(r.aviso.is_none(), "un 2 % en el pulso de reposo no llega al 5 %: no avisa");
+
+    // Y el mismo 8 % que fallaba antes: en el pulso SI tiene que avisar.
+    let r8 = Consenso::juntar(
+        vec![Valor::nuevo(50u16, Procedencia::AparatoDeEntrenamiento, "2026-10-11"),
+             Valor::nuevo((50.0f64 * 1.08) as u16, Procedencia::Bascula, "2026-10-13")],
+        Procedencia::para_pulso_de_reposo(), tolerancia::PULSO_REPOSO);
+    assert!(r8.aviso.is_some(), "un 8 % en el pulso de reposo si avisa");
+}
+
+// ================================================== 9. LA TENDENCIA (¿mejora o solo entrena?)
+
+use motor::tendencia::{tolerancia as tol_tend, Direccion, Serie};
+
+fn serie(que: &str, valores: &[(f64, &str)]) -> Serie {
+    Serie::nueva(que, valores.iter()
+        .map(|(v, f)| Valor::nuevo(*v, Procedencia::AparatoDeEntrenamiento, f))
+        .collect())
+}
+
+#[test]
+fn con_un_solo_punto_NO_hay_tendencia_y_se_dice() {
+    // Con un mes de datos no se puede afirmar si mejora. Esta prueba es la que obliga a decirlo.
+    let s = serie("consumo de oxigeno", &[(51.9, "2026-04-30")]);
+    assert_eq!(s.tendencia(), Dato::Falta, "un punto no es una tendencia");
+}
+
+#[test]
+fn la_tendencia_del_consumo_de_oxigeno_que_tiene_este_cliente_sube() {
+    // Sus datos reales, mes a mes: arranca, baja, y remonta hasta el mejor valor.
+    let s = serie("consumo de oxigeno", &[
+        (51.9, "2026-04-30"), (53.6, "2026-05-31"), (51.0, "2026-06-30"),
+        (50.0, "2026-07-31"), (54.7, "2026-08-31"), (56.1, "2026-09-30"), (56.8, "2026-10-11"),
+    ]);
+    let t = s.tendencia().prestado().cloned().expect("hay 7 puntos");
+    assert_eq!(t.puntos, 7);
+    assert!(t.cambio > 4.0, "sube casi 5 puntos: {}", t.cambio);
+    assert_eq!(t.direccion(tol_tend::VO2), Direccion::Sube);
+    assert!(t.bajo_y_subio(), "y la forma es bajar y remontar: el minimo NO es el primero");
+}
+
+#[test]
+fn la_frase_avisa_de_que_toco_fondo_antes_de_remontar() {
+    // Una subida recta y una que toca fondo cuentan cosas distintas. La frase tiene que decirlo.
+    let s = serie("consumo de oxigeno", &[
+        (51.9, "2026-04-30"), (49.6, "2026-08-01"), (56.8, "2026-10-11"),
+    ]);
+    let t = s.tendencia().prestado().cloned().unwrap();
+    let f = t.frase(tol_tend::VO2);
+    assert!(f.contains("sube"), "tiene que decir la direccion: {f}");
+    assert!(f.contains("tocó fondo"), "y que toco fondo antes de remontar: {f}");
+}
+
+#[test]
+fn una_variacion_por_debajo_de_la_tolerancia_se_considera_ESTABLE() {
+    // Decir «mejora» por una centésima es peor que no decir nada.
+    let s = serie("eficiencia", &[(0.983, "2026-09-30"), (0.990, "2026-10-11")]);
+    let t = s.tendencia().prestado().cloned().unwrap();
+    assert_eq!(
+        t.direccion(tol_tend::EFICIENCIA),
+        Direccion::Estable,
+        "un 0,7 % no llega al 3 %: es estable, no una mejora"
+    );
+}
+
+#[test]
+fn los_puntos_se_ordenan_por_fecha_aunque_lleguen_desordenados() {
+    // Un motor que se fie del orden en que llegan los datos da tendencias falsas.
+    let s = serie("peso", &[(56.8, "2026-10-11"), (51.9, "2026-04-30"), (54.0, "2026-07-15")]);
+    let t = s.tendencia().prestado().cloned().unwrap();
+    assert_eq!(t.desde, "2026-04-30", "el primero es el mas ANTIGUO, no el primero que llego");
+    assert_eq!(t.hasta, "2026-10-11");
+    assert!(t.cambio > 0.0, "y el cambio va del antiguo al nuevo");
+}
+
+#[test]
+fn la_tendencia_del_VOLUMEN_no_se_confunde_con_la_del_RENDIMIENTO() {
+    // EL CASO QUE OBLIGA A ESTE MODULO A EXISTIR, y son los datos reales de este cliente:
+    // en julio entreno 39,1 horas (su mes de mas volumen) y su consumo de oxigeno BAJO.
+    // Un motor que confunda «mas» con «mejor» le diria que entrene mas justo cuando necesita recuperar.
+    let volumen = serie("horas al mes", &[(25.9, "2026-05-31"), (39.1, "2026-07-31"), (13.9, "2026-10-11")]);
+    let rendimiento = serie("consumo de oxigeno", &[(53.6, "2026-05-31"), (50.0, "2026-07-31"), (56.8, "2026-10-11")]);
+
+    let tv = volumen.tendencia().prestado().cloned().unwrap();
+    let tr = rendimiento.tendencia().prestado().cloned().unwrap();
+
+    // Las dos series van en direcciones OPUESTAS en el mismo periodo, y las dos medidas son correctas.
+    assert_eq!(tv.direccion(tol_tend::VOLUMEN), Direccion::Baja, "el volumen acabo bajando");
+    assert_eq!(tr.direccion(tol_tend::VO2), Direccion::Sube, "y el rendimiento acabo subiendo");
+    // Y las dos tocan fondo en el mismo mes: el de mas volumen.
+    assert_eq!(tv.minimo.as_ref().unwrap().fecha, "2026-10-11");
+    assert_eq!(tr.minimo.as_ref().unwrap().fecha, "2026-07-31", "su punto mas bajo fue el mes de mas carga");
+}

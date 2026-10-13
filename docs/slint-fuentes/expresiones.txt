@@ -1,0 +1,65 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Expressions and Statements
+
+Expressions are a powerful way to declare relationships and connections in your user interface.
+Use them to combine basic arithmetic with access to properties of other elements.
+When these properties change, the expression is automatically re-evaluated
+and a new value is assigned to the property the expression is associated with:
+
+- 
+```
+export component Example { // declare a property of type int in-out property<int> my-property;
+ // This accesses the property width: root.my-property * 20px;
+}
+```
+
+ my-property; // This accesses the property width: root.my-property * 20px;}">
+
+slint
+
+When my-property changes, the width changes automatically, too.
+
+Access an element’s properties by using its name, followed by a . and the property name:
+
+```
+export component Example { foo := Rectangle { x: 42px; } x: foo.x;}
+```
+
+slint
+
+Expressions support the arithmetic, comparison, and logical operators you know from other languages,
+string concatenation with +, and the ternary operator ... ? ... : ...:
+
+```
+export component Example inherits Window { preferred-width: 100px; preferred-height: 100px;
+ Rectangle { touch := TouchArea {} background: touch.pressed ? #111 : #eee; border-width: 5px; border-color: !touch.enabled ? #888 : touch.pressed ? #aaa : #555; }}
+```
+
+slint
+
+See the Operators chapter of the language reference
+for all of them and their exact semantics.
+
+## Statements
+Section titled “Statements”
+
+Inside callback handlers and functions you write statements that run when invoked —
+this is where imperative code lives.
+Assign to properties, declare local variables with let, branch with if/else,
+and call callbacks or functions:
+
+```
+clicked => { let delta = 42; // local, immutable variable if (condition) { some-property += delta; } else { root.some-callback(); }}
+```
+
+ { let delta = 42; // local, immutable variable if (condition) { some-property += delta; } else { root.some-callback(); }}">
+
+slint
+
+See Statements in the language reference
+for every statement form.
+
+PreviousPropertiesNextPositioning & Layouts
+© 2026 SixtyFPS GmbH

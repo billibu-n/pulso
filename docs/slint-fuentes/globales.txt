@@ -1,0 +1,86 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Globals
+
+Declare a global singleton with global Name { /* .. properties or callbacks .. */ } to
+make properties and callbacks available throughout the entire project.
+Access them using Name.property.
+
+For example, this can be useful for a common color palette:
+
+- 
+```
+global Palette { in-out property<color> primary: blue; in-out property<color> secondary: green;}
+export component Example inherits Rectangle { background: Palette.primary; border-color: Palette.secondary; border-width: 2px;}
+```
+
+ primary: blue; in-out property secondary: green;}export component Example inherits Rectangle { background: Palette.primary; border-color: Palette.secondary; border-width: 2px;}">
+
+slint
+
+Export a global to make it accessible from other files.
+To reach a global from your business logic in Rust, C++, JavaScript, or Python —
+setting its properties and implementing its callbacks — re-export it from the file
+that also exports your main application component:
+
+```
+export global Logic { in-out property <int> the-value; pure callback magic-operation(int) -> int;}// ...
+```
+
+ the-value; pure callback magic-operation(int) -> int;}// ...">
+
+slint
+
+- Rust
+- C++
+- NodeJS
+- Python
+
+```
+slint::slint!{export global Logic { in-out property <int> the-value; pure callback magic-operation(int) -> int;}
+export component App inherits Window { // ...}}
+fn main() { let app = App::new(); app.global::<Logic>().on_magic_operation(|value| { eprintln!("magic operation input: {}", value); value * 2 }); app.global::<Logic>().set_the_value(42); // ...}
+```
+
+ the-value; pure callback magic-operation(int) -> int;}export component App inherits Window { // ...}}fn main() { let app = App::new(); app.global::().on_magic_operation(|value| { eprintln!("magic operation input: {}", value); value * 2 }); app.global::().set_the_value(42); // ...}">
+
+rust
+
+```
+#include "app.h"
+int main() { auto app = App::create(); app->global<Logic>().on_magic_operation([](int value) -> int { return value * 2; }); app->global<Logic>().set_the_value(42); // ...}
+```
+
+global().on_magic_operation([](int value) -> int { return value * 2; }); app->global().set_the_value(42); // ...}">
+
+C++
+
+```
+let slint = require("slint-ui");let file = slint.loadFile("app.slint");let app = new file.App();app.Logic.magic_operation = (value) => { return value * 2;};app.Logic.the_value = 42;// ...
+```
+
+ { return value * 2;};app.Logic.the_value = 42;// ...">
+
+js
+
+```
+import slint
+class App(slint.loader.app.App): @slint.callback(global_name="Logic") def magic_operation(self, value: int) -> int: return value * 2
+app = App()app.Logic.the_value = 42
+# ...
+```
+
+ int: return value * 2app = App()app.Logic.the_value = 42# ...">
+
+python
+
+To re-expose global properties on a component with two-way bindings, see the
+Globals chapter of the language reference.
+
+Note
+Global singletons aren’t shared between separate windows.
+You may need to initialize the global callbacks and properties for each instance you create.
+
+PreviousPositioning & LayoutsNextRepetition and Data Models
+© 2026 SixtyFPS GmbH

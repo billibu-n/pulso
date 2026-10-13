@@ -1,0 +1,105 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Timer
+
+Note
+Timer is not an actual element visible in the tree, therefore it doesn’t have the common properties such as x, y, width, height, etc. It also doesn’t take room in a layout and cannot have any children or be inherited from.
+
+This example shows a timer that counts down from 10 to 0 every second:
+
+- 
+```
+import { Button } from "std-widgets.slint";export component Example inherits Window { property <int> value: 10; timer := Timer { interval: 1s; running: true; triggered() => { value -= 1; if (value == 0) { self.running = false; } } } HorizontalLayout { Text { text: value; } Button { text: "Reset"; clicked() => { value = 10; timer.running = true; } } }}
+```
+
+ value: 10; timer := Timer { interval: 1s; running: true; triggered() => { value -= 1; if (value == 0) { self.running = false; } } } HorizontalLayout { Text { text: value; } Button { text: "Reset"; clicked() => { value = 10; timer.running = true; } } }}">
+
+slint
+
+Use the Timer pseudo-element to schedule a callback at a given interval.
+The timer is only running when the running property is set to true. To stop or start the timer, set that property to true or false.
+It can be also set to a binding expression.
+When already running, the timer will be restarted if the interval property is changed.
+
+Caution
+By default the Timer is always running running: true. This can result in constant CPU usage and
+power usage so ensure that you set running to false when you don’t want the timer to run.
+
+```
+property <int> count: 0;Timer { interval: 8s; // every 8 seconds the timer will activate (tick) triggered() => { // The triggered callback activates every time the timer ticks if count >= 5 { self.running = false; // stop the timer after 5 ticks } count += 1; }}
+```
+
+ count: 0;Timer { interval: 8s; // every 8 seconds the timer will activate (tick) triggered() => { // The triggered callback activates every time the timer ticks if count >= 5 { self.running = false; // stop the timer after 5 ticks } count += 1; }}">
+
+slint
+
+## Properties
+Section titled “Properties”
+
+### interval
+Section titled “interval”
+
+durationdefault: 0ms
+
+The interval between timer ticks. This property is mandatory.
+
+```
+Timer { property <int> count: 0; interval: 250ms; triggered() => { debug("count is:", count); count += 1; }}
+```
+
+ count: 0; interval: 250ms; triggered() => { debug("count is:", count); count += 1; }}">
+
+slint
+
+### running
+Section titled “running”
+
+booldefault: true
+
+true if the timer is running.
+
+```
+Timer { property <int> count: 0; interval: 250ms; running: false; // timer is not running triggered() => { debug("count is:", count); }}
+```
+
+ count: 0; interval: 250ms; running: false; // timer is not running triggered() => { debug("count is:", count); }}">
+
+slint
+
+## Callbacks
+Section titled “Callbacks”
+
+### triggered()
+Section titled “triggered()”
+
+Invoked every time the timer ticks (every interval).
+
+```
+Timer { property <int> count: 0; interval: 250ms; triggered() => { debug("count is:", count); }}
+```
+
+ count: 0; interval: 250ms; triggered() => { debug("count is:", count); }}">
+
+slint
+
+## Functions
+Section titled “Functions”
+
+### start()
+Section titled “start()”
+
+Start the timer (equivalent to setting running to true).
+
+### stop()
+Section titled “stop()”
+
+Stop the timer (equivalent to setting running to false).
+
+### restart()
+Section titled “restart()”
+
+Restarts the timer if it was previously started.
+
+PreviousWindowMoveAreaNextMath
+© 2026 SixtyFPS GmbH

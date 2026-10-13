@@ -166,3 +166,39 @@ fn ver_el_arbol_para_saber_que_se_puede_medir() {
         }
     }
 }
+
+#[test]
+fn se_puede_BUSCAR_por_accessible_id_sin_depender_del_nombre_interno() {
+    // POR QUE ESTA PRUEBA: buscar por `ArmazonMovil::cabecera` funciona, pero **depende de como se
+    // llame el componente por dentro**. Si alguien renombra el componente, la prueba se rompe sin que
+    // nada este mal.
+    //
+    // La documentacion de Slint trae la forma OFICIAL: `accessible-id` es
+    //   "un identificador unico del elemento, usado para identificar widgets en automatizacion y
+    //    PRUEBAS".
+    // O sea: **existe justo para esto**, y es independiente de los nombres internos.
+    let v = ventana_de_prueba();
+    let todos = ElementQuery::from_root(&v).find_all();
+    let con_id: Vec<String> = todos
+        .iter()
+        .filter_map(|e| e.accessible_id().map(|s| s.to_string()))
+        .collect();
+    println!("  elementos con accessible-id puesto: {con_id:?}");
+    // Y estas son las dos que tienen que estar: los sitios del armazon.
+    // Las TRES zonas del armazon, cada una con su papel de referencia.
+    for esperado in ["cabecera", "contenido", "navegacion"] {
+        assert!(
+            con_id.contains(&esperado.to_string()),
+            "falta el accessible-id «{esperado}»: {con_id:?}"
+        );
+    }
+
+    // Y SE MIDE POR ESE NOMBRE, que es lo que se queria: encontrar por decision, no por casualidad.
+    let cab = todos.iter().find(|e| e.accessible_id().map(|s| s.to_string()) == Some("cabecera".into()));
+    let cab = cab.expect("tiene que encontrarse la cabecera por su accessible-id");
+    println!(
+        "  encontrada por accessible-id: {:.0}x{:.0}",
+        cab.size().width,
+        cab.size().height
+    );
+}

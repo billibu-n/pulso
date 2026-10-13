@@ -1,0 +1,334 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Translations
+
+Slint’s translation infrastructure makes your application available in different languages.
+
+Prerequisite
+Install the slint-tr-extractor ↗ tool to extract translatable strings from .slint files:
+- Terminal window
+```
+cargo install slint-tr-extractor
+```
+
+bash
+
+You can choose between runtime translations using gettext or bundling translations directly into your executable for platforms where gettext is unavailable or impractical.
+
+To translate your application, follow these steps:
+
+- Identify all user-visible strings that need translation and annotate them with the @tr() macro.
+
+- Extract annotated strings by running the slint-tr-extractor tool to generate .pot files.
+
+- Use a third-party tool to translate the strings into .po files for each target language.
+
+- (For runtime gettext translations only) Convert .po files into .mo files using gettext’s msgfmt ↗.
+
+- (For bundled translations only) Configure bundling during the build process to embed translations into your application.
+
+- Use Slint’s API to select the appropriate translation based on the user’s locale.
+
+At this point, all strings marked for translation will be automatically rendered in the selected language.
+
+## Annotating Translatable Strings
+Section titled “Annotating Translatable Strings”
+
+Use the @tr macro in .slint files to mark strings for translation.
+This macro supports formatting and pluralization, and can include contextual information.
+
+The first argument must be a plain string literal, followed by the arguments:
+
+### Basic Example
+Section titled “Basic Example”
+
+```
+export component Example { property <string> name; Text { text: @tr("Hello, {}", name); }}
+```
+
+ name; Text { text: @tr("Hello, {}", name); }}">
+
+slint
+
+### Formatting
+Section titled “Formatting”
+
+Each {} placeholder in the format string is replaced with the corresponding argument, in order.
+A placeholder can name a zero-based position, as in {0} or {1}, to pick an argument explicitly.
+Positional and non-positional placeholders can’t be mixed in one format string.
+A translation may use positional placeholders even when the source string doesn’t.
+
+Write a literal { or } by doubling it, as {{ or }}.
+An unterminated placeholder, an unescaped { or }, or more placeholders than arguments is an error.
+
+### Plurals
+Section titled “Plurals”
+
+A plural form picks between two format strings based on a count.
+Write it with | between the two string literals and % before the count expression:
+
+```
+@tr("I have {n} item" | "I have {n} items" % count)
+```
+
+slint
+
+Both sides of the | must be plain string literals, and the count expression is converted to int.
+The {n} placeholder refers to the count and is only valid in a plural form.
+Other placeholders still refer to the arguments after the count:
+
+```
+export component Example inherits Text { in property <int> score; in property <int> name; text: @tr("Hello {0}, you have one point" | "Hello {0}, you have {n} points" % score, name);}
+```
+
+ score; in property name; text: @tr("Hello {0}, you have one point" | "Hello {0}, you have {n} points" % score, name);}">
+
+slint
+
+### Contexts
+Section titled “Contexts”
+
+A context disambiguates strings that share the same source text but differ in meaning.
+Write it as a plain string literal followed by => before the format string:
+
+```
+export component MenuItem { property <string> name: @tr("Default Name"); // context: `MenuItem` property <string> tooltip: @tr("ToolTip" => "ToolTip for {}", name); // context: `ToolTip`}
+```
+
+ name: @tr("Default Name"); // context: `MenuItem` property tooltip: @tr("ToolTip" => "ToolTip for {}", name); // context: `ToolTip`}">
+
+slint
+
+Without a context, it defaults to the name of the enclosing component.
+
+Pass the --no-default-translation-context flag to slint-tr-extractor if you don’t want the component name to be the default context. The same option needs to be passed to the Slint compiler:
+
+- Rust
+- C++
+
+With slint_build::CompilerConfiguration::with_default_translation_context(slint_build::DefaultTranslationContext::None)
+when using a build script.
+With slint_interpreter::Compiler::set_default_translation_context(slint_interpreter::DefaultTranslationContext::None)
+when using the slint-interpreter crate.
+
+Set the SLINT_NO_DEFAULT_TRANSLATION_CONTEXT target property on your CMake target.
+
+## Extracting Translatable Strings
+Section titled “Extracting Translatable Strings”
+
+Use slint-tr-extractor ↗ to generate a .pot file with all strings marked for translation:
+
+Terminal window
+```
+find -name \*.slint | xargs slint-tr-extractor -o MY_PROJECT.pot
+```
+
+bash
+
+This creates a file called MY_PROJECT.pot. Replace “MY_PROJECT” with your actual project name.
+To learn how the project name affects the lookup of translations, read the sections below.
+
+Tip
+.pot files are Gettext ↗ template files.
+
+## Translating Strings
+Section titled “Translating Strings”
+
+Start a new translation by creating a .po file from a .pot file. Both file formats are identical.
+You can either copy the file manually or use a tool like Gettext’s msginit to start a new .po file.
+
+The .po file contains the strings in a target language.
+
+.po and .pot files are plain text files that you can edit with a text editor. We recommend
+using a dedicated translation tool for working with them, such as the following:
+
+- poedit ↗
+
+- OmegaT ↗
+
+- Lokalize ↗
+
+- Transifex ↗ (web interface)
+
+## Runtime Translations with Gettext
+Section titled “Runtime Translations with Gettext”
+
+Slint can use the Gettext ↗ library to load translations at run-time.
+
+Gettext expects translation files - called message catalogs - in following directory hierarchy:
+
+- Directorydir_name/
+- Directorylocale/ e.g. fr, en, de, etc
+- DirectoryLC_MESSAGES/
+- domain_name.mo
+
+- 
+dir_name: the base directory that you can choose freely.
+
+- 
+locale: The name of the user’s locale for a given target language, such as fr for French, or de for German.
+
+The locale is typically determined using environment variables that your operating system sets.
+
+- 
+domain_name: Selected based on the programming language you’re using Slint with.
+
+Tip
+Read the Gettext documentation ↗ for more information.
+
+### Convert .po Files to .mo Files
+Section titled “Convert .po Files to .mo Files”
+
+Convert the human readable .po files into machine-friendly .mo files, which are a binary representation
+that is more efficient to read by code.
+
+Use Gettext ↗’s msgfmt command line tool to convert .po files to .mo
+files:
+
+Terminal window
+```
+msgfmt translation.po -o translation.mo
+```
+
+bash
+
+### Select and Load Translations
+Section titled “Select and Load Translations”
+
+- Rust
+- C++
+
+First, enable the gettext feature of the slint crate in the features section to gain access to the translations API
+and activate run-time translation support.
+Next, use the slint::init_translations! macro to specify the base location of your .mo files.
+This is the dir_name in the scheme of the previous section. Slint expects the .mo files to be in the
+corresponding sub-directories and their file name - domain_name - must match the package name
+in your Cargo.toml. This is often the same as the crate name.
+For example:
+
+```
+slint::init_translations!(concat!(env!("CARGO_MANIFEST_DIR"), "/lang/"));
+```
+
+rust
+
+For example, if your Cargo.toml contains the following lines and the user’s locale is fr:
+
+```
+[package]name = "gallery"
+```
+
+toml
+
+With these settings, Slint looks for gallery.mo in the lang/fr/LC_MESSAGES/gallery.mo.
+
+First, enable the SLINT_FEATURE_GETTEXT cmake option when compiling Slint to gain access to
+the translations API and activate run-time translation support.
+In C++ applications using cmake, the domain_name is the CMake target name.
+Next, bind the text domain to a path using the standard gettext library.
+To do so, add this in your CMakeLists.txt file:
+
+```
+find_package(Intl)if(Intl_FOUND) target_compile_definitions(my_application PRIVATE HAVE_GETTEXT SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}") target_link_libraries(my_application PRIVATE Intl::Intl)endif()
+```
+
+cmake
+
+You can then setup the locale and the text domain
+
+```
+#ifdef HAVE_GETTEXT# include <locale># include <libintl.h>#endif
+int main(){#ifdef HAVE_GETTEXT bindtextdomain("my_application", SRC_DIR "/lang/"); std::locale::global(std::locale(""));#endif //...}
+```
+
+# include - #endifint main(){#ifdef HAVE_GETTEXT bindtextdomain("my_application", SRC_DIR "/lang/"); std::locale::global(std::locale(""));#endif //...}">
+
+c++
+
+For example, if you’re using the above and the user’s locale is fr,
+Slint looks for my_application.mo in the lang/fr/LC_MESSAGES/ directory.
+
+## Bundled Translations
+Section titled “Bundled Translations”
+
+Bundled translations embed the translated strings directly into your application binary.
+This approach is ideal for platforms like WASM or microcontrollers where gettext is unavailable.
+
+Configure the Slint compiler to bundle translations by providing a path to the translations.
+Translation files should be organized in the following hierarchy:
+
+```
+path/<lang>/LC_MESSAGES/<domain>.po
+```
+
+/LC_MESSAGES/.po">
+
+plaintext
+
+### Bundling
+Section titled “Bundling”
+
+- Rust
+- C++
+
+Use slint_build::CompilerConfiguration’s with_bundled_translations() function to set up bundling in
+build.rs:
+
+```
+let config = slint_build::CompilerConfiguration::new() .with_bundled_translations("path/to/translations");slint_build::compile_with_config("path/to/main-ui.slint", config).unwrap();
+```
+
+rust
+
+The <domain> is the crate name.
+
+Set the SLINT_BUNDLE_TRANSLATIONS property in CMake:
+
+```
+set_property(TARGET my_application PROPERTY SLINT_BUNDLE_TRANSLATIONS "${CMAKE_CURRENT_SOURCE_DIR}/lang")
+```
+
+cmake
+
+the <domain> is the cmake target name.
+
+### Selecting a Translation
+Section titled “Selecting a Translation”
+
+If you enable the std feature with Slint, language for translations is detected based on the locale:
+if one of the bundled language matches the selected locale, it will be used.
+
+- Rust
+- C++
+- Python
+
+Use the slint::select_bundled_translation function to change translations at runtime.
+
+Use the slint::select_bundled_translation function to change translations at runtime.
+
+Use the slint.init_translations() function to change translations at runtime.
+
+## Previewing Translations with slint-viewer
+Section titled “Previewing Translations with slint-viewer”
+
+Make sure the gettext feature was enabled when building slint-viewer.
+Use the --translation-domain and --translation-dir command line options to load translations for preview.
+
+## Selecting the Decimal Separator
+Section titled “Selecting the Decimal Separator”
+
+Conversions between float and string use the locale’s decimal separator,
+for example the comma (,) in a German locale.
+See Converting Between Numbers and Strings for the conversion rules.
+
+Read the currently used separator from Platform.decimal-separator.
+It defaults to the dot (.).
+
+When bundling translations, the decimal separator of each language is determined at compile time
+and bundled with the application:
+selecting a translation also selects its decimal separator.
+When the gettext feature is enabled, the decimal separator is determined from the system locale.
+
+PreviousFocus HandlingNextFont Handling
+© 2026 SixtyFPS GmbH

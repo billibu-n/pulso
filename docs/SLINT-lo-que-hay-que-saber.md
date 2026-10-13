@@ -197,3 +197,69 @@ se respeta la proporción**.
 > y hay que hacerlos a mano. **Es verdad a medias**: no trae un elemento «gráfico», **pero sí trae las
 > piezas** — el trazado, el escalado por caja, y las funciones para recorrerlo. **Lo que hay que
 > escribir es la lista de puntos; el dibujo lo hace `Path`.**
+
+---
+
+## 10. Estudiar el lenguaje a fondo (2026-10-13) — y lo que apareció
+
+**Se trajeron 32 páginas de la documentación oficial** a `docs/slint-fuentes/` (texto, con fecha y
+dirección), y se estudiaron **por temas**. Aquí va lo que **cambia decisiones** — no un resumen: **lo
+que hay que saber antes de escribir la aplicación**.
+
+### 10.1 · **NO se puede cambiar de estado desde Rust.** Y es lo más importante de todo
+
+**Verificado en la API**: los estados de Slint **solo existen en `private_unstable_api`**. En la API
+pública de Rust **no hay `set_state` ni nada equivalente** — los estados son una **construcción del
+compilador**, ligada a condiciones `when`.
+
+> **Consecuencia para el diseño, y hay que decidirlo AHORA, no al final**: el recorrido del usuario
+> tiene varias pantallas (sin datos → vinculado → analizado), y **quien decide en cuál está es Rust**
+> —porque depende de si hay datos, de si hay cuenta, de si ya se analizó—.
+>
+> **La forma que sí funciona**: declarar **una propiedad** (`in-out property <int> pantalla`) y escribir
+> los estados **condicionados a ella**. Así **Rust manda por la propiedad**, y **Slint hace la
+> transición**. Si esto se descubre al final, hay que rehacer las pantallas.
+
+### 10.2 · Las trampas del `Timer`
+
+**`running` vale `true` por defecto.** Un temporizador que no se apaga **consume CPU para siempre** — y
+en un móvil, **batería**. Se apaga al soltarlo.
+
+*Para qué se necesita aquí*: **el «se queda detenido» de los cinco segundos de arranque**. Un `Timer`
+que muestre progreso **mientras se leen los 102 ficheros**.
+
+### 10.3 · Las listas: no reinstalar el modelo
+
+> *«Es más eficiente operar sobre el modelo y enviar los cambios… que reinstalar la propiedad con un
+> modelo distinto.»*
+
+**Para la lista de sesiones** (102 y subiendo): se opera sobre el modelo, **no se reemplaza**.
+
+### 10.4 · Android: lo accionable, y una condición
+
+| dato | valor |
+|---|---|
+| **mínimo de Android** | **API 26 (Android 8.0)** — por debajo, **falla** |
+| **el crate** | tiene que ser **`cdylib`** |
+| **el punto de entrada** | `android_main(app: slint::android::AndroidApp)` |
+| **la característica** | `backend-android-activity-06` |
+| **variables** | `ANDROID_HOME` y `ANDROID_NDK_ROOT` |
+| **empaquetar** | `cargo apk` o `x build --platform android --format apk` |
+| **guardar estado** | **no lo da Slint**: `StateSaver::store(&[u8])` del ciclo de vida de Android |
+
+**Y una advertencia honesta**: **la documentación de Slint NO trae una página del ciclo de vida de
+Android.** Lo accionable sale de `android-activity` y de ejemplos. **No hay una guía que seguir paso a
+paso** — eso hay que construirlo y **probarlo en el teléfono**.
+
+### 10.5 · Herramientas de depuración que sí existen
+
+| variable | para qué |
+|---|---|
+| `SLINT_DEBUG_PERFORMANCE` | **rendimiento**: `refresh_lazy`/`refresh_full_speed` + `console`/`overlay` |
+| `SLINT_SLOW_ANIMATIONS` | ver las animaciones despacio |
+| `SLINT_SCALE_FACTOR` | probar otra densidad de pantalla |
+| `slint-viewer --screenshot` | **una captura sin abrir ventana** — sirve para lo visual |
+| `SLINT_LIVE_PREVIEW=1` | ver los cambios del `.slint` al guardar |
+
+**`slint-viewer --screenshot` merece mirarse**: sería **otra forma de ver la interfaz sin abrirla en la
+pantalla del dueño**.

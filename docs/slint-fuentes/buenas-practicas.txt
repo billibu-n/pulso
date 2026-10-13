@@ -1,0 +1,70 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Best Practices
+
+In the following sections, we provide you with lessons we’ve learned of the years. This will help you avoid some pitfalls, tricky situations, and improve maintainability of your UI code.
+
+## Accessibility
+Section titled “Accessibility”
+
+When designing custom components, consider early on to declare accessibility properties. At least a role, possibly a label, as well as actions.
+
+If you’re developing on Windows, then Accessibility Insights ↗ tool for windows is a great tool to help you find and fix accessibility issues.
+
+If you’re developing on macOS, the Accessibility Inspector ↗ offers similar functionality. Note that it requires the application to be built as bundle.
+
+- 
+```
+component CustomButton { // ... in property <string> text;
+ accessible-role: button; accessible-label: self.text; accessible-action-default => { /* simulate click */ }}
+```
+
+ text; accessible-role: button; accessible-label: self.text; accessible-action-default => { /* simulate click */ }}">
+
+slint
+
+## Separate Code, UI, and Assets
+Section titled “Separate Code, UI, and Assets”
+
+Many projects start out small, with just a few files. But before you know it, your team grows, files get added, and it becomes harder to see forest for the trees. We recommend starting with the following basic directory structure:
+
+```
+my-project├── src│ ├── main.cpp / main.rs / main.js / main.py│ <this is where your main business logic lives>├── ui ├── app-window.slint <the entry point for your Slint UI> ├── <additional .slint files here> ├── images ├── logo.svg ├── highlight-marker.svg ├── <all your images go here>
+```
+
+├── ui ├── app-window.slint  ├──  ├── images ├── logo.svg ├── highlight-marker.svg ├── ">
+
+plaintext
+
+## Translations
+Section titled “Translations”
+
+- When adding user-visible strings to your UI, consider early on to mark them as translatable by wrapping them in @tr("...").
+
+- Avoid + for concatenating strings, prefer {} substitutions. This gives translators the option of re-ordering the arguments for the most natural translation.
+
+Caution
+
+```
+export component Example { property <string> name;
+ Text { text: "Ink Level Controls"; // Oooops, forgot to mark as translatable } Text { text: @tr("Hello, ") + name; // Oooops, this is difficult to translate }}
+```
+
+ name; Text { text: "Ink Level Controls"; // Oooops, forgot to mark as translatable } Text { text: @tr("Hello, ") + name; // Oooops, this is difficult to translate }}">
+
+slint
+
+Tip
+
+```
+export component Example { property <string> name;
+ Text { text: @tr("Ink Level Controls"); } Text { text: @tr("Hello, {}", name); // Good, now the translator can re-order }}
+```
+
+ name; Text { text: @tr("Ink Level Controls"); } Text { text: @tr("Hello, {}", name); // Good, now the translator can re-order }}">
+
+slint
+
+PreviousDrag and DropNextThird Party Libraries
+© 2026 SixtyFPS GmbH

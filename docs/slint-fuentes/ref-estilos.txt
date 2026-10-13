@@ -1,0 +1,115 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Widget Styles
+
+You can modify the look of these widgets by choosing a style.
+
+The styles available include:
+
+Style NameLight VariantDark VariantDescription
+fluentfluent-lightfluent-darkThese variants belong to the Fluent style, which is based on the Fluent Design System ↗.
+materialmaterial-lightmaterial-darkThese variants are part of the Material style, which follows the Material Design ↗.
+cupertinocupertino-lightcupertino-darkThe Cupertino variants emulate the style used by macOS.
+cosmiccosmic-lightcosmic-darkThe Cosmic variants emulate the style used by Cosmic Desktop ↗.
+qtThe Qt style uses Qt ↗ to render widgets. This style requires Qt to be installed on your system.
+nativeThis is an alias to one of the other styles depending on the platform. It is cupertino on macOS, fluent on Windows, material on Android, qt on linux if Qt is available, or fluent otherwise.
+
+By default, the styles automatically adapt to the system’s dark or light color setting. Select a -light or -dark variant to override the system setting and always show either dark or light colors.
+
+The widget style is determined at your project’s compile time. The method to select a style depends on how you use Slint.
+
+If no style is selected, fluent is the default on all platforms.
+
+- Rust
+- C++
+- NodeJS
+- Python
+
+You can select the style before starting your compilation by setting the SLINT_STYLE environment variable to the name of your chosen style.
+When using the slint_build API, call the slint_build::compile_with_config() ↗ function.
+When using the slint_interpreter API, call the slint_interpreter::ComponentCompiler::set_style() ↗ function.
+
+Define a SLINT_STYLE CMake cache variable to contain the style name as a string. This can be done, for instance, on the command line:
+- Terminal window
+```
+cmake -DSLINT_STYLE="material" /path/to/source
+```
+
+bash
+
+You can select the style by setting the style property in LoadFileOptions passed to loadFile:
+
+```
+import * as slint from "slint-ui";let ui = slint.loadFile("main.slint", { style: "fluent" });let main = new ui.Main();main.greeting = "Hello friends";
+```
+
+js
+
+You can specify the style by setting the SLINT_STYLE environment variable in the beginning of your Python script:
+
+```
+import slintimport os
+
+os.environ["SLINT_STYLE"] = "material"# or# os.environ.setdefault("SLINT_STYLE", "material")
+
+class MainWindow(slint.loader.ui.app.AppWindow): ...
+
+main_window = MainWindow()main_window.show()main_window.run()
+```
+
+python
+
+## Using Style Properties In Your Own Components
+Section titled “Using Style Properties In Your Own Components”
+
+The global Palette and StyleMetrics properties can be accessed and will be set to the appropriate values of the current style.
+
+```
+import { Palette, StyleMetrics } from "std-widgets.slint";
+export component Example inherits Window { Rectangle { border-radius: StyleMetrics.layout-padding; border-width: 2px; border-color: Palette.border; background: Palette.background; }}
+```
+
+slint
+
+In situations where the specific property is not available you can detect the style via Platform.style-name.
+
+```
+import { Palette } from "std-widgets.slint";
+export component Example inherits Window { Rectangle { border-radius: Platform.style-name == "fluent" ? 4px : 2px; border-width: Platform.style-name == "fluent" ? 2px : 1px; border-color: Palette.border; background: Palette.background; }}
+```
+
+slint
+
+## Previewing Designs With slint-viewer
+Section titled “Previewing Designs With slint-viewer”
+
+Select the style either by setting the SLINT_STYLE environment variable, or by passing the style name with the --style argument:
+
+slint-viewer —style material /path/to/design.slint
+
+## Previewing Designs With The Slint Visual Studio Code Extension
+Section titled “Previewing Designs With The Slint Visual Studio Code Extension”
+
+To select the style, first open the Visual Studio Code settings editor:
+
+- Windows
+- macOS
+- Linux
+
+File > Preferences > Settings
+
+Code > Preferences > Settings
+
+File > Preferences > Settings
+
+Then enter the style name in Extensions > Slint > Preview:Style
+
+## Previewing Designs With The Generic LSP Process
+Section titled “Previewing Designs With The Generic LSP Process”
+
+Choose the style by setting the SLINT_STYLE environment variable before launching the process.
+Alternatively, if your IDE integration allows for command line parameters, you can specify the style using --style.
+
+PreviousOverviewNextPalette
+© 2026 SixtyFPS GmbH

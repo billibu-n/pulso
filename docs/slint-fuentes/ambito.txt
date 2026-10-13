@@ -1,0 +1,32 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Name Resolution (Scope)
+
+When you use a name without an element prefix, Slint looks it up on the current element first,
+then on its parent, and so on up to the root of the component.
+When you qualify a name with an element (or self, parent, root),
+only that element is searched.
+
+This means a function can shadow another function from an ancestor element:
+
+- 
+```
+export component Example { property <int> secret_number: my-function(); public pure function my-function() -> int { return 1; }
+ VerticalLayout { public pure function my-function() -> int { return 2; }
+ Text { text: "The secret number is " + my-function(); public pure function my-function() -> int { return 3; } }
+ Text { text: "The other secret number is " + my-function(); } }}
+```
+
+ secret_number: my-function(); public pure function my-function() -> int { return 1; } VerticalLayout { public pure function my-function() -> int { return 2; } Text { text: "The secret number is " + my-function(); public pure function my-function() -> int { return 3; } } Text { text: "The other secret number is " + my-function(); } }}">
+
+slint
+
+In this example, secret_number is 1,
+and the labels say “The secret number is 3” and “The other secret number is 2”.
+
+The exact rules are in the Name Resolution
+chapter of the language reference.
+
+PreviousFunctions and CallbacksNextStructs and Enums
+© 2026 SixtyFPS GmbH

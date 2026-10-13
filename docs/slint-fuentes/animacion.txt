@@ -1,0 +1,36 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Animations
+
+Animate a property change by declaring an animation for it with the
+animate keyword: every change of that property then plays the animation —
+no matter whether it comes from a binding, a state change, or your business logic.
+
+- 
+```
+export component Example inherits Window { preferred-width: 100px; preferred-height: 100px;
+ background: area.pressed ? blue : red; animate background { duration: 250ms; }
+ area := TouchArea {}}
+```
+
+slint
+
+This animates the color property for 250ms whenever it changes.
+
+Fine-tune the animation with delay, duration, iteration-count, easing,
+direction, and enabled, and animate several properties with the same animation:
+
+```
+animate x, y { duration: 100ms; easing: ease-out-bounce; }
+```
+
+slint
+
+The Animations chapter of the language
+reference describes every parameter, and the
+easing type lists the
+available easing curves.
+
+PreviousRepetition and Data ModelsNextStates and Transitions
+© 2026 SixtyFPS GmbH

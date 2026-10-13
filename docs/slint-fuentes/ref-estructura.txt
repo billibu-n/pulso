@@ -1,0 +1,93 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# File Structure
+
+## A Slint Source File
+Section titled “A Slint Source File”
+A .slint source file is a sequence of zero or more top-level items, separated only by whitespace and comments.
+A source file that contains only whitespace and comments is well-formed and defines no components.
+
+## Top-Level Items
+Section titled “Top-Level Items”
+
+A top-level item is a component definition, an import statement, an export statement,
+a struct or enum declaration, or a global declaration.
+
+## Component Definitions
+Section titled “Component Definitions”
+A component definition has one of the following two forms:
+- 
+```
+component Name { /* component body */ }component Name inherits Base { /* component body */ }
+```
+
+slint
+
+The identifier following the component keyword is the name of the component.
+The first form defines a component with no explicit base;
+the second form defines a component that inherits from the element type named by Base.
+A component that inherits extends its base:
+an instance of the component is an element of type Base.
+The bindings of the component body apply to that element,
+and the elements instantiated in the component body become children of the element.
+The component has the properties of Base in addition to those declared in its body,
+and a binding in the component body may bind them.
+The identifier Base shall resolve to a built-in element, to a component defined earlier in the file, or to an imported component.
+The braces { and } delimit the component body.
+
+## Component Bodies
+Section titled “Component Bodies”
+A component body is a sequence of zero or more element instantiations, bindings, and property declarations, separated only by whitespace and comments.
+A component body that contains no element instantiations is well-formed.
+
+## Element Instantiations
+Section titled “Element Instantiations”
+An element instantiation has the form:
+
+```
+TypeName { /* element body */ }
+```
+
+slint
+
+The identifier TypeName shall resolve to a built-in or user-defined component.
+An instantiation may be preceded by an id and :=, as in foo := Rectangle { },
+naming the element within the component,
+so that a reference can reach its properties.
+
+```
+export component Example inherits Window { frame := Rectangle { background: #2a6e3f; width: 120px; } Rectangle { background: #1a4f2c; width: frame.width; }}
+```
+
+slint
+
+An id is an identifier,
+so two ids are the same id when their
+normalized forms are equal.
+An id shall be unique within the component.
+The uniqueness rule covers the whole component, the elements inside for and if subtrees included.
+The names self, parent, and root are reserved and shall not be used as an id.
+
+Instantiating Window, or a component that inherits Window, as an element is deprecated:
+it does not create a separate window.
+
+The braces delimit the element body.
+An element body is a sequence of zero or more nested element instantiations and bindings, separated only by whitespace and comments.
+A nested element instantiation is a child of the element instantiation in whose body it appears.
+The child relationship forms a tree rooted at the elements that appear directly in a component body.
+
+## Example
+Section titled “Example”
+The following is a complete, well-formed .slint source file:
+
+```
+export component Hello inherits Window { Rectangle { } Rectangle { }}
+```
+
+slint
+
+It exports one component, Hello, which inherits from Window and whose body contains two top-level Rectangle instantiations.
+
+PreviousLexical StructureNextName Resolution
+© 2026 SixtyFPS GmbH

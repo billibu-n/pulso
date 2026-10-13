@@ -1,0 +1,40 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# Spinner
+
+- 
+```
+import { Spinner } from "std-widgets.slint";export component Example inherits Window { width: 80px; height: 80px; Spinner { progress: 50%; }}
+```
+
+slint
+
+The Spinner informs the user about the status of an on-going operation, such as loading data from the network. It provides the same properties as
+ProgressIndicator but differs in shape.
+
+## Properties
+Section titled “Properties”
+
+## indeterminate
+Section titled “indeterminate”
+
+booldefault: false
+
+Set to true if the progress of the operation cannot be determined by value.
+
+## progress
+Section titled “progress”
+
+floatdefault: 0
+
+Percentage of completion, as value between 0 and 1. Values less than 0 or greater than 1 are capped.
+
+```
+Spinner { progress: 0.5;}
+```
+
+slint
+
+PreviousSpinBoxNextStandardButton
+© 2026 SixtyFPS GmbH

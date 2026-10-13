@@ -119,6 +119,17 @@ export component ArmazonMovil inherits Rectangle {
     VerticalLayout {
         // --- La cabecera: el cromo de arriba ---
         cabecera := Rectangle {
+            // `accessible-id` es la forma OFICIAL de identificar un elemento para PRUEBAS y para
+            // accesibilidad. Buscar por el nombre del componente (`ArmazonMovil::cabecera`) funciona,
+            // pero **depende de como se llame por dentro**: si alguien lo renombra, la prueba se rompe
+            // sin que nada este mal. Con esto, el nombre es **una decision, no una consecuencia**.
+            //
+            // Y EXIGE UN PAPEL, y Slint lo dice al compilar: "The `accessible-id` property can only be
+            // set in combination to `accessible-role`". Los papeles de referencia -- `banner`, `main`,
+            // `navigation`, `region`, `form` -- **identifican las zonas grandes de la pantalla**, y son
+            // los que un lector de pantalla usa para saltar de una a otra.
+            accessible-role: banner;
+            accessible-id: "cabecera";
             height: Medidas.cabecera;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             Text {
@@ -130,6 +141,10 @@ export component ArmazonMovil inherits Rectangle {
         }
         // --- El contenido: apilado, y el armazon CRECE con el (AU-05) ---
         Rectangle {
+            // `main`: la zona del trabajo. Con `banner` arriba y `navigation` abajo, la pantalla
+            // queda **navegable por zonas** para quien use un lector de pantalla.
+            accessible-role: main;
+            accessible-id: "contenido";
             vertical-stretch: 1;
             background: transparent;
             VerticalLayout {
@@ -141,6 +156,9 @@ export component ArmazonMovil inherits Rectangle {
         }
         // --- La navegacion: el cromo de abajo ---
         nav := Rectangle {
+            // `navigation`: el papel de referencia que corresponde a una barra de navegacion.
+            accessible-role: navigation;
+            accessible-id: "navegacion";
             height: Medidas.nav_movil;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             HorizontalLayout {

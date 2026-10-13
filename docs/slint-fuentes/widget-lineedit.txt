@@ -1,0 +1,260 @@
+This is the unreleased documentation for the next version of Slint. Switch to the latest released version.
+You are viewing contents of an older version. Switch to the latest released version.
+
+# LineEdit
+
+- 
+```
+import { LineEdit, VerticalBox } from "std-widgets.slint";export component Example inherits Window { width: 200px; height: 60px;
+ VerticalBox { LineEdit { placeholder-text: "Enter text here"; } }}
+```
+
+slint
+
+A widget used to enter a single line of text. See TextEdit for
+a widget able to handle several lines of text.
+
+## Properties
+Section titled “Properties”
+
+### enabled
+Section titled “enabled”
+
+booldefault: true
+
+When false, nothing can be entered.
+
+### font-size
+Section titled “font-size”
+
+lengthdefault: 0px
+
+The size of the font of the input text
+
+### font-family
+Section titled “font-family”
+
+stringdefault: ""
+
+The font family of the input text
+
+### font-italic
+Section titled “font-italic”
+
+booldefault: false
+
+The italic state of the font of the input text
+
+### has-focus
+Section titled “has-focus”
+
+bool(out)
+
+Set to true when the line edit currently has the focus
+
+### horizontal-alignment
+Section titled “horizontal-alignment”
+
+enum TextHorizontalAlignmentdefault: left
+
+The horizontal alignment of the text.
+
+TextHorizontalAlignment
+
+This enum describes the different types of alignment of text along the horizontal axis of a Text or StyledText element.
+
+- start: The text will be aligned with the start edge of the containing box. This could be left or right depending on the direction of the text.
+
+- end: The text will be aligned with the end edge of the containing box. This could be left or right depending on the direction of the text.
+
+- left: The text will be aligned with the left edge of the containing box.
+
+- center: The text will be horizontally centered within the containing box.
+
+- right: The text will be aligned to the right of the containing box.
+
+### input-method-hints
+Section titled “input-method-hints”
+
+struct InputMethodHintsdefault: a struct with all default values
+
+Hints for the platform’s input method (such as a soft keyboard), for example to configure auto-capitalization.
+The input method may take these hints into account, but might also ignore them.
+
+```
+LineEdit { input-method-hints: { capitalization: CapitalizationMode.words };}
+```
+
+slint
+
+InputMethodHints
+
+This structure holds the hints that a TextInput gives to the platform’s input method
+(e.g. a soft keyboard) about the expected input.
+The input method may take these hints into account, but might also ignore them.
+
+- capitalization (CapitalizationMode): The auto-capitalization behavior that the input method should apply. Defaults to sentences.
+
+- auto-correct (bool): Hint that the input method may automatically correct spelling mistakes as the user types. Defaults to true.
+
+- auto-complete (bool): Hint that the input method may offer auto-completion suggestions for the entered text. Defaults to true.
+
+### input-type
+Section titled “input-type”
+
+enum InputTypedefault: text
+
+The way to allow special input viewing properties such as password fields.
+
+```
+LineEdit { input-type: password;}
+```
+
+slint
+
+InputType
+
+This enum is used to define the type of the input field.
+
+- text: The default value. This will render all characters normally
+
+- password: This will render all characters with a character that defaults to ”*”
+
+- number: This will only accept and render number characters (0-9)
+
+- decimal: This will accept and render characters if it’s valid part of a decimal, using the decimal separator of the current locale
+
+- search: This identifies the input field as a search box. Characters are rendered normally, but assistive technologies are informed that the field is used for searching or filtering content.
+
+### placeholder-text
+Section titled “placeholder-text”
+
+stringdefault: ""
+
+A placeholder text being shown when there is no text in the edit field
+
+### read-only
+Section titled “read-only”
+
+booldefault: false
+
+When set to true, text editing via keyboard and mouse is disabled but selecting text is still
+enabled as well as editing text programmatically.
+
+### text
+Section titled “text”
+
+string(in-out)default: ""
+
+The text being edited
+
+```
+LineEdit { text: "Initial text";}
+```
+
+slint
+
+## Functions
+Section titled “Functions”
+
+### focus()
+Section titled “focus()”
+
+Call this function to focus the LineEdit and make it receive future keyboard events.
+
+### clear-focus()
+Section titled “clear-focus()”
+
+Call this function to remove keyboard focus from this LineEdit if it currently has the focus. See also FocusHandling.
+
+### set-selection-offsets(anchor: int, focus: int)
+Section titled “set-selection-offsets(anchor: int, focus: int)”
+
+Selects the text between two UTF-8 offsets: anchor is the end of the selection that stays put and focus the end the cursor moves to, so focus may precede anchor to select backwards.
+Pass the same value for both to place the text cursor at that offset without selecting anything.
+
+### select-all()
+Section titled “select-all()”
+
+Selects all text.
+
+### clear-selection()
+Section titled “clear-selection()”
+
+Clears the selection.
+This function takes effect regardless of the read-only and enabled properties.
+
+### copy()
+Section titled “copy()”
+
+Copies the selected text to the clipboard.
+
+### cut()
+Section titled “cut()”
+
+Copies the selected text to the clipboard and removes it from the editable area.
+This function takes effect regardless of the read-only and enabled properties.
+
+### paste()
+Section titled “paste()”
+
+Pastes the text content of the clipboard at the cursor position.
+This function takes effect regardless of the read-only and enabled properties.
+
+### undo()
+Section titled “undo()”
+
+Undoes the last text operation.
+This function takes effect regardless of the read-only and enabled properties.
+
+### redo()
+Section titled “redo()”
+
+Redoes the last undone text operation.
+This function takes effect regardless of the read-only and enabled properties.
+
+## Callbacks
+Section titled “Callbacks”
+
+### accepted(string)
+Section titled “accepted(string)”
+
+Invoked when the enter key is pressed.
+
+```
+LineEdit { accepted(text) => { debug("Accepted: ", text); }}
+```
+
+ { debug("Accepted: ", text); }}">
+
+slint
+
+### edited(string)
+Section titled “edited(string)”
+
+Emitted when the text has changed because the user modified it
+
+```
+LineEdit { edited(text) => { debug("Text edited: ", text); }}
+```
+
+ { debug("Text edited: ", text); }}">
+
+slint
+
+### key-pressed(KeyEvent) -> EventResult
+Section titled “key-pressed(KeyEvent) -> EventResult”
+
+Invoked when a key is pressed, the argument is a KeyEvent struct. Use this callback to
+handle keys before LineEdit does. Return accept to indicate that you’ve handled the event, or return
+reject to let LineEdit handle it.
+
+### key-released(KeyEvent) -> EventResult
+Section titled “key-released(KeyEvent) -> EventResult”
+
+Invoked when a key is released, the argument is a KeyEvent struct. Use this callback to
+handle keys before LineEdit does. Return accept to indicate that you’ve handled the event, or return
+reject to let LineEdit handle it.
+
+PreviousSwitchNextListView
+© 2026 SixtyFPS GmbH

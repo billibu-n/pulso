@@ -32,6 +32,11 @@ pub struct PersonaJson {
     pub pulso_reposo: Quizas<u16>,
     pub pulso_maximo_medido: Quizas<u16>,
     pub sexo: Quizas<String>,
+    /// Nuevos: los que aporta una bascula de composicion corporal. Si no vienen, quedan como Falta,
+    /// y el motor **calcula igual** -- solo que con un margen mas ancho.
+    pub altura_cm: Quizas<f32>,
+    pub grasa_corporal_pct: Quizas<f32>,
+    pub masa_muscular_kg: Quizas<f32>,
 }
 
 impl PersonaJson {
@@ -45,6 +50,9 @@ impl PersonaJson {
             peso_kg: segun(self.peso_kg),
             pulso_reposo: segun(self.pulso_reposo),
             pulso_maximo_medido: segun(self.pulso_maximo_medido),
+            altura_cm: segun(self.altura_cm),
+            grasa_corporal_pct: segun(self.grasa_corporal_pct),
+            masa_muscular_kg: segun(self.masa_muscular_kg),
             sexo: match self.sexo.as_deref() {
                 Some("femenino") | Some("F") => Dato::Hay(Sexo::Femenino),
                 Some("masculino") | Some("M") => Dato::Hay(Sexo::Masculino),

@@ -47,6 +47,9 @@ fn main() {
         pulso_maximo_medido: hay(186u16), // medido: manda sobre la estimacion
         peso_kg: hay(68.0f32),
         sexo: hay(Sexo::Femenino),
+        altura_cm: hay(172.0f32),
+        grasa_corporal_pct: hay(22.0f32),
+        masa_muscular_kg: hay(28.0f32),
     };
 
     println!("\n\n▌ CASO 1 · CON LA FRECUENCIA MAXIMA MEDIDA\n");

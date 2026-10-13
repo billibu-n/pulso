@@ -78,8 +78,18 @@ pub struct Persona {
     pub pulso_maximo_medido: Dato<u16>,
     /// Peso en kilogramos.
     pub peso_kg: Dato<f32>,
-    /// Sexo, para las fórmulas que lo usan. **Sin él, alguna fórmula no se puede aplicar.**
+    /// Sexo, para las fórmulas que lo usan.
     pub sexo: Dato<Sexo>,
+    /// **Altura en centímetros.** Sirve para el índice de masa corporal.
+    pub altura_cm: Dato<f32>,
+    /// **Porcentaje de grasa corporal**, de una báscula de composición.
+    ///
+    /// ESTE DATO VALE MUCHO, y no es una opinión: hay ecuaciones de frecuencia máxima que lo usan y
+    /// publican un error de **±7,5 pulsaciones** frente a las **±12** de las que solo usan la edad.
+    /// O sea que **este dato, por sí solo, estrecha el margen casi a la mitad**.
+    pub grasa_corporal_pct: Dato<f32>,
+    /// Masa muscular en kilogramos, si la báscula la da.
+    pub masa_muscular_kg: Dato<f32>,
 }
 
 impl Persona {
@@ -91,7 +101,29 @@ impl Persona {
             pulso_maximo_medido: Dato::Falta,
             peso_kg: Dato::Falta,
             sexo: Dato::Falta,
+            altura_cm: Dato::Falta,
+            grasa_corporal_pct: Dato::Falta,
+            masa_muscular_kg: Dato::Falta,
         }
+    }
+
+    /// Cuántos datos de la persona se conocen, de los que sirven para afinar.
+    ///
+    /// Existe para poder decir **«con estos datos, el margen es este»** — y para que el usuario vea que
+    /// **cada dato que aporta cuenta**.
+    pub fn cuantos_datos(&self) -> usize {
+        [
+            self.edad.lo_hay(),
+            self.pulso_reposo.lo_hay(),
+            self.pulso_maximo_medido.lo_hay(),
+            self.peso_kg.lo_hay(),
+            self.altura_cm.lo_hay(),
+            self.grasa_corporal_pct.lo_hay(),
+            self.masa_muscular_kg.lo_hay(),
+        ]
+        .iter()
+        .filter(|x| **x)
+        .count()
     }
 }
 

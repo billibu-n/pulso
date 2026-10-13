@@ -18,12 +18,15 @@ pub mod datos;
 pub mod esfuerzo;
 pub mod fuentes;
 pub mod formulas;
+pub mod formulas_v2;
 pub mod juicio;
+pub mod rango;
 pub mod tendencia;
 
 pub use datos::{Dato, Persona, Sesion};
 pub use esfuerzo::{NivelSalto, Salto};
 pub use fuentes::{Consenso, Procedencia, Valor};
+pub use rango::{Precision, Rango};
 pub use tendencia::{Direccion, Serie, Tendencia};
 pub use juicio::{Confianza, Falta, Fundamento, Juicio};
 

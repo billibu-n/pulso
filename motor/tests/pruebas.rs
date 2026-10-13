@@ -24,6 +24,9 @@ fn ana() -> Persona {
         pulso_maximo_medido: Dato::Falta,
         peso_kg: Dato::Hay(68.0),
         sexo: Dato::Hay(Sexo::Femenino),
+        altura_cm: Dato::Hay(172.0),
+        grasa_corporal_pct: Dato::Hay(22.0),
+        masa_muscular_kg: Dato::Hay(28.0),
     }
 }
 
@@ -629,4 +632,177 @@ fn la_tendencia_del_VOLUMEN_no_se_confunde_con_la_del_RENDIMIENTO() {
     // Y las dos tocan fondo en el mismo mes: el de mas volumen.
     assert_eq!(tv.minimo.as_ref().unwrap().fecha, "2026-10-11");
     assert_eq!(tr.minimo.as_ref().unwrap().fecha, "2026-07-31", "su punto mas bajo fue el mes de mas carga");
+}
+
+// ======================== 10. EL REDISEÑO: SIEMPRE RESPONDE, CON SU MARGEN
+//
+// Estas pruebas nacen de una corrección del dueño, y son las más importantes del proyecto:
+//
+//   «No es posible que solo funcione la aplicación con toda la data, debe poder funcionar con
+//    información nula, pues no puede fallar por falta de información. Más información proporciona
+//    más precisión, pero no limita.»
+//
+// Antes, el motor SE NEGABA a calcular cuando faltaba un dato. Ahora SIEMPRE responde, y la
+// honestidad viaja en el margen.
+
+use motor::formulas_v2::{self, OrigenMaxima};
+use motor::rango::{Precision, Rango};
+
+/// Una persona SIN NINGÚN DATO. El caso extremo.
+fn nadie() -> Persona {
+    Persona::desconocida()
+}
+
+#[test]
+fn SIN_NINGUN_DATO_el_motor_responde_igual_y_lo_dice() {
+    // El caso que antes fallaba. Ahora tiene que dar un número.
+    let m = formulas_v2::pulso_maximo(&nadie());
+    assert!(m.rango.valor > 0.0, "sin datos TIENE que responder un numero");
+    assert_eq!(m.origen, OrigenMaxima::DePoblacion, "y decir de donde sale");
+    assert!(m.rango.margen > 0.0, "y con su margen: no puede fingir que es exacto");
+    assert!(!m.ganaria.is_empty(), "y decir que ganaria el usuario aportando datos");
+}
+
+#[test]
+fn las_zonas_se_calculan_SIEMPRE_aunque_no_haya_ni_un_dato() {
+    // Lo que pedía el dueño, literal: la aplicación no puede fallar por falta de información.
+    let z = formulas_v2::zonas(&nadie());
+    assert_eq!(z.len(), 4, "las cuatro zonas, siempre");
+    for (zona, r) in &z {
+        assert!(r.valor > 0.0, "la zona {} tiene que tener un limite", zona.nombre());
+        assert!(r.margen > 0.0, "y su margen");
+    }
+    // Y tienen que ir en orden: suave < moderada < fuerte < maxima.
+    let valores: Vec<f64> = z.iter().map(|(_, r)| r.valor).collect();
+    let mut ordenados = valores.clone();
+    ordenados.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(valores, ordenados, "las zonas tienen que ir de menos a mas");
+}
+
+#[test]
+fn MAS_DATOS_ESTRECHAN_EL_MARGEN_y_eso_es_lo_que_el_dueno_pide() {
+    // Aquí está la frase del dueño convertida en una prueba:
+    //   «Más información proporciona más precisión, pero no limita».
+    // Se comprueba que el margen se estrecha al añadir datos, en tres escalones.
+    let sin_nada = formulas_v2::pulso_maximo(&nadie());
+
+    let mut con_edad = nadie();
+    con_edad.edad = Dato::Hay(60);
+    let solo_edad = formulas_v2::pulso_maximo(&con_edad);
+
+    let mut con_todo = con_edad.clone();
+    con_todo.peso_kg = Dato::Hay(70.0);
+    con_todo.grasa_corporal_pct = Dato::Hay(19.0);
+    let con_composicion = formulas_v2::pulso_maximo(&con_todo);
+    let _ = &con_composicion;
+
+    let mut medido = con_todo.clone();
+    medido.pulso_maximo_medido = Dato::Hay(179);
+    let con_medida = formulas_v2::pulso_maximo(&medido);
+
+    // Los cuatro responden. Y el margen va de más ancho a más estrecho.
+    assert!(
+        sin_nada.rango.margen >= solo_edad.rango.margen,
+        "sin nada, el margen no puede ser MAS estrecho que con la edad"
+    );
+    assert!(
+        solo_edad.rango.margen > con_composicion.rango.margen,
+        "la composicion corporal TIENE que estrechar el margen: {:.1} vs {:.1}",
+        solo_edad.rango.margen,
+        con_composicion.rango.margen
+    );
+    assert!(
+        con_composicion.rango.margen > con_medida.rango.margen,
+        "medirla es lo mejor: {:.1} vs {:.1}",
+        con_composicion.rango.margen,
+        con_medida.rango.margen
+    );
+}
+
+#[test]
+fn la_precision_se_ve_de_un_vistazo_y_mejora_con_los_datos() {
+    // El usuario tiene que poder saber si el numero es fiable SIN leer el margen.
+    let mut p = nadie();
+    p.edad = Dato::Hay(60);
+    let solo_edad = formulas_v2::precision_de_conjunto(&p);
+
+    p.peso_kg = Dato::Hay(70.0);
+    p.grasa_corporal_pct = Dato::Hay(19.0);
+    let con_composicion = formulas_v2::precision_de_conjunto(&p);
+
+    // Los cortes van por PULSACIONES, no por porcentaje: lo que mueve una zona son los latidos.
+    // ±12 (solo edad) -> Aceptable.  ±7,5 (con composicion) -> Buena.
+    assert_eq!(solo_edad, Precision::Aceptable, "±12 pulsaciones es un margen apreciable");
+    assert_eq!(con_composicion, Precision::Buena, "±7,5 ya sirve para decidir");
+}
+
+#[test]
+fn el_origen_dice_QUE_LE_FALTA_al_usuario_para_que_el_numero_sea_mejor() {
+    // No basta con decir «el margen es ancho»: hay que decir QUE hacer para estrecharlo.
+    let mut p = nadie();
+    p.edad = Dato::Hay(60);
+    let m = formulas_v2::pulso_maximo(&p);
+    let falta = m.origen.que_falta().expect("tiene que decir que falta");
+    assert!(falta.contains("composición"), "y tiene que ser util: {falta}");
+
+    // Y si ya esta medida, no falta nada.
+    p.pulso_maximo_medido = Dato::Hay(179);
+    assert_eq!(formulas_v2::pulso_maximo(&p).origen.que_falta(), None);
+}
+
+#[test]
+fn una_persona_de_la_que_no_sabemos_nada_cuenta_CERO_datos() {
+    // Sirve para que el usuario vea que cada dato que aporta cuenta.
+    assert_eq!(nadie().cuantos_datos(), 0);
+    let mut p = nadie();
+    p.edad = Dato::Hay(60);
+    p.peso_kg = Dato::Hay(70.0);
+    assert_eq!(p.cuantos_datos(), 2);
+}
+
+#[test]
+fn la_precision_nunca_dice_que_algo_es_exacto_si_no_lo_es() {
+    // La honestidad, ahora, vive en el margen. Un dato de poblacion NO puede parecer exacto.
+    let r = Rango::estimado(166.0, 12.0);
+    assert!(r.precision() < 1.0, "una estimacion no puede tener precision perfecta");
+    assert!((r.minimo() - 154.0).abs() < 0.01);
+    assert!((r.maximo() - 178.0).abs() < 0.01);
+    // Y con la composicion, el mismo valor tiene mejor precision.
+    let mejor = Rango::estimado(166.0, 7.5);
+    assert!(mejor.precision() > r.precision(), "menos margen es mas precision");
+}
+
+#[test]
+fn los_margenes_se_combinan_sin_exagerar() {
+    // Sumar los margenes a pelo daria un rango DEMASIADO ancho y asustaria al usuario sin motivo.
+    // Se combinan en cuadratura: raiz de la suma de cuadrados.
+    let solo = motor::rango::suma_de_margenes(&[12.0]);
+    assert!((solo - 12.0).abs() < 0.01, "un solo margen no cambia");
+    let dos = motor::rango::suma_de_margenes(&[12.0, 12.0]);
+    assert!(dos < 24.0, "dos margenes NO se suman a pelo: {dos:.1} < 24");
+    assert!(dos > 12.0, "pero si crecen: {dos:.1} > 12");
+}
+
+#[test]
+fn el_caso_real_del_cliente_sale_CON_MENOS_MARGEN_que_solo_con_la_edad() {
+    // El cliente tiene su composicion corporal (de la bascula) y su umbral medido.
+    // Eso es lo que hace que su resultado sea mas preciso que el de una formula a secas.
+    let mut p = nadie();
+    p.edad = Dato::Hay(60);
+    p.pulso_reposo = Dato::Hay(48);
+    let solo_edad = formulas_v2::pulso_maximo(&p);
+
+    p.peso_kg = Dato::Hay(70.2);
+    p.grasa_corporal_pct = Dato::Hay(19.1);
+    p.altura_cm = Dato::Hay(178.0);
+    let con_todo = formulas_v2::pulso_maximo(&p);
+
+    assert!(
+        con_todo.rango.margen < solo_edad.rango.margen,
+        "con sus datos, el margen tiene que ser menor: {:.1} < {:.1}",
+        con_todo.rango.margen,
+        solo_edad.rango.margen
+    );
+    // Y las zonas se calculan en los dos casos, sin fallar nunca.
+    assert_eq!(formulas_v2::zonas(&p).len(), 4);
 }

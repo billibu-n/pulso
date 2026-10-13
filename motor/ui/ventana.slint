@@ -17,6 +17,7 @@ import { ArmazonEscritorio, ArmazonMovil, Medidas, Seccion } from "armazon.slint
 // EL MARGEN VA CON EL NUMERO, no en una nota al pie: es lo que este motor tiene de distinto, y
 // esconderlo seria quedarse con lo de siempre.
 component Cifra inherits Rectangle {
+    // El id permite MEDIRLO desde las pruebas (AU-63).
     in property <string> numero;
     in property <string> etiqueta;
     in property <bool> oscuro: false;
@@ -30,7 +31,8 @@ component Cifra inherits Rectangle {
     border-color: (root.oscuro ? Oscuro.linea : Claro.linea).with-alpha(0.45);
 
     VerticalLayout {
-        padding: 14px;
+        // 12, como el diseno. Estaba en 14: otro valor cambiado sin decirlo.
+        padding: 12px;
         spacing: 3px;
         Text {
             text: root.numero;
@@ -192,6 +194,8 @@ component Contenido inherits VerticalLayout {
 }
 
 export component Ventana inherits Window {
+    // LOS NOMBRES DE LOS SITIOS, para poder MEDIRLOS desde las pruebas (AU-63).
+    // No son decorativos: sin un nombre, un elemento no se puede consultar ni medir.
     // Lo que el motor entrega. TODO son cadenas: la ventana NO formatea numeros, los recibe hechos.
     in property <[string]> cifras;
     in property <[string]> etiquetas;
@@ -229,6 +233,7 @@ export component Ventana inherits Window {
     callback elegir(int);
 
     if root.es_movil : ArmazonMovil {
+        // El armazon de movil, medible.
         oscuro: root.oscuro;
         titulo: "Pulso";
         secciones: root.las_secciones;

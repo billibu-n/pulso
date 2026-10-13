@@ -22,16 +22,22 @@ import { Claro, Oscuro } from "temas.slint";
 
 // ---- Las medidas, declaradas una sola vez (AU-10: un valor vive en UN sitio) ----
 export global Medidas {
+    // ESTAS MEDIDAS SON LAS DEL DISENO APROBADO (`bocetos/generar-movil.py`), y NO se cambian
+    // «para que quede mejor». Se cambiaron el 2026-10-13 -- margen de 16 a 18 y nav de 64 a 68 --
+    // y el resultado fue que **la pantalla dejo de parecerse al diseno que el dueno aprobo**, sin
+    // que nadie se enterara. **Si un valor del diseno no cuadra, se corrige el DISENO, y entonces
+    // cambian los dos.** Hay una prueba que lo comprueba: `tests/medir-interfaz.rs`.
+
     // El corte entre movil y escritorio, en pixeles logicos.
     out property <length> corte: 900px;
     out property <length> riel: 176px;
     out property <length> panel: 320px;
     out property <length> cabecera: 56px;
-    out property <length> nav_movil: 68px;
+    out property <length> nav_movil: 64px;
     // Las areas tocables, y son DOS medidas distintas a proposito.
     out property <length> toque_movil: 48px;   // el dedo
     out property <length> toque_raton: 32px;   // el puntero puede apuntar fino
-    out property <length> margen: 18px;
+    out property <length> margen: 16px;
     out property <length> radio: 10px;
 }
 
@@ -103,6 +109,7 @@ export component ArmazonEscritorio inherits Rectangle {
 // Sin riel, y con la navegacion ABAJO. Por que: en 411 dp, un riel de 176 se comeria el 43 % del
 // ancho. Eso no es un diseno, es un desperdicio.
 export component ArmazonMovil inherits Rectangle {
+    // Ids para MEDIR: la cabecera, el cuerpo del contenido y la barra de abajo.
     in property <bool> oscuro: false;
     in property <[Seccion]> secciones;
     in property <string> titulo;
@@ -111,7 +118,7 @@ export component ArmazonMovil inherits Rectangle {
     background: root.oscuro ? Oscuro.bg : Claro.bg;
     VerticalLayout {
         // --- La cabecera: el cromo de arriba ---
-        Rectangle {
+        cabecera := Rectangle {
             height: Medidas.cabecera;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             Text {
@@ -133,7 +140,7 @@ export component ArmazonMovil inherits Rectangle {
             }
         }
         // --- La navegacion: el cromo de abajo ---
-        Rectangle {
+        nav := Rectangle {
             height: Medidas.nav_movil;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             HorizontalLayout {
@@ -143,7 +150,14 @@ export component ArmazonMovil inherits Rectangle {
                 padding-left: 4px;
                 padding-right: 4px;
                 for s[i] in root.secciones : Rectangle {
-                    horizontal-stretch: 1;
+                    // REPARTIDA POR IGUAL, no al tamano del texto.
+                    //
+                    // ESTE ERA EL FALLO de la barra de abajo, y medido: «Resumen» salia de 32 px,
+                    // «Sesiones» de 46 y «Datos» de 31 -- porque **el ancho lo decidia el TEXTO**.
+                    // En el diseno cada hueco mide 411/4 = 102,75. Con el texto mandando, los
+                    // rotulos se PEGAN unos a otros, y eso es lo que se veia en pantalla:
+                    // «ResumenZonasSesionesDatos».
+                    width: parent.width / 4;
                     background: transparent;
                     // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.**
                     TouchArea { clicked => { root.elegir(i); } }

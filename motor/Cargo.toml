@@ -21,3 +21,13 @@ path = "src/bin/ventana.rs"
 
 [build-dependencies]
 slint-build = "1"
+
+# ---- Para MEDIR la interfaz sin abrir ventana (AU-63) ----
+#
+# `i-slint-backend-testing` deja consultar la GEOMETRIA de los elementos: su posicion y su tamano.
+# Es lo que faltaba: hasta ahora la unica forma de saber como quedaba la pantalla era abrirla y
+# mirarla, o pedirle una captura al dueno. **Con esto se mide.**
+#
+# Va en `dev-dependencies` porque SOLO se usa en las pruebas: la aplicacion no lo lleva.
+[dev-dependencies]
+i-slint-backend-testing = "1.18"

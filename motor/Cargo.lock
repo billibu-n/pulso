@@ -2633,6 +2633,7 @@ name = "motor"
 version = "0.1.0"
 dependencies = [
  "fitparser",
+ "i-slint-backend-testing",
  "serde",
  "serde_json",
  "slint",

@@ -37,6 +37,10 @@ pub struct PersonaJson {
     pub altura_cm: Quizas<f32>,
     pub grasa_corporal_pct: Quizas<f32>,
     pub masa_muscular_kg: Quizas<f32>,
+    /// El umbral de lactato y el consumo maximo de oxigeno. **Si no vienen, quedan como Falta** y el
+    /// motor calcula igual, solo que con un margen mas ancho.
+    pub umbral_lactato: Quizas<u16>,
+    pub vo2_maximo: Quizas<f32>,
 }
 
 impl PersonaJson {
@@ -53,6 +57,8 @@ impl PersonaJson {
             altura_cm: segun(self.altura_cm),
             grasa_corporal_pct: segun(self.grasa_corporal_pct),
             masa_muscular_kg: segun(self.masa_muscular_kg),
+            umbral_lactato: segun(self.umbral_lactato),
+            vo2_maximo: segun(self.vo2_maximo),
             sexo: match self.sexo.as_deref() {
                 Some("femenino") | Some("F") => Dato::Hay(Sexo::Femenino),
                 Some("masculino") | Some("M") => Dato::Hay(Sexo::Masculino),
@@ -97,6 +103,7 @@ impl SesionJson {
                 })
                 .collect(),
             duracion_s: Dato::Hay(self.duracion_s),
+            intervalos_rr_ms: Vec::new(),
         }
     }
 }

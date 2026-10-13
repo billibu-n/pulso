@@ -27,6 +27,8 @@ fn ana() -> Persona {
         altura_cm: Dato::Hay(172.0),
         grasa_corporal_pct: Dato::Hay(22.0),
         masa_muscular_kg: Dato::Hay(28.0),
+        umbral_lactato: Dato::Falta,
+        vo2_maximo: Dato::Falta,
     }
 }
 
@@ -41,7 +43,7 @@ fn sesion_30_min(pulso: u16) -> Sesion {
             potencia_w: Dato::Hay(200),
         })
         .collect();
-    Sesion { muestras, duracion_s: Dato::Hay(1800) }
+    Sesion::con_duracion(muestras, 1800)
 }
 
 // ---------------------------------------------------------------- 1. LA FÓRMULA, A MANO
@@ -132,13 +134,10 @@ fn sin_pulso_de_reposo_no_hay_reserva_ni_zonas() {
 
 #[test]
 fn una_sesion_sin_pulsos_no_da_carga_y_lo_dice() {
-    let s = Sesion {
-        muestras: vec![
+    let s = Sesion::con_duracion(vec![
             Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
             Muestra { segundo: 10, pulso: Dato::Falta, potencia_w: Dato::Hay(210) },
-        ],
-        duracion_s: Dato::Hay(600),
-    };
+        ], 600);
     let r = formulas::trimp(&s, &ana());
     assert_eq!(r.valor, None, "sin un solo pulso, la carga no se puede afirmar");
     assert!(r.fuente.contains("pulso"), "el motivo tiene que decir que falta el pulso");
@@ -155,7 +154,7 @@ fn si_falta_el_pulso_en_MAS_de_la_mitad_la_carga_no_se_da() {
             potencia_w: Dato::Hay(200),
         });
     }
-    let s = Sesion { muestras, duracion_s: Dato::Hay(1800) };
+    let s = Sesion::con_duracion(muestras, 1800);
     let r = formulas::trimp(&s, &ana());
     assert_eq!(r.valor, None, "con mas de la mitad sin pulso, la carga NO se afirma");
     assert!(r.fuente.contains("mitad"), "tiene que decir por que: {}", r.fuente);
@@ -178,7 +177,7 @@ fn si_falta_el_pulso_en_POCO_la_carga_se_da_PERO_con_reserva() {
             potencia_w: Dato::Hay(200),
         });
     }
-    let s = Sesion { muestras, duracion_s: Dato::Hay(1800) };
+    let s = Sesion::con_duracion(muestras, 1800);
     let r = formulas::trimp(&s, &ana());
     assert!(r.valor.is_some(), "con un hueco por debajo del limite, la carga se puede dar");
     assert!(r.reserva.is_some(), "pero CON RESERVA: el hueco cambia el numero");
@@ -189,14 +188,11 @@ fn la_duracion_no_se_acorta_si_la_primera_muestra_no_trae_pulso() {
     // El defecto que cazo la prueba de arriba, con su caso minimo y propio.
     // Sin duracion declarada, la duracion se deduce de las muestras: y tiene que salir de la
     // PRIMERA y la ULTIMA, aunque la primera no traiga pulso.
-    let s = Sesion {
-        muestras: vec![
-            Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
-            Muestra { segundo: 600, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
-            Muestra { segundo: 1200, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
-        ],
-        duracion_s: Dato::Falta,
-    };
+    let s = Sesion::nueva(vec![
+        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
+        Muestra { segundo: 600, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
+        Muestra { segundo: 1200, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
+    ]);
     assert_eq!(
         s.duracion(),
         Dato::Hay(1200),
@@ -217,7 +213,7 @@ fn un_reposo_mayor_que_la_maxima_no_revienta_y_se_rechaza() {
 
 #[test]
 fn una_sesion_de_duracion_cero_no_revienta() {
-    let s = Sesion { muestras: vec![], duracion_s: Dato::Hay(0) };
+    let s = Sesion::con_duracion(vec![], 0);
     let r = formulas::trimp(&s, &ana());
     // Sin muestras no hay pulso, asi que se rechaza. Lo importante: NO da infinito ni NaN.
     assert!(r.valor.is_none() || r.valor.unwrap().is_finite());
@@ -292,7 +288,7 @@ fn sesion_de(minutos: u32, pulso: u16) -> Sesion {
     let muestras = (0..n)
         .map(|i| Muestra { segundo: i * 10, pulso: Dato::Hay(pulso), potencia_w: Dato::Hay(200) })
         .collect();
-    Sesion { muestras, duracion_s: Dato::Hay(minutos * 60) }
+    Sesion::con_duracion(muestras, minutos * 60)
 }
 
 #[test]
@@ -829,7 +825,7 @@ fn sesion_dos_escalones(pulso1: u16, pulso2: u16, pot1: u16, pot2: u16) -> Sesio
             potencia_w: Dato::Hay(w),
         });
     }
-    Sesion { muestras, duracion_s: Dato::Hay((n * 10) as u32) }
+    Sesion::con_duracion(muestras, (n * 10) as u32)
 }
 
 /// El mismo ayudante con los nombres de antes, para no tocar el resto de las pruebas.
@@ -1059,4 +1055,106 @@ fn lo_que_no_se_usa_NO_se_guarda_y_eso_esta_dicho() {
     assert_eq!(m.pulso, Dato::Hay(140));
     assert_eq!(m.potencia_w, Dato::Hay(200));
     // Y si un dia se anade la cadencia, esta prueba es la que obliga a decirlo.
+}
+
+// ================================================== 13. EL HRV
+//
+// El dato que esta DENTRO del fichero FIT y Garmin Connect no enseña: 1.259.082 intervalos entre
+// latidos en sus 102 actividades. Dice como esta el cuerpo ANTES de entrenar.
+
+use motor::hrv;
+
+/// Una serie de intervalos entre latidos, con un RMSSD conocido.
+/// Alterna dos valores separados por `salto` ms, asi el RMSSD sale exactamente `salto`.
+fn serie_rr(n: usize, base: f64, salto: f64) -> Vec<f64> {
+    (0..n)
+        .map(|i| if i % 2 == 0 { base } else { base + salto })
+        .collect()
+}
+
+#[test]
+fn el_HRV_calculado_cuadra_con_la_cuenta_a_mano() {
+    // 100 intervalos que alternan 800 y 850 ms. Todas las diferencias consecutivas son de 50 ms,
+    // asi que el RMSSD tiene que ser 50 exacto. Calculado a mano, no copiado.
+    let h = hrv::calcular(&serie_rr(100, 800.0, 50.0));
+    assert!((h.rmssd.valor - 50.0).abs() < 0.01, "RMSSD {:.2}, esperado 50", h.rmssd.valor);
+    assert!((h.rr_medio.valor - 825.0).abs() < 0.01, "RR medio {:.1}, esperado 825", h.rr_medio.valor);
+    // Y el pulso deducido: 60000 / 825 = 72,7 ppm.
+    assert!((h.pulso_deducido() - 72.7).abs() < 0.1, "pulso {:.1}", h.pulso_deducido());
+}
+
+#[test]
+fn un_intervalo_ABSURDO_no_dispara_el_RMSSD() {
+    // ESTA ES LA PRUEBA QUE JUSTIFICA LA LIMPIEZA, y es la mas importante del modulo:
+    // el RMSSD se calcula sobre DIFERENCIAS, asi que **un solo artefacto lo dispara**.
+    // Un sensor que se suelta da un valor enorme, y sin filtrar el HRV saldria falsisimo.
+    let mut con_basura = serie_rr(100, 800.0, 50.0);
+    con_basura.push(12_000.0); // el sensor se solto: 12 segundos entre latidos no es un latido
+    let h = hrv::calcular(&con_basura);
+    assert!((h.rmssd.valor - 50.0).abs() < 1.0, "el artefacto no puede cambiar el RMSSD: {:.1}", h.rmssd.valor);
+    assert_eq!(h.descartados, 1, "y tiene que contarlo como descartado");
+}
+
+#[test]
+fn un_salto_brusco_tambien_se_descarta() {
+    // Un pulso no se dobla ni cae a la mitad entre dos latidos. El salto brusco es el artefacto
+    // tipico, y hay que quitarlo.
+    let mut s = serie_rr(100, 800.0, 20.0);
+    s.insert(50, 1600.0); // el doble de golpe: no es fisiologico
+    let h = hrv::calcular(&s);
+    assert!(h.descartados >= 1, "el salto brusco tiene que descartarse");
+}
+
+#[test]
+fn sin_intervalos_el_HRV_da_CERO_con_margen_CERO_y_no_falla() {
+    // La regla del rediseno: nunca se falla. Y un cero con margen cero **avisa de que no vale nada**,
+    // que es distinto de un cero que parece un dato.
+    let h = hrv::calcular(&[]);
+    assert_eq!(h.latidos, 0);
+    assert_eq!(h.rmssd.valor, 0.0);
+    assert_eq!(h.rmssd.margen, 0.0, "el margen cero dice que el numero no sirve");
+}
+
+#[test]
+fn el_margen_del_RMSSD_NO_finge_una_precision_que_no_tiene() {
+    // LA LECCION DE LA DERIVA, aplicada aqui: las muestras de una serie de latidos NO son
+    // independientes, asi que el margen NO puede bajar con la raiz de n hasta valores absurdos.
+    // Con muchos latidos el margen se estrecha, pero tiene un suelo.
+    let pocos = hrv::calcular(&serie_rr(150, 800.0, 50.0));
+    let muchos = hrv::calcular(&serie_rr(20_000, 800.0, 50.0));
+
+    assert!(muchos.rmssd.margen < pocos.rmssd.margen, "mas latidos, menos margen");
+    assert!(
+        muchos.rmssd.margen >= muchos.rmssd.valor * 0.03,
+        "pero con un suelo: una sola sesion no puede dar mas precision que eso ({:.2} de {:.1})",
+        muchos.rmssd.margen,
+        muchos.rmssd.valor
+    );
+}
+
+#[test]
+fn la_fiabilidad_del_HRV_depende_de_los_latidos_que_lo_sostienen() {
+    use motor::rango::Precision;
+    assert_eq!(hrv::calcular(&serie_rr(2000, 800.0, 50.0)).fiabilidad(), Precision::Alta);
+    assert_eq!(hrv::calcular(&serie_rr(500, 800.0, 50.0)).fiabilidad(), Precision::Buena);
+    assert_eq!(hrv::calcular(&serie_rr(150, 800.0, 50.0)).fiabilidad(), Precision::Aceptable);
+    assert_eq!(hrv::calcular(&serie_rr(20, 800.0, 50.0)).fiabilidad(), Precision::Amplia);
+}
+
+#[test]
+fn sin_historico_suficiente_NO_se_puede_decir_si_esta_mejor_o_peor() {
+    // El HRV no se compara con una tabla: se compara CONSIGO MISMO. Y con dos sesiones no hay
+    // normalidad con la que comparar. Se dice que no se puede, en vez de inventar una referencia.
+    let hoy = hrv::calcular(&serie_rr(500, 800.0, 50.0));
+    let pocas = vec![hoy.clone(), hoy.clone()];
+    assert_eq!(hrv::respecto_a_su_normalidad(&hoy, &pocas), None, "con dos no hay normalidad");
+
+    let mut suficientes = Vec::new();
+    for i in 0..8 {
+        suficientes.push(hrv::calcular(&serie_rr(500, 800.0, 40.0 + i as f64)));
+    }
+    assert!(
+        hrv::respecto_a_su_normalidad(&hoy, &suficientes).is_some(),
+        "con ocho si se puede decir como esta respecto a su propia normalidad"
+    );
 }

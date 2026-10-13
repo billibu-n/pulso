@@ -19,18 +19,22 @@ pub mod esfuerzo;
 pub mod fit;
 pub mod fuentes;
 pub mod formulas;
+pub mod hrv;
 pub mod formulas_v2;
 pub mod juicio;
 pub mod patron;
 pub mod rango;
 pub mod tendencia;
+pub mod umbral;
 
 pub use datos::{Dato, Persona, Sesion};
 pub use esfuerzo::{NivelSalto, Salto};
 pub use fuentes::{Consenso, Procedencia, Valor};
+pub use hrv::Hrv;
 pub use patron::{Deriva, NivelDeriva};
 pub use rango::{Precision, Rango};
 pub use tendencia::{Direccion, Serie, Tendencia};
+pub use umbral::{Referencia, Umbral};
 pub use juicio::{Confianza, Falta, Fundamento, Juicio};
 
 /// Atajo para escribir `Dato::Hay`. Existe para que el código de fuera se lea.

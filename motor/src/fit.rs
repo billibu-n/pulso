@@ -57,6 +57,7 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
     let datos = fitparser::from_reader(&mut f).map_err(|e| format!("el FIT no se pudo leer: {e:?}"))?;
 
     let mut muestras: Vec<Muestra> = Vec::new();
+    let mut intervalos_rr: Vec<f64> = Vec::new();
     let mut declarado = Declarado::default();
     let mut cuenta: std::collections::BTreeMap<String, usize> = Default::default();
 
@@ -94,6 +95,22 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
                         pulso,
                         potencia_w: potencia,
                     });
+                }
+            }
+            // EL HRV: cada mensaje trae un array de intervalos entre latidos, en SEGUNDOS.
+            // Se pasan a milisegundos, que es como se trabaja. Y los `Invalid` se saltan: son huecos
+            // del aparato, no latidos.
+            "Hrv" => {
+                for c in r.fields() {
+                    if c.name() == "time" {
+                        if let fitparser::Value::Array(v) = c.value() {
+                            for x in v {
+                                if let fitparser::Value::Float64(s) = x {
+                                    intervalos_rr.push(s * 1000.0);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             "Session" => {
@@ -147,7 +164,11 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
     // usa todavía, y **guardar lo que no se usa es una forma de mentir sobre lo que se sabe**.
 
     Ok(Lectura {
-        sesion: Sesion { muestras, duracion_s: declarado.duracion_s },
+        sesion: Sesion {
+            muestras,
+            duracion_s: declarado.duracion_s,
+            intervalos_rr_ms: intervalos_rr,
+        },
         declarado,
         mensajes: cuenta.into_iter().collect(),
     })

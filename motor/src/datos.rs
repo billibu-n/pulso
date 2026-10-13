@@ -102,6 +102,14 @@ pub struct Persona {
     pub grasa_corporal_pct: Dato<f32>,
     /// Masa muscular en kilogramos, si la báscula la da.
     pub masa_muscular_kg: Dato<f32>,
+    /// **El umbral de lactato**, en pulsaciones.
+    ///
+    /// ESTE ES EL DATO QUE MANDA, y no la frecuencia máxima. En ciclismo las zonas se fijan sobre el
+    /// umbral, y es un dato **medido** — mucho más fiable que una estimación por edad. Si está, el
+    /// motor lo usa **antes** que cualquier fórmula.
+    pub umbral_lactato: Dato<u16>,
+    /// **El consumo máximo de oxígeno**, en ml/kg/min. Lo estima el reloj, y **el FIT no lo trae**.
+    pub vo2_maximo: Dato<f32>,
 }
 
 impl Persona {
@@ -116,6 +124,8 @@ impl Persona {
             altura_cm: Dato::Falta,
             grasa_corporal_pct: Dato::Falta,
             masa_muscular_kg: Dato::Falta,
+            umbral_lactato: Dato::Falta,
+            vo2_maximo: Dato::Falta,
         }
     }
 
@@ -163,11 +173,37 @@ pub struct Sesion {
     /// Duración declarada, si el fichero la trae. **No se supone a partir de las muestras**: pueden
     /// estar incompletas, y confundir «no hay muestras» con «no duró nada» sería un error.
     pub duracion_s: Dato<u32>,
+    /// **Los intervalos entre latidos**, en milisegundos.
+    ///
+    /// ESTO NO ES UNA MUESTRA MÁS, y por eso va aparte: no es el pulso en un instante, sino **el tiempo
+    /// entre un latido y el siguiente**. De ahí sale el HRV, que dice cómo está el cuerpo **antes** de
+    /// entrenar. El FIT lo trae —**617.677 intervalos en sus 102 actividades**— y **Garmin Connect no
+    /// lo enseña**.
+    pub intervalos_rr_ms: Vec<f64>,
 }
 
 impl Sesion {
     pub fn nueva(muestras: Vec<Muestra>) -> Self {
-        Self { muestras, duracion_s: Dato::Falta }
+        Self { muestras, duracion_s: Dato::Falta, intervalos_rr_ms: Vec::new() }
+    }
+
+    /// Una sesión con su duración declarada.
+    ///
+    /// EXISTE PORQUE CONSTRUIR UNA SESIÓN NO DEBE OBLIGAR A RELLENAR SIETE CAMPOS: cada vez que se
+    /// añade un campo al modelo, **todos los sitios que construyen una sesión se rompen**. Con los
+    /// constructores, se añade el campo **en un sitio** y el resto sigue igual.
+    pub fn con_duracion(muestras: Vec<Muestra>, duracion_s: u32) -> Self {
+        Self {
+            muestras,
+            duracion_s: Dato::Hay(duracion_s),
+            intervalos_rr_ms: Vec::new(),
+        }
+    }
+
+    /// Y una con sus intervalos entre latidos, para el HRV.
+    pub fn con_rr(mut self, intervalos_rr_ms: Vec<f64>) -> Self {
+        self.intervalos_rr_ms = intervalos_rr_ms;
+        self
     }
 
     /// La duración **que se puede afirmar**: la declarada si está, y si no, la que cubren las muestras.

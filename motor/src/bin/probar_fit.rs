@@ -60,6 +60,20 @@ fn main() {
         }
     }
 
+    // El HRV: la variabilidad latido a latido
+    println!("\n  MENSAJES 'Hrv' (la variabilidad latido a latido):");
+    let hrvs: Vec<_> = datos.iter().filter(|r| format!("{:?}", r.kind()) == "Hrv").collect();
+    println!("    cuantos: {}", hrvs.len());
+    for (i, r) in hrvs.iter().take(2).enumerate() {
+        println!("    --- mensaje {i} ---");
+        for c in r.fields() {
+            match c.value() {
+                fitparser::Value::Array(v) => println!("      {:<22} Array de {} valores: {:?}", c.name(), v.len(), &v[..v.len().min(5)]),
+                otro => println!("      {:<22} {:?}", c.name(), otro),
+            }
+        }
+    }
+
     // Y los mensajes de sesión, que traen los totales
     println!("\n  CAMPOS DEL MENSAJE 'Session' (los totales):");
     for r in datos.iter().filter(|r| format!("{:?}", r.kind()) == "Session") {

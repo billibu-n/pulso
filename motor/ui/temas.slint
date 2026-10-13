@@ -1,0 +1,55 @@
+// LOS DOS TEMAS, y una regla: cambiar de tema es cambiar VALORES DECLARADOS, nada mas.
+//
+// POR QUE SOLO DOS: uno claro para el dia y uno oscuro para la noche. Mas seria una coleccion, y una
+// coleccion hay que mantenerla. El dueño lo dijo: «basicamente 2 temas seria suficiente y logico».
+//
+// Y EL OSCURO NO ES UN CAPRICHO: usa NEGRO PURO (#000000). EN UNA PANTALLA OLED ESO NO ES ESTETICA:
+// el pixel se APAGA y no consume. El tema negro que ya existia usaba #1e1e1e, y ese pixel SIGUE
+// ENCENDIDO. Para un cliente que entrena de noche mirando el movil, se nota en la bateria.
+//
+// EL CONTRASTE ESTA MEDIDO, no supuesto: `temas/contraste.py` comprueba los pares de texto y fondo
+// segun WCAG. **Los dos temas pasan.** Y el borde de las tarjetas se subio a 3:1, porque un borde que
+// no se ve no delimita nada.
+//
+// COMO SE USA: cada pieza lee `raiz.t.bg`, `raiz.t.fg`... y `raiz.t` es uno u otro segun el ajuste.
+// Asi cambiar de tema NO toca ninguna pieza: solo cambia a que global apunta `t`.
+//
+// OJO: en Slint un `global` NO puede heredar de otro -- se probo y no compila. Por eso los dos temas
+// declaran los mismos valores por separado, y por eso hay un programa que COMPRUEBA que declaran los
+// mismos: si a uno le falta un color, se ve al medir, no al mirar.
+
+export global Claro {
+    out property <color> bg: #faf9f7;
+    out property <color> sup: #ffffff;
+    out property <color> pista: #f0ece6;
+    out property <color> fg: #2b2724;
+    out property <color> muted: #78716c;
+    out property <color> linea: #6b6560;
+    out property <color> ac: #0f766e;
+    out property <color> ac_txt: #ffffff;
+    out property <color> ok: #15803d;
+    out property <color> aviso: #b45309;
+    out property <color> z1: #15803d;
+    out property <color> z2: #0f766e;
+    out property <color> z3: #7c3aed;
+    out property <color> z4: #0f766e;
+    out property <color> z5: #b45309;
+}
+
+export global Oscuro {
+    out property <color> bg: #000000;
+    out property <color> sup: #0a0a0a;
+    out property <color> pista: #1a1a1a;
+    out property <color> fg: #f2f0ed;
+    out property <color> muted: #a8a29b;
+    out property <color> linea: #6b6660;
+    out property <color> ac: #2dd4bf;
+    out property <color> ac_txt: #000000;
+    out property <color> ok: #4ade80;
+    out property <color> aviso: #fbbf24;
+    out property <color> z1: #4ade80;
+    out property <color> z2: #2dd4bf;
+    out property <color> z3: #c4b5fd;
+    out property <color> z4: #2dd4bf;
+    out property <color> z5: #fbbf24;
+}

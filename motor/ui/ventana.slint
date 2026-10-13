@@ -1,3 +1,6 @@
+// La ventana. Importa los temas, y NO los redefine: un valor vive en UN solo sitio (AU-10).
+import { Claro, Oscuro } from "temas.slint";
+
 // La primera ventana del motor. Mínima, y con una regla: NO calcula nada.
 //
 // POR QUÉ EMPIEZA ASÍ: la norma dice que el motor calcula y la interfaz enseña. Esta ventana
@@ -24,7 +27,7 @@ export component Ventana inherits Window {
     title: "Pulso — el motor";
     width: 620px;
     height: 560px;
-    background: #f7fafc;
+    background: root.oscuro ? Oscuro.bg : Claro.bg;
 
     in property <string> titulo;
     in property <string> subtitulo;
@@ -37,6 +40,8 @@ export component Ventana inherits Window {
     in property <[Zona]> zonas;
 
     in-out property <int> elegido: 0;
+    // EL TEMA. Cambiar de tema es cambiar ESTA linea: ninguna pieza se toca.
+    in property <bool> oscuro: false;
     callback cambiar(int);
 
     VerticalLayout {
@@ -46,53 +51,53 @@ export component Ventana inherits Window {
         // --- Cabecera ---
         VerticalLayout {
             spacing: 4px;
-            Text { text: root.titulo; font-size: 21px; font-weight: 700; color: #1a202c; }
-            Text { text: root.subtitulo; font-size: 13px; color: #718096; }
+            Text { text: root.titulo; font-size: 21px; font-weight: 700; color: root.oscuro ? Oscuro.fg : Claro.fg; }
+            Text { text: root.subtitulo; font-size: 13px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
         }
 
         // --- El numero, con su margen, que es lo que este motor tiene de distinto ---
         Rectangle {
-            background: white;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
             border-radius: 10px;
             border-width: 1px;
-            border-color: #e2e8f0;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
             VerticalLayout {
                 padding: 18px;
                 spacing: 8px;
-                Text { text: "Frecuencia cardíaca máxima"; font-size: 12px; color: #718096; }
-                Text { text: root.maxima; font-size: 32px; font-weight: 700; color: #2b6cb0; }
-                Text { text: root.origen; font-size: 12px; color: #4a5568; }
+                Text { text: "Frecuencia cardíaca máxima"; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
+                Text { text: root.maxima; font-size: 32px; font-weight: 700; color: root.oscuro ? Oscuro.ac : Claro.ac; }
+                Text { text: root.origen; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
                 HorizontalLayout {
                     spacing: 8px;
                     Rectangle {
-                        background: #ebf8ff; border-radius: 4px;
+                        background: root.oscuro ? Oscuro.pista : Claro.pista; border-radius: 4px;
                         HorizontalLayout {
                             padding: 5px;
-                            Text { text: "precisión " + root.precision; font-size: 12px; color: #2b6cb0; font-weight: 600; }
+                            Text { text: "precisión " + root.precision; font-size: 12px; color: root.oscuro ? Oscuro.ac : Claro.ac; font-weight: 600; }
                         }
                     }
-                    Text { text: root.datos; font-size: 12px; color: #718096; vertical-alignment: center; }
+                    Text { text: root.datos; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; vertical-alignment: center; }
                 }
-                Text { text: root.significado; font-size: 12px; color: #4a5568; wrap: word-wrap; }
+                Text { text: root.significado; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; wrap: word-wrap; }
             }
         }
 
         // --- Las zonas. Siempre estan: es lo que el motor garantiza ---
-        Text { text: "Zonas de intensidad"; font-size: 14px; font-weight: 600; color: #2d3748; }
+        Text { text: "Zonas de intensidad"; font-size: 14px; font-weight: 600; color: root.oscuro ? Oscuro.fg : Claro.fg; }
         VerticalLayout {
             spacing: 6px;
             for z in root.zonas : Rectangle {
                 height: 46px;
-                background: white;
+                background: root.oscuro ? Oscuro.sup : Claro.sup;
                 border-radius: 6px;
                 border-width: 1px;
-                border-color: #e2e8f0;
+                border-color: root.oscuro ? Oscuro.linea : Claro.linea;
                 HorizontalLayout {
                     padding-left: 14px;
                     padding-right: 14px;
                     spacing: 12px;
                     Text {
-                        text: z.nombre; font-size: 13px; color: #2d3748;
+                        text: z.nombre; font-size: 13px; color: root.oscuro ? Oscuro.fg : Claro.fg;
                         width: 74px; vertical-alignment: center;
                     }
                     // La barra: el ancho es PROPORCIONAL al limite. No es decoracion: si el limite
@@ -107,16 +112,16 @@ export component Ventana inherits Window {
                         }
                     }
                     Text {
-                        text: z.limite; font-size: 15px; font-weight: 700; color: #2b6cb0;
+                        text: z.limite; font-size: 15px; font-weight: 700; color: root.oscuro ? Oscuro.ac : Claro.ac;
                         vertical-alignment: center; horizontal-alignment: right;
                         width: 74px;
                     }
                     Text {
-                        text: "± " + z.margen; font-size: 12px; color: #a0aec0;
+                        text: "± " + z.margen; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted;
                         vertical-alignment: center; width: 46px;
                     }
                     Text {
-                        text: z.desde + " – " + z.hasta; font-size: 11px; color: #a0aec0;
+                        text: z.desde + " – " + z.hasta; font-size: 11px; color: root.oscuro ? Oscuro.muted : Claro.muted;
                         vertical-alignment: center; horizontal-alignment: right;
                         horizontal-stretch: 1;
                     }
@@ -139,7 +144,7 @@ export component Ventana inherits Window {
         }
 
         // --- Los botones: cambian los DATOS, no el calculo ---
-        Text { text: "Prueba con menos datos, y mira cómo se ensancha el margen:"; font-size: 12px; color: #718096; }
+        Text { text: "Prueba con menos datos, y mira cómo se ensancha el margen:"; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
         HorizontalLayout {
             spacing: 8px;
             for i in 4 : Rectangle {

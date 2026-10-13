@@ -11,6 +11,13 @@
 *.db-journal
 datos/
 **/datos/
+# Todo lo que cuelga de `datos/` es del cliente, sea la extension que sea. Los patrones de arriba
+# cubren por EXTENSION (.fit, .db...), y se colaban los .json y el .lock. Se cubre por CARPETA.
+**/garmin_files/
+**/entrada-motor.json
+**/sesiones.json
+**/serie-vo2.json
+**/captura-cliente.*
 
 # Capturas y exportaciones de aplicaciones de salud.
 *.jpeg

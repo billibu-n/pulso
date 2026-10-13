@@ -1,0 +1,162 @@
+// EL ARMAZON: los sitios de la ventana, y el orden en que se repliegan.
+//
+// LA NORMA QUE CUMPLE, y cada regla con su motivo (norma-app, AU-01 a AU-08):
+//
+//   AU-01  Al encoger, los sitios pierden EN ESTE ORDEN y el contenido es el ULTIMO:
+//          1) el contenido  ·  2) el panel inferior  ·  3) el panel derecho  ·  4) el riel
+//   AU-02  El riel, al perder su columna, se vuelve CAJON QUE SE ABRE -- no se oculta.
+//          Un boton que no abre nada es PEOR que no tenerlo.
+//   AU-03  En ventana estrecha, el cajon NACE CERRADO. Abrirlo por defecto TAPA el contenido.
+//   AU-04  El contenido es el UNICO sitio que crece; los demas tienen limite declarado.
+//   AU-05  Apilado, el armazon CRECE con su contenido y se desplaza la pagina.
+//   AU-06  Todo sitio que se repliega deja forma de volver.
+//   AU-07  Un sitio RESERVADO se declara; un hueco olvidado no se dibuja.
+//
+// Y HAY DOS REPARTOS, no uno, porque el cliente usa el MOVIL como dispositivo principal:
+//   ESCRITORIO (>= 900 px): riel de 176 a la izquierda, panel de 320 a la derecha, franja abajo
+//   MOVIL (< 900 px): navegacion ABAJO, sin riel -- porque en 411 dp el riel se comeria el 43 %
+//
+// LAS AREAS TOCABLES: 48 dp como minimo en el movil. **El dedo no es un raton.**
+
+import { Claro, Oscuro } from "temas.slint";
+
+// ---- Las medidas, declaradas una sola vez (AU-10: un valor vive en UN sitio) ----
+export global Medidas {
+    // El corte entre movil y escritorio, en pixeles logicos.
+    out property <length> corte: 900px;
+    out property <length> riel: 176px;
+    out property <length> panel: 320px;
+    out property <length> cabecera: 56px;
+    out property <length> nav_movil: 64px;
+    // Las areas tocables, y son DOS medidas distintas a proposito.
+    out property <length> toque_movil: 48px;   // el dedo
+    out property <length> toque_raton: 32px;   // el puntero puede apuntar fino
+    out property <length> margen: 16px;
+    out property <length> radio: 10px;
+}
+
+// ---- Una seccion del riel o de la navegacion ----
+export struct Seccion {
+    nombre: string,
+    activa: bool,
+}
+
+// ---- EL ARMAZON DE ESCRITORIO ----
+//
+// POR QUE SON DOS COMPONENTES Y NO UNO CON UN `if`: en Slint, `@children` NO puede aparecer dentro de
+// un elemento condicional. Se probo y no compila. Asi que el armazon se parte, y **la condicion va en
+// la ventana**, que es quien sabe si es movil o no.
+export component ArmazonEscritorio inherits Rectangle {
+    in property <bool> oscuro: false;
+    in property <[Seccion]> secciones;
+    in property <string> titulo;
+    callback elegir(int);
+
+    background: root.oscuro ? Oscuro.bg : Claro.bg;
+    HorizontalLayout {
+        // --- EL RIEL: limite declarado, no crece (AU-04) ---
+        Rectangle {
+            width: Medidas.riel;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
+            VerticalLayout {
+                padding-top: 20px;
+                spacing: 4px;
+                Text {
+                    text: root.titulo;
+                    font-size: 15px; font-weight: 700;
+                    color: root.oscuro ? Oscuro.fg : Claro.fg;
+                    x: 20px;
+                }
+                for s[i] in root.secciones : Rectangle {
+                    height: 36px;
+                    width: Medidas.riel - 20px;
+                    x: 10px;
+                    border-radius: 7px;
+                    background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac) : transparent;
+                    Text {
+                        text: s.nombre;
+                        font-size: 13px;
+                        color: s.activa ? (root.oscuro ? Oscuro.ac_txt : Claro.ac_txt)
+                                        : (root.oscuro ? Oscuro.muted : Claro.muted);
+                        x: 14px; vertical-alignment: center;
+                    }
+                    TouchArea { clicked => { root.elegir(i); } }
+                }
+            }
+        }
+        // --- EL CONTENIDO: el unico que crece (AU-04) ---
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+            VerticalLayout {
+                padding: Medidas.margen;
+                spacing: 12px;
+                @children
+            }
+        }
+    }
+}
+
+// ---- EL ARMAZON DE MOVIL ----
+//
+// Sin riel, y con la navegacion ABAJO. Por que: en 411 dp, un riel de 176 se comeria el 43 % del
+// ancho. Eso no es un diseno, es un desperdicio.
+export component ArmazonMovil inherits Rectangle {
+    in property <bool> oscuro: false;
+    in property <[Seccion]> secciones;
+    in property <string> titulo;
+    callback elegir(int);
+
+    background: root.oscuro ? Oscuro.bg : Claro.bg;
+    VerticalLayout {
+        // --- La cabecera: el cromo de arriba ---
+        Rectangle {
+            height: Medidas.cabecera;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
+            Text {
+                text: root.titulo;
+                font-size: 20px; font-weight: 700;
+                color: root.oscuro ? Oscuro.fg : Claro.fg;
+                x: Medidas.margen; vertical-alignment: center;
+            }
+        }
+        // --- El contenido: apilado, y el armazon CRECE con el (AU-05) ---
+        Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
+            VerticalLayout {
+                padding: Medidas.margen;
+                spacing: 12px;
+                @children
+            }
+        }
+        // --- La navegacion: el cromo de abajo ---
+        Rectangle {
+            height: Medidas.nav_movil;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
+            HorizontalLayout {
+                for s[i] in root.secciones : Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                    // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.**
+                    TouchArea { clicked => { root.elegir(i); } }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Rectangle {
+                            width: 18px; height: 18px; border-radius: 5px;
+                            background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
+                                                 : (root.oscuro ? Oscuro.muted : Claro.muted);
+                        }
+                        Text {
+                            text: s.nombre;
+                            font-size: 11px;
+                            color: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
+                                            : (root.oscuro ? Oscuro.muted : Claro.muted);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

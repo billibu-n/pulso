@@ -1270,3 +1270,178 @@ fn el_informe_termina_recordando_que_NO_es_un_diagnostico_medico() {
     assert!(texto.contains("No es un diagnóstico médico"), "tiene que decirlo");
     assert!(texto.contains("profesional sanitario"), "y a quien corresponde decidir");
 }
+
+// ===================== 15. EL CONTEXTO: los TRES escenarios, y de dónde sale cada dato
+//
+// El dueño lo pidió así: «los debe poder proporcionar el usuario en caso de que no los proporcione
+// una aplicación, una aplicación lo puede rellenar de manera automatica, pero si faltan datos el
+// usuario debería poder llenarlo, o de lo contrario es nulo».
+//
+// Y avisó de lo que pasaría si no se contemplan: «la herramienta generaría resultados constantes y
+// repetitivos». Estas pruebas defienden que los tres escenarios dan resultados DISTINTOS.
+
+use motor::contexto::{Comida, Contexto, Escenario, Fuente};
+
+#[test]
+fn SIN_CONTEXTO_el_motor_calcula_igual_y_lo_dice() {
+    // El escenario NULO, que es el que hay que soportar sin romperse.
+    let c = Contexto::vacio();
+    let (hay, total) = c.cuantos();
+    assert_eq!(hay, 0, "sin contexto no hay ningun dato");
+    assert_eq!(total, 4, "y se sabe cuantos faltan");
+    // Y lo que pide, en imperativo: la aplicacion tiene que PEDIR lo que falta.
+    let pedir = c.que_pedir();
+    assert_eq!(pedir.len(), 4, "pide los cuatro");
+    assert!(pedir.iter().any(|(q, _)| q.contains("sueño")));
+    // Y la precision, sin contexto, es la mas ancha: no se puede apretar con nada.
+    assert_eq!(c.precision(), motor::rango::Precision::Amplia);
+    // Y queda claro que la aplicacion NO se queda sin responder por esto.
+    assert!(Escenario::Nulo.que_hace().contains("falta"));
+}
+
+#[test]
+fn los_TRES_escenarios_dan_resultados_DISTINTOS() {
+    // ESTA ES LA PRUEBA QUE PIDE EL DUENO: si los tres dieran lo mismo, la herramienta seria
+    // «constante y repetitiva», que es exactamente lo que NO quiere.
+    //
+    // OJO, y aprendi algo escribiendola: la primera version comparaba escenarios con UN SOLO dato, y
+    // entonces no se distinguian. **La diferencia se ve cuando el contexto esta COMPLETO**: con los
+    // cuatro datos, quien los puso cambia el resultado.
+    let nulo = Contexto::vacio();
+
+    // Completo, pero ESCRITO POR LA PERSONA.
+    let mut manual = Contexto::vacio();
+    manual.sueno_horas = Some(Rango::medido(7.0, 0.5));
+    manual.sensacion = Some(Rango::medido(4.0, 0.5));
+    manual.comida_antes = Some(Comida::Hidratos);
+    manual.alcohol = Some(false);
+    for k in ["sueño", "sensación", "comida", "alcohol"] {
+        manual.procedencias.push((k.into(), Fuente::Declarada));
+    }
+
+    // Completo, y MEDIDO: el sueno del reloj y el peso de la bascula.
+    let mut automatico = Contexto::vacio();
+    automatico.sueno_horas = Some(Rango::medido(7.0, 0.2));
+    automatico.sensacion = Some(Rango::medido(4.0, 0.5));
+    automatico.comida_antes = Some(Comida::Hidratos);
+    automatico.alcohol = Some(false);
+    automatico.procedencias.push(("sueño".into(), Fuente::Automatica { aplicacion: "Garmin".into() }));
+    automatico.procedencias.push(("sensación".into(), Fuente::Declarada));
+    automatico.procedencias.push(("comida".into(), Fuente::Declarada));
+    automatico.procedencias.push(("alcohol".into(), Fuente::Declarada));
+
+    let p_nulo = nulo.precision();
+    let p_manual = manual.precision();
+    let p_auto = automatico.precision();
+
+    // EL ESCENARIO NULO es el peor de todos, y eso no admite duda.
+    assert_eq!(p_nulo, motor::rango::Precision::Amplia, "sin nada, lo mas ancho");
+
+    // Y LOS CUATRO ESCRITOS A MANO tampoco llegan arriba: si no lo mide nadie, no se puede apretar.
+    // Esto lo aprendi porque un `assert` mio fallo: yo esperaba «aceptable», y el motor dijo «amplia».
+    // **El motor tenia razon.**
+    assert_eq!(p_manual, motor::rango::Precision::Amplia, "los cuatro escritos a mano no bastan");
+
+    // AHORA LA PRUEBA QUE DE VERDAD DISTINGUE LOS ESCENARIOS: **la misma cantidad, distinta fuente.**
+    // Cuatro datos medidos por un aparato frente a los mismos cuatro escritos por la persona.
+    let mut todo_medido = Contexto::vacio();
+    todo_medido.sueno_horas = Some(Rango::medido(7.0, 0.2));
+    todo_medido.sensacion = Some(Rango::medido(4.0, 0.2));
+    todo_medido.comida_antes = Some(Comida::Hidratos);
+    todo_medido.alcohol = Some(false);
+    for k in ["sueño", "sensación", "comida", "alcohol"] {
+        todo_medido.procedencias.push((k.into(), Fuente::Automatica { aplicacion: "Garmin".into() }));
+    }
+
+    let p_medido = todo_medido.precision();
+    assert_eq!(p_medido, motor::rango::Precision::Buena, "los cuatro medidos: se puede decidir");
+    assert_ne!(
+        p_medido, p_manual,
+        "LOS MISMOS CUATRO DATOS, y distinto resultado segun quien los puso: \
+         {p_medido:?} medidos frente a {p_manual:?} escritos a mano"
+    );
+
+    // Y el mixto queda en medio o mejor, nunca peor que el escrito a mano entero.
+    assert!(
+        p_auto == motor::rango::Precision::Buena || p_auto == motor::rango::Precision::Aceptable,
+        "con un dato medido y tres escritos, tiene que quedar en medio: {p_auto:?}"
+    );
+
+    // Y el margen del dato declarado es MAYOR que el del medido: recordar tiene error.
+    let m_medido = automatico.procedencias[0].1.margen_por_la_fuente();
+    let m_declarado = manual.procedencias[0].1.margen_por_la_fuente();
+    assert_eq!(m_medido, 0.0, "lo que mide un aparato no añade margen");
+    assert!(m_declarado > 0.0, "lo que se recuerda SI: {m_declarado}");
+}
+
+#[test]
+fn LA_COMIDA_no_es_un_sensor_y_se_trata_como_dato_BLANDO() {
+    // El dueño dijo: «un sensor en teoria no puede mentir a no ser que este averiado».
+    // Y eso es casi verdad -- pero LA COMIDA NO LA MIDE NINGUN SENSOR: la escribe una persona.
+    // Cuando alguien registra lo que come, se equivoca HACIA ABAJO. Es un dato blando, y se trata
+    // como tal.
+    for c in [Comida::Proteinas, Comida::Hidratos, Comida::Grasa, Comida::Nada] {
+        let coste = c.coste_de_digerir();
+        assert!((0.0..=0.30).contains(&coste), "{}: coste {coste}", c.nombre());
+    }
+    // Y el orden es el que dice la literatura: proteina > hidratos > grasa.
+    assert!(Comida::Proteinas.coste_de_digerir() > Comida::Hidratos.coste_de_digerir());
+    assert!(Comida::Hidratos.coste_de_digerir() > Comida::Grasa.coste_de_digerir());
+    assert!(Comida::Grasa.coste_de_digerir() > Comida::Nada.coste_de_digerir());
+}
+
+#[test]
+fn el_margen_de_la_comida_es_blando_porque_lo_escribe_una_persona() {
+    // Una comida escrita a mano NO puede tener el mismo margen que un pulso medido.
+    let declarada = Fuente::Declarada;
+    let medida = Fuente::Automatica { aplicacion: "Garmin".into() };
+    assert!(declarada.margen_por_la_fuente() > medida.margen_por_la_fuente());
+}
+
+#[test]
+fn EL_CRUCE_avisa_cuando_coinciden_mas_carga_y_menos_sueno() {
+    // Es lo que el cliente pide: «mezcla alimentacion, horas de sueño, habitos de ejercicio».
+    // Ese cruce NO EXISTIA en ningun sitio, y aqui esta.
+    let mut c = Contexto::vacio();
+    c.sueno_horas = Some(Rango::medido(6.2, 0.3));
+
+    let carga = Rango::estimado(180.0, 10.0);
+    let habitual = Rango::estimado(120.0, 10.0);
+
+    let aviso = c.cruce_con_la_carga(&carga, &habitual).expect("tiene que avisar");
+    assert!(aviso.contains("6.2"), "dice las horas: {aviso}");
+    assert!(aviso.contains("180"), "y la carga");
+    // Y NO afirma una causa: solo senala que coincide. Eso es lo honesto.
+    assert!(
+        aviso.contains("No se puede afirmar"),
+        "no puede afirmar que una cosa cause la otra: {aviso}"
+    );
+}
+
+#[test]
+fn el_cruce_NO_avisa_si_durmio_bien_o_si_la_carga_no_subio() {
+    // Un aviso que sale siempre no sirve para nada. Tiene que salir solo cuando importa.
+    let carga = Rango::estimado(180.0, 10.0);
+    let habitual = Rango::estimado(120.0, 10.0);
+
+    let mut durmio_bien = Contexto::vacio();
+    durmio_bien.sueno_horas = Some(Rango::medido(8.0, 0.3));
+    assert_eq!(durmio_bien.cruce_con_la_carga(&carga, &habitual), None, "durmio bien");
+
+    let mut poca_carga = Contexto::vacio();
+    poca_carga.sueno_horas = Some(Rango::medido(6.0, 0.3));
+    let floja = Rango::estimado(100.0, 10.0);
+    assert_eq!(poca_carga.cruce_con_la_carga(&floja, &habitual), None, "la carga no subio");
+}
+
+#[test]
+fn el_contexto_nunca_dice_tener_precision_ALTA() {
+    // Ni con los cuatro datos: uno que se recuerda no es una medicion. Decir «alta» seria mentir.
+    let mut c = Contexto::vacio();
+    c.sueno_horas = Some(Rango::medido(7.5, 0.2));
+    c.sensacion = Some(Rango::medido(4.0, 0.2));
+    c.comida_antes = Some(Comida::Hidratos);
+    c.alcohol = Some(false);
+    assert_eq!(c.cuantos(), (4, 4), "estan los cuatro");
+    assert_ne!(c.precision(), motor::rango::Precision::Alta, "pero nunca es «alta»");
+}

@@ -1,169 +1,245 @@
-// La ventana. Importa los temas, y NO los redefine: un valor vive en UN solo sitio (AU-10).
+// LA VENTANA: el motor enseñado, con el armazon y el tema.
+//
+// REGLA QUE CUMPLE, y es la mas importante del proyecto (AU-44 y la norma del motor):
+// **AQUI NO SE CALCULA NADA.** Los numeros llegan ya calculados por el motor, en Rust, con su margen
+// y su fuente. Si aqui hubiera una sola cuenta, el dia que se cambie una formula **la pantalla
+// mentiria sin avisar**.
+//
+// Y EL TEXTO JUSTO (AU-44 y AU-45): la pantalla MUESTRA. Lo que se explica va en la ayuda, y se pide.
+// Un vacio se dice en UNA linea, no en un parrafo.
+
 import { Claro, Oscuro } from "temas.slint";
+import { ArmazonEscritorio, ArmazonMovil, Medidas, Seccion } from "armazon.slint";
 
-// La primera ventana del motor. Mínima, y con una regla: NO calcula nada.
-//
-// POR QUÉ EMPIEZA ASÍ: la norma dice que el motor calcula y la interfaz enseña. Esta ventana
-// recibe los números YA CALCULADOS por el motor y los coloca. Si aquí hubiera una sola cuenta,
-// el día que se cambie la fórmula la pantalla mentiría sin avisar.
-//
-// Y enseña lo que el motor produce: no solo el número, sino SU MARGEN y DE DÓNDE SALE.
+// ---- Las piezas que se repiten, declaradas UNA vez (AU-41: una accion, una forma) ----
 
-// Una zona: su nombre, su limite, su margen, de donde a donde va, y su NIVEL (0-100).
-// El nivel es para la barra: su ancho es PROPORCIONAL al limite, asi que si el limite sube la barra
-// crece, y eso se ve de un vistazo. No es decoracion.
-//
-// Las estructuras van A NIVEL DE FICHERO en Slint, no dentro del componente.
-struct Zona {
-    nombre: string,
-    limite: string,
-    margen: string,
-    desde: string,
-    hasta: string,
-    nivel: int,
+// Una cifra: el numero, su etiqueta, y su margen si lo tiene.
+// EL MARGEN VA CON EL NUMERO, no en una nota al pie: es lo que este motor tiene de distinto, y
+// esconderlo seria quedarse con lo de siempre.
+component Cifra inherits Rectangle {
+    in property <string> numero;
+    in property <string> etiqueta;
+    in property <bool> oscuro: false;
+    in property <bool> destacada: false;
+
+    height: 66px;
+    border-radius: Medidas.radio;
+    background: root.oscuro ? Oscuro.sup : Claro.sup;
+    border-width: 1px;
+    border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 2px;
+        Text {
+            text: root.numero;
+            font-size: 26px;
+            font-weight: 700;
+            // El acento SOLO en las dos primeras: son las que el cliente mira.
+            color: root.destacada ? (root.oscuro ? Oscuro.ac : Claro.ac)
+                                  : (root.oscuro ? Oscuro.fg : Claro.fg);
+        }
+        Text {
+            text: root.etiqueta;
+            font-size: 12px;
+            color: root.oscuro ? Oscuro.muted : Claro.muted;
+        }
+    }
+}
+
+// Una zona: el nombre, su tramo, y la barra.
+// EL ANCHO ES PROPORCIONAL AL LIMITE: si el limite sube, la barra crece. **No es decoracion.**
+component Zona inherits Rectangle {
+    in property <string> nombre;
+    in property <string> tramo;
+    in property <int> nivel;        // 0 a 100
+    in property <color> tono;
+    in property <bool> oscuro: false;
+
+    height: 40px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 4px;
+        HorizontalLayout {
+            Text {
+                text: root.nombre; font-size: 12px;
+                color: root.oscuro ? Oscuro.muted : Claro.muted;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.tramo; font-size: 12px;
+                color: root.oscuro ? Oscuro.fg : Claro.fg;
+            }
+        }
+        Rectangle {
+            height: 10px;
+            border-radius: 5px;
+            background: root.oscuro ? Oscuro.pista : Claro.pista;
+            Rectangle {
+                width: parent.width * root.nivel / 100;
+                height: parent.height;
+                border-radius: 5px;
+                background: root.tono;
+            }
+        }
+    }
+}
+
+// Una linea de aviso: el punto, y UNA frase. Ni un parrafo ni una explicacion.
+component Aviso inherits Rectangle {
+    in property <string> texto;
+    in property <bool> oscuro: false;
+    height: 44px;
+    border-radius: Medidas.radio;
+    background: root.oscuro ? Oscuro.pista : Claro.pista;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px; height: 10px; border-radius: 5px;
+                background: root.oscuro ? Oscuro.ok : Claro.ok;
+            }
+        }
+        Text {
+            text: root.texto; font-size: 12px;
+            color: root.oscuro ? Oscuro.fg : Claro.fg;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// EL COMPONENTE RAIZ elige el armazon segun el espacio. NO pregunta por el dispositivo:
+// pregunta por el ANCHO, que es lo unico que importa -- **una ventana de escritorio estrecha es un
+// movil a efectos de reparto.**
+component Contenido inherits VerticalLayout {
+    in property <bool> oscuro: false;
+    in property <[string]> cifras;
+    in property <[string]> etiquetas;
+    in property <[string]> zonas_nombres;
+    in property <[string]> zonas_tramos;
+    in property <[int]> zonas_niveles;
+    in property <string> precision;
+    in property <string> aviso;
+    in property <string> vacio;
+
+    spacing: 12px;
+    HorizontalLayout {
+        spacing: 12px;
+        Cifra { horizontal-stretch: 1; numero: root.cifras[0]; etiqueta: root.etiquetas[0]; oscuro: root.oscuro; destacada: true; }
+        Cifra { horizontal-stretch: 1; numero: root.cifras[1]; etiqueta: root.etiquetas[1]; oscuro: root.oscuro; destacada: true; }
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        Cifra { horizontal-stretch: 1; numero: root.cifras[2]; etiqueta: root.etiquetas[2]; oscuro: root.oscuro; }
+        Cifra { horizontal-stretch: 1; numero: root.cifras[3]; etiqueta: root.etiquetas[3]; oscuro: root.oscuro; }
+    }
+    Rectangle {
+        height: 268px;
+        border-radius: Medidas.radio;
+        background: root.oscuro ? Oscuro.sup : Claro.sup;
+        border-width: 1px;
+        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+        VerticalLayout {
+            padding: 14px;
+            spacing: 4px;
+            Text {
+                text: "Zonas de entrenamiento";
+                font-size: 14px; font-weight: 700;
+                color: root.oscuro ? Oscuro.fg : Claro.fg;
+            }
+            for i in 5 : Zona {
+                nombre: root.zonas_nombres[i];
+                tramo: root.zonas_tramos[i];
+                nivel: root.zonas_niveles[i];
+                oscuro: root.oscuro;
+                tono: i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
+                    : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
+                    : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
+                    : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
+                             : (root.oscuro ? Oscuro.z5 : Claro.z5);
+            }
+        }
+    }
+    Aviso { texto: root.precision; oscuro: root.oscuro; }
+    Rectangle {
+        height: 52px;
+        border-radius: Medidas.radio;
+        background: root.oscuro ? Oscuro.sup : Claro.sup;
+        border-width: 1px;
+        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+        Text {
+            text: root.vacio; font-size: 13px;
+            color: root.oscuro ? Oscuro.muted : Claro.muted;
+            x: 14px; vertical-alignment: center;
+        }
+    }
+    Aviso { texto: root.aviso; oscuro: root.oscuro; }
 }
 
 export component Ventana inherits Window {
-    title: "Pulso — el motor";
-    width: 620px;
-    height: 560px;
+    // Lo que el motor entrega. TODO son cadenas: la ventana NO formatea numeros, los recibe hechos.
+    in property <[string]> cifras;
+    in property <[string]> etiquetas;
+    in property <[string]> zonas_nombres;
+    in property <[string]> zonas_tramos;
+    in property <[int]> zonas_niveles;
+    in property <string> precision;
+    in property <string> aviso;
+    in property <string> vacio;
+    // EL TEMA. Cambiar de tema es cambiar ESTA linea: ninguna pieza se toca (AU-39).
+    in property <bool> oscuro: false;
+
+    title: "Pulso";
+    width: 411px;
+    height: 880px;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
 
-    in property <string> titulo;
-    in property <string> subtitulo;
-    in property <string> maxima;         // "166 ± 12 ppm"
-    in property <string> origen;         // de donde sale
-    in property <string> precision;      // alta / buena / aceptable / amplia
-    in property <string> significado;    // que significa esa precision
-    in property <string> falta;          // que haria falta para afinar
-    in property <string> datos;          // "datos que tiene: 4 de 7"
-    in property <[Zona]> zonas;
+    // La unica decision de reparto: ¿cabe el riel?
+    // NO se pregunta por el dispositivo -- se pregunta por el ESPACIO. **Una ventana de escritorio
+    // estrecha es un movil a efectos de reparto.**
+    property <bool> es_movil: root.width < Medidas.corte;
 
-    in-out property <int> elegido: 0;
-    // EL TEMA. Cambiar de tema es cambiar ESTA linea: ninguna pieza se toca.
-    in property <bool> oscuro: false;
-    callback cambiar(int);
+    // Las secciones, declaradas UNA vez y usadas por los dos armazones (AU-10).
+    property <[Seccion]> las_secciones: [
+        { nombre: "Resumen", activa: true },
+        { nombre: "Zonas", activa: false },
+        { nombre: "Sesiones", activa: false },
+        { nombre: "Datos", activa: false },
+    ];
 
-    VerticalLayout {
-        padding: 26px;
-        spacing: 16px;
+    callback elegir(int);
 
-        // --- Cabecera ---
-        VerticalLayout {
-            spacing: 4px;
-            Text { text: root.titulo; font-size: 21px; font-weight: 700; color: root.oscuro ? Oscuro.fg : Claro.fg; }
-            Text { text: root.subtitulo; font-size: 13px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
+    if root.es_movil : ArmazonMovil {
+        oscuro: root.oscuro;
+        titulo: "Pulso";
+        secciones: root.las_secciones;
+        elegir(i) => { root.elegir(i); }
+        Contenido {
+            oscuro: root.oscuro;
+            cifras: root.cifras; etiquetas: root.etiquetas;
+            zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
+            zonas_niveles: root.zonas_niveles;
+            precision: root.precision; aviso: root.aviso; vacio: root.vacio;
         }
+    }
 
-        // --- El numero, con su margen, que es lo que este motor tiene de distinto ---
-        Rectangle {
-            background: root.oscuro ? Oscuro.sup : Claro.sup;
-            border-radius: 10px;
-            border-width: 1px;
-            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-            VerticalLayout {
-                padding: 18px;
-                spacing: 8px;
-                Text { text: "Frecuencia cardíaca máxima"; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
-                Text { text: root.maxima; font-size: 32px; font-weight: 700; color: root.oscuro ? Oscuro.ac : Claro.ac; }
-                Text { text: root.origen; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Rectangle {
-                        background: root.oscuro ? Oscuro.pista : Claro.pista; border-radius: 4px;
-                        HorizontalLayout {
-                            padding: 5px;
-                            Text { text: "precisión " + root.precision; font-size: 12px; color: root.oscuro ? Oscuro.ac : Claro.ac; font-weight: 600; }
-                        }
-                    }
-                    Text { text: root.datos; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; vertical-alignment: center; }
-                }
-                Text { text: root.significado; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; wrap: word-wrap; }
-            }
-        }
-
-        // --- Las zonas. Siempre estan: es lo que el motor garantiza ---
-        Text { text: "Zonas de intensidad"; font-size: 14px; font-weight: 600; color: root.oscuro ? Oscuro.fg : Claro.fg; }
-        VerticalLayout {
-            spacing: 6px;
-            for z in root.zonas : Rectangle {
-                height: 46px;
-                background: root.oscuro ? Oscuro.sup : Claro.sup;
-                border-radius: 6px;
-                border-width: 1px;
-                border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-                HorizontalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    spacing: 12px;
-                    Text {
-                        text: z.nombre; font-size: 13px; color: root.oscuro ? Oscuro.fg : Claro.fg;
-                        width: 74px; vertical-alignment: center;
-                    }
-                    // La barra: el ancho es PROPORCIONAL al limite. No es decoracion: si el limite
-                    // sube, la barra crece, y eso se ve de un vistazo.
-                    Rectangle {
-                        width: 150px; height: 22px;
-                        background: #edf2f7; border-radius: 4px;
-                        Rectangle {
-                            width: parent.width * z.nivel / 100;
-                            height: parent.height;
-                            background: #90cdf4; border-radius: 4px;
-                        }
-                    }
-                    Text {
-                        text: z.limite; font-size: 15px; font-weight: 700; color: root.oscuro ? Oscuro.ac : Claro.ac;
-                        vertical-alignment: center; horizontal-alignment: right;
-                        width: 74px;
-                    }
-                    Text {
-                        text: "± " + z.margen; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted;
-                        vertical-alignment: center; width: 46px;
-                    }
-                    Text {
-                        text: z.desde + " – " + z.hasta; font-size: 11px; color: root.oscuro ? Oscuro.muted : Claro.muted;
-                        vertical-alignment: center; horizontal-alignment: right;
-                        horizontal-stretch: 1;
-                    }
-                }
-            }
-        }
-
-        // --- Y lo que haria falta para afinar: la aplicacion DICE que hacer ---
-        Rectangle {
-            background: #fffaf0;
-            border-radius: 8px;
-            border-width: 1px;
-            border-color: #feebc8;
-            VerticalLayout {
-                padding: 14px;
-                spacing: 4px;
-                Text { text: "Para afinarlo"; font-size: 12px; font-weight: 600; color: #c05621; }
-                Text { text: root.falta; font-size: 13px; color: #744210; wrap: word-wrap; }
-            }
-        }
-
-        // --- Los botones: cambian los DATOS, no el calculo ---
-        Text { text: "Prueba con menos datos, y mira cómo se ensancha el margen:"; font-size: 12px; color: root.oscuro ? Oscuro.muted : Claro.muted; }
-        HorizontalLayout {
-            spacing: 8px;
-            for i in 4 : Rectangle {
-                height: 34px;
-                horizontal-stretch: 1;
-                background: i == root.elegido ? #2b6cb0 : white;
-                border-radius: 6px;
-                border-width: 1px;
-                border-color: i == root.elegido ? #2b6cb0 : #cbd5e0;
-                Text {
-                    text: i == 0 ? "sin datos" : (i == 1 ? "con la edad" : (i == 2 ? "con composición" : "con la máxima medida"));
-                    font-size: 11px;
-                    color: i == root.elegido ? white : #4a5568;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    wrap: word-wrap;
-                }
-                TouchArea { clicked => { root.cambiar(i); } }
-            }
+    if !root.es_movil : ArmazonEscritorio {
+        oscuro: root.oscuro;
+        titulo: "Pulso";
+        secciones: root.las_secciones;
+        elegir(i) => { root.elegir(i); }
+        Contenido {
+            oscuro: root.oscuro;
+            cifras: root.cifras; etiquetas: root.etiquetas;
+            zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
+            zonas_niveles: root.zonas_niveles;
+            precision: root.precision; aviso: root.aviso; vacio: root.vacio;
         }
     }
 }

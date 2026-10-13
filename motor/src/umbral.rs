@@ -129,15 +129,20 @@ pub fn umbral(p: &Persona) -> Umbral {
 /// | **Z3 tempo** | 90 – 94 % | trabajo sostenido |
 /// | **Z4 umbral** | 94 – 100 % | justo en el umbral |
 /// | **Z5 consumo máximo** | 100 – 120 % | por encima |
-pub fn zonas_del_umbral(p: &Persona) -> Vec<(ZonaCiclismo, Rango)> {
+pub fn zonas_del_umbral(p: &Persona) -> Vec<(ZonaCiclismo, Rango, Rango)> {
     let u = umbral(p);
     ZonaCiclismo::todas()
         .iter()
         .map(|z| {
-            let valor = u.rango.valor * z.fraccion();
-            // El margen del umbral se propaga en la misma proporción.
-            let margen = u.rango.margen * z.fraccion();
-            (*z, Rango::estimado(valor, margen))
+            // UNA ZONA ES UN TRAMO, NO UN LÍMITE. Esto se corrigió el 2026-10-13: la primera versión
+            // devolvía solo el suelo, y entonces «recuperación» y «resistencia» salían con **el mismo
+            // número** en el informe, porque las dos empiezan donde acaba la anterior. Un informe que
+            // dice dos veces 137 **no se entiende**, y el fallo era de lectura, no de cálculo.
+            let desde = u.rango.valor * z.fraccion();
+            let hasta = u.rango.valor * z.techo();
+            let m_desde = u.rango.margen * z.fraccion();
+            let m_hasta = u.rango.margen * z.techo();
+            (*z, Rango::estimado(desde, m_desde), Rango::estimado(hasta, m_hasta))
         })
         .collect()
 }
@@ -170,6 +175,18 @@ impl ZonaCiclismo {
             ZonaCiclismo::Tempo => 0.90,
             ZonaCiclismo::Umbral => 0.94,
             ZonaCiclismo::ConsumoMaximo => 1.00,
+        }
+    }
+
+    /// **El techo de la zona**, como fracción del umbral. Sin esto, dos zonas seguidas darían el
+    /// mismo número, porque una empieza donde acaba la otra.
+    pub fn techo(self) -> f64 {
+        match self {
+            ZonaCiclismo::Recuperacion => 0.81,
+            ZonaCiclismo::Resistencia => 0.90,
+            ZonaCiclismo::Tempo => 0.94,
+            ZonaCiclismo::Umbral => 1.00,
+            ZonaCiclismo::ConsumoMaximo => 1.20,
         }
     }
 

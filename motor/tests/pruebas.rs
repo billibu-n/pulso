@@ -1158,3 +1158,115 @@ fn sin_historico_suficiente_NO_se_puede_decir_si_esta_mejor_o_peor() {
         "con ocho si se puede decir como esta respecto a su propia normalidad"
     );
 }
+
+// ============================================= 14. EL INFORME POR PLANTILLAS
+//
+// El dueño lo decidió así: «al final lo que le interesa es una plantilla e información bien
+// distribuida». Una plantilla NO improvisa, y en algo que afecta al cuerpo de una persona, que no
+// improvise es una ventaja. Y es reproducible y auditable.
+
+use motor::informe;
+
+fn persona_completa() -> Persona {
+    let mut p = nadie();
+    p.edad = Dato::Hay(60);
+    p.pulso_reposo = Dato::Hay(48);
+    p.peso_kg = Dato::Hay(70.2);
+    p.altura_cm = Dato::Hay(178.0);
+    p.grasa_corporal_pct = Dato::Hay(19.1);
+    p.umbral_lactato = Dato::Hay(169);
+    p.pulso_maximo_medido = Dato::Hay(183);
+    p
+}
+
+#[test]
+fn el_informe_se_genera_SIN_DATOS_y_no_falla() {
+    // La regla del rediseno aplicada al informe: **nunca se queda sin responder**.
+    let h = informe::hechos(&nadie(), None, None);
+    let texto = informe::generar(&h);
+    assert!(texto.contains("Análisis de entrenamiento"));
+    assert!(texto.contains("zonas"), "aunque no haya datos, las zonas se enseñan");
+    assert!(!texto.is_empty());
+}
+
+#[test]
+fn el_informe_ensena_las_zonas_como_TRAMOS_y_no_como_numeros_sueltos() {
+    // EL DEFECTO QUE SE CORRIGIO: la primera version daba solo el suelo de cada zona, y entonces
+    // «recuperación» y «resistencia» salian con EL MISMO NUMERO, porque una empieza donde acaba la
+    // otra. Un informe que dice dos veces 137 no se entiende.
+    let h = informe::hechos(&persona_completa(), None, None);
+    let texto = informe::generar(&h);
+
+    // Con el umbral en 169, la resistencia va de 137 a 152.
+    assert!(texto.contains("137 – 152"), "la resistencia tiene que salir como tramo:\n{texto}");
+    assert!(texto.contains("hasta 137"), "y la recuperacion como «hasta»");
+    // Y ninguna zona puede repetir el mismo tramo que otra.
+    let mut tramos: Vec<&str> = Vec::new();
+    for linea in texto.lines().filter(|l| l.starts_with("| **")) {
+        if let Some(t) = linea.split('|').nth(2) {
+            tramos.push(t.trim());
+        }
+    }
+    let unicos: std::collections::HashSet<_> = tramos.iter().collect();
+    assert_eq!(tramos.len(), unicos.len(), "ninguna zona puede repetir el tramo de otra: {tramos:?}");
+}
+
+#[test]
+fn el_informe_dice_DE_DONDE_SALE_la_referencia_de_las_zonas() {
+    // Con umbral medido, tiene que decirlo. Y no puede llamarlo «estimado».
+    let h = informe::hechos(&persona_completa(), None, None);
+    let texto = informe::generar(&h);
+    assert!(texto.contains("umbral de lactato medido"), "tiene que decir de donde sale");
+    assert!(texto.contains("169"), "y el valor");
+    assert!(!texto.contains("estimado a partir"), "no puede decir estimado si esta medido");
+}
+
+#[test]
+fn el_informe_pone_lo_que_FALTA_AL_FINAL_y_no_al_principio() {
+    // Un informe que empieza por los avisos metodologicos no se lee. Y ademas, lo que falta NO
+    // impide dar un resultado: el resultado esta arriba.
+    let h = informe::hechos(&nadie(), None, None);
+    let texto = informe::generar(&h);
+
+    let pos_zonas = texto.find("Sus zonas de entrenamiento").expect("estan las zonas");
+    let pos_falta = texto.find("Para que el análisis sea más preciso").expect("esta lo que falta");
+    assert!(pos_zonas < pos_falta, "las zonas van ANTES de lo que falta");
+
+    // Y tiene que quedar claro que falta precision, no resultado.
+    assert!(
+        texto.contains("No falta información para **dar un resultado**"),
+        "hay que decir que el resultado esta dado"
+    );
+}
+
+#[test]
+fn la_COMPROBACION_del_informe_caza_un_numero_que_nadie_calculo() {
+    // Es la guarda que evita el fallo silencioso: si alguien añade texto con un numero que no salio
+    // de un calculo, esto lo dice. Es la misma idea que el motor revisando lo que escribiria una IA.
+    let bueno = "Su umbral es 169 y la zona de umbral empieza en 159.";
+    let problemas = informe::comprobar_que_no_inventa(bueno, &[169.0, 159.0]);
+    assert!(problemas.is_empty(), "los numeros legitimos no dan problema: {problemas:?}");
+
+    let malo = "Su umbral es 169 y deberia entrenar a 145 pulsaciones.";
+    let problemas = informe::comprobar_que_no_inventa(malo, &[169.0, 159.0]);
+    assert_eq!(problemas.len(), 1, "el 145 no salio de ningun calculo");
+    assert!(problemas[0].contains("145"), "y hay que decir cual: {}", problemas[0]);
+}
+
+#[test]
+fn el_informe_es_REPRODUCIBLE() {
+    // La ventaja de la plantilla sobre una IA: los mismos datos dan EL MISMO informe, siempre.
+    // Un plan que cambia cada vez que lo pides no es un plan.
+    let p = persona_completa();
+    let uno = informe::generar(&informe::hechos(&p, None, None));
+    let dos = informe::generar(&informe::hechos(&p, None, None));
+    assert_eq!(uno, dos, "dos veces los mismos datos tienen que dar el mismo informe");
+}
+
+#[test]
+fn el_informe_termina_recordando_que_NO_es_un_diagnostico_medico() {
+    let h = informe::hechos(&persona_completa(), None, None);
+    let texto = informe::generar(&h);
+    assert!(texto.contains("No es un diagnóstico médico"), "tiene que decirlo");
+    assert!(texto.contains("profesional sanitario"), "y a quien corresponde decidir");
+}

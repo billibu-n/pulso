@@ -1,0 +1,93 @@
+// SONDA CONSERVADA: hasta donde llega un control de serie, y donde hay que ayudarlee.
+//
+// NACE DE LA DECISION DEL DUEÑO (2026-10-13): **se usan los controles de SERIE**, porque
+// «debe tener la ventaja de no romperse». Es una buena razon y este proyecto la adopta.
+//
+// PERO HABIA QUE MEDIR EL PRECIO, y esto es lo que se midio COMPILANDO:
+//
+//   1. NO aceptan nuestros colores:
+//        error: Unknown property background in Button
+//   2. NO aceptan Nuestro color de TEXTO:
+//        error: Unknown property color in LineEdit
+//   3. **Y NO ACEPTAN NI UN BORDE**, que es lo que se probo aqui:
+//        error: Unknown property border-width in Button
+//        error: Unknown property border-color in Button
+//
+// La causa esta en la fuente oficial (`i-slint-compiler/widgets/fluent/button.slint`): el borde
+// lo pinta un Rectangle INTERNO (`i-border`) y **no se expone como propiedad**. De las doce
+// propiedades de `Palette`, once son de solo lectura.
+//
+// CONSECUENCIA MEDIDA (`temas/contraste-widgets.py`): en el tema CLARO el borde de serie da
+// 3,33:1 y se ve; en el tema NEGRO OLED da **1,14:1** -- o sea, NO SE VE. Un boton sin
+// contorno, sobre negro, parece un rotulo.
+//
+// **LA SALIDA NO ES REESCRIBIR EL BOTON** (eso tiraria su accesibilidad, su foco y su teclado).
+// Es **ponerle un MARCO POR FUERA**: un Rectangle con el borde, y el Button dentro. El boton
+// sigue siendo el boton; lo unico que se anade es el contorno que el estilo no dibuja.
+//
+// Y eso es lo que hace este componente de abajo: se puede comparar el de arriba con el de abajo.
+import { Button } from "std-widgets.slint";
+import { Claro, Oscuro } from "temas.slint";
+
+export component SondaBorde inherits Window {
+    width: 320px;
+    height: 260px;
+    background: Oscuro.bg;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: "Tema negro OLED";
+            color: Oscuro.muted;
+        }
+
+        // (a) TAL CUAL: el boton se queda sin contorno. Sobre negro, esto parece un rotulo.
+        Button {
+            accessible-id: "SondaBorde::sin-marco";
+            text: "Vincular cuenta";
+        }
+
+        // (b) CON MARCO POR FUERA: el contorno lo pone el Rectangle; el Button no se toca.
+        //
+        // EL FALLO QUE SE CAZO MIDIENDO, y merece quedar escrito: la primera version ponia
+        //   height: self.preferred-height + 4px,  y dentro  x/y/width/height a mano.
+        // **Medido**: el marco salio de **288x4** y el boton de 284x27, saliendose por abajo.
+        // `preferred-height` del envoltorio vale CERO en ese momento, y ademas poner x/y/width
+        // a mano dentro de un layout es el error de la seccion 1 de `SLINT-lo-que-hay-que-saber`.
+        //
+        // LA FORMA CORRECTA es no calcular nada: **el `padding` del layout reserva el hueco** y
+        // **pedir la altura al hijo con `height: hijo.preferred-height`**, que es la unica
+        // medida que el hijo SI sabe contestar.
+        Rectangle {
+            // `region` es el papel de referencia para un contenedor con entidad propia.
+            // (Se probo `group` y NO existe: el catalogo tiene `groupbox` y `region`.)
+            accessible-role: region;
+            accessible-id: "SondaBorde::marco";
+            border-width: 2px;
+            border-color: Oscuro.linea;
+            border-radius: 8px;
+            height: self.preferred-height;
+
+            VerticalLayout {
+                padding: 2px;   // el hueco entre el borde y el boton: lo pone el layout, no la cuenta
+
+                boton-con-marco := Button {
+                    accessible-id: "SondaBorde::con-marco";
+                    // El estilo de serie mide 27 px y su minimo son 32. El minimo tactil del
+                    // proyecto son 48 dp, asi que **hay que pedirlo**: no viene puesto.
+                    height: max(48px, self.preferred-height);
+                    text: "Vincular cuenta, con marco";
+                    primary: true;
+                }
+            }
+        }
+
+        Text {
+            text: "Arriba sin marco · abajo con marco";
+            color: Oscuro.muted;
+            font-size: 12px;
+        }
+    }
+}

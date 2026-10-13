@@ -27,15 +27,17 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 | **los iconos** | **187** de Lucide, licencia ISC respetada | `motor/ui/iconos.slint` + `herramientas/iconos-a-slint.py` |
 | **Android** | **comprobado**: binario ARM aarch64 para Android | ver `docs/SLINT-…`, §10.6 |
 | **la norma** | **82 reglas**, 15 patrones de fallo | `~/.dsh/skills/norma-app/SKILL.md` |
+| **los controles** | **DECIDIDO**: los de serie, con su precio medido | `docs/SLINT-…` §12 · `motor/ui/sonda-borde.slint` |
+| **8 pruebas de medición** | 6 de geometría + **2 de los controles de serie** | `cargo test --test medir-interfaz` |
 
 ## 3. Qué FALTA, en orden, y por qué ese orden
 
-**Los ocho pasos del recorrido del usuario, medidos: uno a medias y siete que no cumplen.**
+**Los ocho pasos del recorrido del usuario, medidos: dos cumplen ya, uno a medias y cinco que faltan.**
 El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 | # | el paso | qué falta |
 |---|---|---|
-| **1** | **primero: la decisión de los controles** | los widgets de serie **no aceptan nuestros colores** (§11.1 del doc de Slint). O se aceptan, o se construyen. **Es decisión del dueño y bloquea lo demás.** |
+| ~~**1**~~ | ~~**la decisión de los controles**~~ | **HECHO el 2026-10-13**: se usan **los de serie**. Con 4 reglas medidas (§12 del doc de Slint) y **una obligatoria**: `Palette.color-scheme` se fija desde nuestro tema. |
 | **2** | una **puerta de entrada única** | hoy hay 13 binarios de desarrollo y ninguno se llama «la aplicación» |
 | **3** | **los datos de la persona, editables** | hoy están **escritos en el código**: los resultados **no son del cliente** |
 | **4** | **el primer arranque sin datos** | hoy dice `169±3` **y** «sin datos» a la vez: **se contradice** |
@@ -51,13 +53,14 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/              14 módulos: datos, rango, formulas_v2, umbral, patron, hrv,
 │   │                     contexto, informe, fit, tendencia, juicio, fuentes, adaptador
 │   ├── src/bin/          inventario (cuenta los 625), informe, ventana, y otros
-│   ├── tests/pruebas.rs  86 pruebas · tests/medir-interfaz.rs  6 pruebas de MEDICION
+│   ├── tests/pruebas.rs  86 pruebas · tests/medir-interfaz.rs  8 pruebas de MEDICION
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
+│                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
 ├── herramientas/        traer-slint.sh · html-a-texto.py · iconos-a-slint.py
 ├── datos/               1003 MB DEL CLIENTE — **ignorado por git, NUNCA se sube**
 ├── datos-de-ejemplo/    caso inventado, esto sí se publica
-└── temas/contraste.py   mide el contraste WCAG de los dos temas
+└── temas/                contraste.py (los dos temas) · contraste-widgets.py (los CONTROLES)
 ```
 
 **Y los otros dos repositorios:**
@@ -74,7 +77,9 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
    compilador no avisa**.
 3. **Dentro de un layout, `x` e `y` no se ponen**: lo coloca el layout. Ponerlo a un hijo y a otro no
    **cambia el tamaño del padre**.
-4. **Los widgets de serie no aceptan nuestros colores** — y hay dos temas propios.
+4. **Los widgets de serie no aceptan nuestros colores** — **ni un borde**: `Unknown property border-width
+   in Button`. En el tema negro su borde da **1,14:1** y no se ve. Salida medida: **marco por fuera**
+   (ver §12 del doc de Slint).
 5. **`visible: false` no libera el hueco.**
 6. **`Text {};` con punto y coma no compila.**
 7. **`to-float()` usa el separador del IDIOMA**: `"1.5"` da **0** en un equipo alemán.
@@ -93,12 +98,28 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 15. **Los binarios de depuración ocupan cientos de MB**: «Finished in 0.2s» puede significar **que no
     recompiló**. Forzar con `touch`.
 
+**Y cuatro que costaron el 2026-10-13, al decidir los controles:**
+
+16. **El esquema de los widgets NO lo decide nuestro tema, lo decide el SISTEMA.** Si no coinciden, el
+    texto del control sale a **1,05:1** — **ilegible**. Se arregla con **una línea obligatoria**
+    (`Palette.color-scheme = …` en la raíz). Sin ella la pantalla se rompe en el equipo de cualquiera
+    que tenga el tema contrario al suyo.
+17. **Los controles de serie miden 27 px de alto por su contenido, y su mínimo son 32.** El mínimo
+    táctil del proyecto son **48 dp**: **hay que pedirlo**, no viene puesto.
+18. **Dimensionar un envoltorio con `self.preferred-height` NO funciona**: vale **cero** en ese momento.
+    Medido: el marco salió de **288x4** y el botón de **284x27**, saliéndose. La forma correcta es **no
+    calcular**: `padding` en el layout y la altura pedida **al hijo**.
+19. **`match_id` casa con el id INTERNO del elemento, no con el `accessible-id`.** Para buscar por
+    `accessible-id` hay que **filtrar** sobre `find_all()`. Y `group` **no existe** como papel de
+    accesibilidad: el catálogo tiene **`groupbox`** y **`region`**.
+
 ## 6. Cómo se comprueba que algo funciona (el método, no la fe)
 
 ```bash
 cd ~/projects/pulso/motor
 cargo test                              # 86 pruebas del motor
-cargo test --test medir-interfaz        # 6 pruebas de GEOMETRIA de la interfaz
+cargo test --test medir-interfaz        # 8 pruebas de GEOMETRIA y de los controles
+python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --bin inventario -- ../datos/garmin_files/storage   # cuenta los 625 resultados
 cargo run -q --bin ventana -- ../datos/garmin_files/storage --texto   # lo que enseña, SIN ABRIR
 ```
@@ -110,8 +131,11 @@ cargo run -q --bin ventana -- ../datos/garmin_files/storage --texto   # lo que e
 
 ## 7. Lo que NO está resuelto, dicho claro
 
-- **La decisión de los controles** (paso 1): **bloquea el resto de la interfaz.**
-- **Los datos de la persona están en el código**: **los resultados no son del cliente todavía.**
+- **La decisión de los controles** ya **NO** bloquea: se usan los de serie (paso 1, hecho).
+- **Los datos de la persona están en el código**: **los resultados no son del cliente todavía.** Y
+  están repetidos **a mano en 5 sitios de producción** (`ventana.rs`, `inventario.rs`, `informe.rs`,
+  `sin_datos.rs`, `demo.rs`) y **en 4 de prueba**. Existe **un solo camino** para leerlos de un fichero:
+  `adaptador::leer_perfil` — y **no existe guardar nada en disco** (no hay `Serialize` en el proyecto).
 - **Cuatro páginas de Slint sin traer**: tipos de propiedad, **propiedades y bindings** (el hueco más
   grave: no se sabe qué pasa al asignar a mano a un binding), operadores y pureza.
 - **13 iconos de Simple Icons** sin convertir: son de relleno, no de trazo.

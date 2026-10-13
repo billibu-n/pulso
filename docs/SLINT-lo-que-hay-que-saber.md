@@ -331,8 +331,9 @@ Slint, en medio de una pantalla crema, **rompe los dos temas de golpe**.
 **Comprobado que `Palette.color-scheme` funciona**: `init => { Palette.color-scheme = ColorScheme.dark; }`
 **compila**. Es la única palanca que existe.
 
-> **DECISIÓN PENDIENTE, y es del dueño, no mía**: o se aceptan los colores de Slint en los controles, o
-> se construyen los propios — **con su coste en accesibilidad**, que hay que pagar a mano.
+> **DECIDIDO EL 2026-10-13, y es del dueño**: **se usan los controles de serie**, con esta razón:
+> *«debe tener la ventaja de no romperse»*. La decisión está desarrollada, **con su precio medido**,
+> en la **§12** de este documento.
 
 ### 11.2 · `private` SÍ es el default, y es una trampa silenciosa
 
@@ -380,9 +381,130 @@ idioma. **Se comprueba midiendo, no suponiendo.**
 
 1. **`in` explícito en toda propiedad que rellene el motor** (§11.2).
 2. **Nada de `x`/`y` dentro de un layout**; `padding` y `spacing` (§11.3).
-3. **Los controles, o se aceptan como vienen, o se construyen** — decisión del dueño (§11.1).
+3. **Los controles SON los de serie** — decisión del dueño del 2026-10-13, con su precio medido (§12).
 4. **Los estados, gobernados por una propiedad** (ya estaba: no hay `set_state` desde Rust).
 5. **`Timer` con `running: false` por defecto** explícito, que viene encendido.
 6. **`ScrollView` necesita `mouse-drag-pan-enabled: true`** en el móvil, o **no se desplaza con el dedo**.
 7. **`ListView` para las listas largas**, y **`ScrollView` para todo lo demás**: el segundo **instancia
    todos los hijos**, y con 102 sesiones eso se nota.
+
+---
+
+## 12. LOS CONTROLES DE SERIE: la decisión, y su precio MEDIDO (2026-10-13)
+
+**El dueño decidió**, y con una razón que es un principio y no un gusto:
+
+> *«utilicemos los de Slint para esta tarea, **debe tener la ventaja de no romperse**».*
+
+**La razón es buena y se puede comprobar**: un `Button` de serie trae **el foco del teclado** (Espacio
+y Retorno), **el estado pulsado**, **el deshabilitado**, **el borde de foco** y **la accesibilidad ya
+declarada**. Un botón hecho a mano con un `Rectangle` y un `TouchArea` **no trae nada de eso**, y todo
+eso hay que construirlo **y probarlo**. Lo que trae el marco **ya está probado por otros**.
+
+**Pero el precio hay que MEDIRLO, no suponerlo.** Esto es lo que se midió, y son tres cosas distintas.
+
+### 12.1 · Lo que se GANA (medido con una prueba, no leído)
+
+La prueba `el_boton_de_serie_trae_la_accesibilidad_puesta` (`motor/tests/medir-interfaz.rs`) consulta un
+`Button` de serie y devuelve:
+
+```
+el boton de serie se declara como Some(Button), con la etiqueta Some("Vincular cuenta")
+```
+
+O sea: **el papel y la etiqueta ya están puestos**. Si el botón se hubiera construido a mano, esas dos
+cosas —y el foco, y el teclado— habría que **declararlas y probarlas una a una**.
+
+### 12.2 · Lo que se PIERDE (medido con el compilador)
+
+Los controles de serie **no aceptan nada nuestro**. Los tres errores, literales:
+
+```
+error: Unknown property background in Button
+error: Unknown property color in LineEdit
+error: Unknown property border-width in Button      <-- y tampoco un BORDE
+error: Unknown property border-color in Button
+```
+
+**La causa está en la fuente oficial** (`i-slint-compiler-1.18.1/widgets/fluent/button.slint`): el borde
+lo pinta un `Rectangle` **interno** (`i-border`) y **no se expone como propiedad**. Y de las doce
+propiedades de `Palette`, **once son de solo lectura**.
+
+**Consecuencia**: los dos temas propios del proyecto **no llegan a los controles**. Los controles salen
+con el aspecto de Slint (estilo *Fluent*, azul incluido).
+
+### 12.3 · Y EL FALLO GRAVE, que es el que hay que vigilar
+
+**Los colores del control dependen del ESQUEMA DEL SISTEMA, no de nuestro tema** (`FluentPalette`
+deriva todo de `FluentPalette.color-scheme`, que por defecto es `SlintInternal.color-scheme`).
+
+**Medido con `temas/contraste-widgets.py`**, que es un portero que se ejecuta:
+
+| si el esquema no coincide con el tema | texto resultante | contraste | veredicto |
+|---|---|---|---|
+| sistema **oscuro**, pantalla **clara** | `#ffffff` | **1,05 : 1** | **ilegible** |
+| sistema **claro**, pantalla **negra** | `#121212` | **1,12 : 1** | **ilegible** |
+
+**El mínimo es 4,5 : 1.** O sea: **el texto del control desaparece**. Y no es un caso raro — es el
+equipo de cualquiera que tenga el sistema en el tema contrario al que usa en la aplicación.
+
+> **REGLA OBLIGATORIA, y es una línea**: `Palette.color-scheme` **se fija desde NUESTRO tema**, en la
+> raíz de la ventana, y **nunca se deja que lo decida el sistema**:
+>
+> ```slint
+> init => { Palette.color-scheme = root.oscuro ? ColorScheme.dark : ColorScheme.light; }
+> ```
+
+### 12.4 · El borde del botón en el tema negro: **no se ve**
+
+Medido, con los colores copiados de la fuente oficial:
+
+| tema | texto del control | borde del control sobre la página |
+|---|---|---|
+| claro cálido (`#faf9f7`) | **17,32 : 1** | 3,33 : 1 — se ve |
+| **negro OLED** (`#000000`) | **19,17 : 1** | **1,14 : 1 — NO se ve** |
+
+En el tema negro, el borde de serie es **blanco al 8 %** sobre negro: **no delimita nada**, y el mínimo
+para una parte de la interfaz es **3 : 1**. Un botón sin contorno, sobre negro, **parece un rótulo** — y
+esto importa porque el primer botón de la aplicación es **«traer mis datos»**, que es por donde entra el
+cliente. **Un botón que no se ve es un botón que no se encuentra.**
+
+**Y NO se arregla poniéndole un borde desde fuera**: se probó, y no compila (los dos errores de §12.2).
+
+**La salida, y está medida**: **no reescribir el botón** — eso tiraría lo que se acaba de ganar — sino
+**ponerle un marco por fuera**: un `Rectangle` con el borde, y el `Button` dentro, con el hueco puesto
+por el **`padding`** del layout. Está en `motor/ui/sonda-borde.slint`, y la prueba
+`el_marco_de_fuera_no_recorta_al_boton` comprueba que el marco **no aplasta** al botón.
+
+**Y un error que se cazó midiendo, y queda escrito**: la primera versión dimensionaba el marco con
+`height: self.preferred-height + 4px` y colocaba el botón con `x`/`y`/`width`/`height` a mano.
+**Medido: el marco salió de `288x4` y el botón de `284x27`, saliéndose por abajo.** `preferred-height`
+del envoltorio **vale cero** en ese momento. La forma correcta es **no calcular**: el `padding` del
+layout reserva el hueco, y la altura se le pide **al hijo** (`height: hijo.preferred-height`).
+
+### 12.5 · Dos medidas que hay que PEDIR, porque no vienen puestas
+
+| lo que hace falta | lo que trae el estilo | cómo se pide |
+|---|---|---|
+| **mínimo táctil de 48 dp** | **32 px** | `height: max(48px, self.preferred-height)` |
+| **ancho completo** | `horizontal-stretch: 0` | `width: parent.width` o `horizontal-stretch: 1` |
+
+**Las dos se descubrieron midiendo**: el botón de serie mide **27 px** de alto por su contenido, y su
+mínimo declarado son 32. El mínimo táctil del proyecto son 48 dp. Traducido: **el control de serie, tal
+como viene, es demasiado bajo para un dedo** — y eso no se ve leyendo, se ve midiendo.
+
+**Medido tras pedirlo**: marco `288x52`, botón `284x48`, con hueco por los cuatro lados.
+
+### 12.6 · Resumen de la decisión
+
+1. **Se usan los controles de serie**, y el motivo es que **traen probado lo que a mano habría que
+   probar**: accesibilidad, foco, teclado, estados.
+2. **`Palette.color-scheme` se fija desde nuestro tema**, siempre, en la raíz. **Sin esa línea la
+   pantalla se rompe en el equipo de cualquiera con el tema contrario.**
+3. **El mínimo táctil y el ancho se piden** en cada control: no vienen puestos.
+4. **Donde el estilo no dibuja un contorno que haga falta, se le pone un MARCO POR FUERA** — nunca se
+   reescribe el control.
+5. **El precio, dicho claro**: los controles **no llevan los colores del proyecto**. Los dos temas
+   propios gobiernan **todo lo demás** (fondos, tarjetas, textos, zonas, gráficos), y **no los
+   controles**. Si algún día eso no se acepta, la salida es la opción (b) de §11.1, y **entonces hay que
+   pagar la accesibilidad a mano**.

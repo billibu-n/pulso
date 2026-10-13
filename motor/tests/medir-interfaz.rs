@@ -203,3 +203,143 @@ fn se_puede_buscar_por_accessible_id_sin_depender_del_nombre_interno() {
     );
 }
 
+
+// ==================================================================================================
+// LO QUE SE MIDIO AL DECIDIR USAR LOS CONTROLES DE SERIE (2026-10-13)
+// ==================================================================================================
+//
+// El dueño decidio usar **los controles de serie de Slint** porque «debe tener la ventaja de no
+// romperse». La decision es buena, y **hay que medir su precio en vez de suponerlo**.
+//
+// Este es el precio, medido con el compilador y con estos numeros:
+//   - NO aceptan nuestros colores (`Unknown property background in Button`),
+//   - NO aceptan nuestro color de texto (`Unknown property color in LineEdit`),
+//   - **NO aceptan ni un borde** (`Unknown property border-width in Button`).
+//
+// Y la consecuencia practica esta en `temas/contraste-widgets.py`: en el tema claro el borde de
+// serie da 3,33:1 y se ve; **en el tema negro OLED da 1,14:1, o sea NO SE VE**. Un boton sin
+// contorno sobre negro parece un rotulo.
+//
+// LA SALIDA (y es lo que comprueba esta prueba): **no reescribir el boton** -- eso tiraria su
+// accesibilidad, su foco y su teclado -- sino **ponerle un marco por fuera**. El boton sigue
+// siendo el boton; el contorno lo dibuja un Rectangle de fuera.
+//
+// Y ESTA PRUEBA COMPRUEBA LAS DOS COSAS DE LAS QUE DEPENDE ESA SALIDA:
+//   1. que el boton de serie **SI trae la accesibilidad** (rol y etiqueta) -- es lo que se gana;
+//   2. que el marco **no recorta** al boton -- es lo que hay que vigilar al envolverlo.
+
+#[test]
+fn el_boton_de_serie_trae_la_accesibilidad_puesta() {
+    use i_slint_backend_testing::AccessibleRole;
+
+    i_slint_backend_testing::init_no_event_loop();
+    let s = SondaBorde::new().expect("la sonda tiene que construirse");
+
+    // Se busca por `accessible_id` FILTRANDO (que es lo que funciona), no con `match_id`:
+    // `match_id` casa con el id INTERNO del elemento en Slint, no con el `accessible-id`.
+    let todos = ElementQuery::from_root(&s).find_all();
+    println!("  ids de accesibilidad en la sonda: {:?}",
+        todos.iter().filter_map(|e| e.accessible_id().map(|s| s.to_string())).collect::<Vec<_>>());
+    let boton = todos
+        .iter()
+        .find(|e| e.accessible_id().map(|s| s.to_string()) == Some("SondaBorde::sin-marco".into()))
+        .expect("tiene que existir el boton sin marco");
+
+    // ESTO ES LO QUE SE GANA al no construirlo a mano: el papel y la etiqueta ya estan.
+    // Si el proyecto hubiera hecho su boton con un Rectangle y un TouchArea, habria que
+    // declarar las dos cosas a mano -- y probarlas.
+    let papel = boton.accessible_role();
+    let etiqueta = boton.accessible_label();
+    println!("  el boton de serie se declara como {papel:?}, con la etiqueta {etiqueta:?}");
+
+    assert_eq!(
+        papel,
+        Some(AccessibleRole::Button),
+        "un Button de serie tiene que declararse como boton, no como adorno"
+    );
+    assert_eq!(
+        etiqueta.map(|e| e.to_string()),
+        Some("Vincular cuenta".to_string()),
+        "su etiqueta tiene que ser su texto: es lo que lee un lector de pantalla"
+    );
+}
+
+#[test]
+fn el_marco_de_fuera_no_recorta_al_boton() {
+    i_slint_backend_testing::init_no_event_loop();
+    let s = SondaBorde::new().expect("la sonda tiene que construirse");
+
+    let todos = ElementQuery::from_root(&s).find_all();
+    let buscar = |nombre: &str| {
+        todos
+            .iter()
+            .find(|e| e.accessible_id().map(|s| s.to_string()) == Some(nombre.to_string()))
+            .unwrap_or_else(|| panic!("tiene que existir el elemento «{nombre}»"))
+    };
+    let marco = buscar("SondaBorde::marco");
+    let boton = buscar("SondaBorde::con-marco");
+
+    let m_pos = marco.absolute_position();
+    let m_tam = marco.size();
+    let b_pos = boton.absolute_position();
+    let b_tam = boton.size();
+
+    println!(
+        "  marco: ({:.0}, {:.0}) {:.0}x{:.0}   boton: ({:.0}, {:.0}) {:.0}x{:.0}",
+        m_pos.x, m_pos.y, m_tam.width, m_tam.height,
+        b_pos.x, b_pos.y, b_tam.width, b_tam.height
+    );
+
+    // EL BOTON CABE DENTRO DEL MARCO. Si esto falla, el marco lo esta recortando -- y un boton
+    // recortado se ve peor que un boton sin contorno, que es lo que se venia a arreglar.
+    assert!(
+        b_pos.x >= m_pos.x && b_pos.y >= m_pos.y,
+        "el boton empieza fuera del marco: boton en ({}, {}), marco en ({}, {})",
+        b_pos.x, b_pos.y, m_pos.x, m_pos.y
+    );
+    assert!(
+        b_pos.x + b_tam.width <= m_pos.x + m_tam.width + 0.5,
+        "el boton se sale del marco por la derecha: boton acaba en {}, marco en {}",
+        b_pos.x + b_tam.width,
+        m_pos.x + m_tam.width
+    );
+    assert!(
+        b_pos.y + b_tam.height <= m_pos.y + m_tam.height + 0.5,
+        "el boton se sale del marco por abajo: boton acaba en {}, marco en {}",
+        b_pos.y + b_tam.height,
+        m_pos.y + m_tam.height
+    );
+
+    // Y EL BOTON LLEGA AL MINIMO TACTIL, que en este proyecto son 48 dp. El minimo del estilo
+    // de serie son **32 px**, asi que **hay que pedirlo**: no viene puesto. Se pide con
+    // `height: max(48px, self.preferred-height)`, no con un 48 fijo -- asi, el dia que el texto
+    // necesite mas alto, el boton crece en vez de recortarlo.
+    println!("  alto del boton: {:.0} px", b_tam.height);
+    assert!(
+        b_tam.height >= 48.0,
+        "el boton tiene que llegar a 48 dp de alto (minimo tactil del proyecto), y mide {}",
+        b_tam.height
+    );
+
+    // Y EL MARCO RODEA AL BOTON SIN APLASTARLO: el hueco entre los dos es el `padding` del
+    // layout (2 px) mas el borde (2 px). Se comprueba que hay hueco por los CUATRO lados.
+    let hueco_izq = b_pos.x - m_pos.x;
+    let hueco_arr = b_pos.y - m_pos.y;
+    let hueco_der = (m_pos.x + m_tam.width) - (b_pos.x + b_tam.width);
+    let hueco_aba = (m_pos.y + m_tam.height) - (b_pos.y + b_tam.height);
+    println!(
+        "  hueco alrededor del boton: izq {hueco_izq:.0}, arriba {hueco_arr:.0}, \
+         der {hueco_der:.0}, abajo {hueco_aba:.0}"
+    );
+    for (lado, hueco) in [
+        ("izquierda", hueco_izq),
+        ("arriba", hueco_arr),
+        ("derecha", hueco_der),
+        ("abajo", hueco_aba),
+    ] {
+        assert!(
+            hueco > 1.0,
+            "el marco tiene que dejar hueco por {lado}, y deja {hueco} -- lo esta recortando"
+        );
+    }
+}

@@ -235,6 +235,15 @@ fn main() -> Result<(), slint::PlatformError> {
         println!("  {}", ventana.get_vacio());
         println!();
         println!("  ==> los MISMOS valores que salen en pantalla, no un resumen aparte.");
+        // Y AQUI SE TERMINA, SIN ABRIR LA VENTANA.
+        //
+        // ESTE FALLO SE CORRIGIO EL 2026-10-13, y lo cazo el dueno: `--texto` imprimia los valores
+        // y DESPUES seguia hasta `run()`, asi que **abria una ventana en su pantalla** -- en una
+        // comprobacion que solo queria leer unos numeros. Se quedo alli, molestando.
+        //
+        // Un modo que SOLO COMPRUEBA no puede abrir nada: si la comprobacion tiene efectos que se
+        // ven, deja de poder hacerse en cualquier momento.
+        return Ok(());
     }
 
     // El boton de tema: cambia UNA propiedad, y ninguna pieza se toca.

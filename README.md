@@ -11,6 +11,36 @@ Lo que sigue es **lo que hace diferente a este motor**.
 
 ---
 
+## Este ES el repositorio del proyecto
+
+**Escrito el 2026-10-13, y aclara una confusion que costo trabajo:** durante un tiempo hubo **dos copias**
+del mismo proyecto, una aqui y otra en `app-entrenamiento/`, y **21 ficheros existian solo en la
+segunda** -- o sea, **trabajo sin versionar en ningun sitio**. Se comprobaron los dos arboles fichero a
+fichero, se trajo lo que faltaba, se quitaron los duplicados, y la otra copia **se borro**.
+
+Asi que:
+
+- **`pulso` es el proyecto.** El motor, los documentos, los analisis y los datos de ejemplo.
+- **Los datos reales NO estan aqui, y no pueden estarlo.** El repositorio es **publico** y los datos son
+  **de salud de una persona**. Viven al lado, en `datos/`, que esta ignorado por git.
+- **`datos-de-ejemplo/` es lo que se publica**: un caso **inventado**, con la misma forma que uno real,
+  para que cualquiera pueda probar el motor **sin ver los datos de nadie**.
+
+### Los nombres que importan
+
+| que | donde |
+|---|---|
+| **el motor** (Rust) | `motor/` -- 86 pruebas, cero avisos |
+| **la documentacion** | `docs/` -- el caso, el flujo real, la investigacion, el plan |
+| **los analisis medidos** | `analisis/` |
+| **el informe generado** | `informe/ejemplo-generado.md` |
+| **los bocetos de la cara** | `bocetos/` |
+| **los temas** (claro y oscuro) | `motor/ui/temas.slint`, con `temas/contraste.py` midiendo el contraste |
+| **datos reales** | `datos/` -- **ignorado, nunca se sube** |
+| **datos inventados** | `datos-de-ejemplo/` -- esto si |
+
+---
+
 ## La idea, en tres frases
 
 1. **Un modelo de lenguaje no calcula: redacta.** Si se le pide una cuenta, la inventa con seguridad. Y

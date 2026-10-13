@@ -251,6 +251,35 @@ que muestre progreso **mientras se leen los 102 ficheros**.
 Android.** Lo accionable sale de `android-activity` y de ejemplos. **No hay una guía que seguir paso a
 paso** — eso hay que construirlo y **probarlo en el teléfono**.
 
+### 10.6 · **COMPROBADO: este equipo compila para el teléfono**
+
+No se dedujo: **se ejecutó**. Se compiló un programa mínimo para ARM y **se miró la arquitectura del
+resultado**, que es lo único que lo prueba:
+
+```
+ELF 64-bit LSB pie executable, ARM aarch64,
+dynamically linked, interpreter /system/bin/linker64,
+for Android 21, built by NDK r30 (16248370)
+```
+
+**Un binario ARM de 64 bits, para Android, hecho aquí.** Lo que hizo falta, y las dos cosas se
+aprendieron fallando:
+
+| intento | qué pasó |
+|---|---|
+| `cargo build --target aarch64-linux-android` | **falló**: usó el enlazador **de este equipo** (`/usr/bin/ld.bfd`) para código ARM → *«file in wrong format»* |
+| **`cargo ndk -t arm64-v8a`** | **funcionó**: `cargo-ndk` **configura el enlazador del NDK** |
+
+**La lección, y sirve para cualquier compilación cruzada**: compilar para otra máquina **no es solo
+cambiar el objetivo** — hace falta **el enlazador de esa máquina**. Y el error lo dice si se lee:
+*«Relocations in generic ELF (EM: 183)»* significa que se está intentando enlazar ARM con un enlazador
+que no es de ARM.
+
+**Y una traba que apareció sola**: compilar una **aplicación** (no una biblioteca) da
+*«No usable artifacts produced by cargo — Did you set the crate-type to include `cdylib`?»*. Para
+Android **la aplicación tiene que ser una biblioteca `cdylib`**, porque el punto de entrada lo pone
+Android, no Rust. **Eso hay que cambiarlo en el `Cargo.toml` antes de intentar el `.apk`.**
+
 ### 10.5 · Herramientas de depuración que sí existen
 
 | variable | para qué |

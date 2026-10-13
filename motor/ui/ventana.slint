@@ -26,11 +26,12 @@ component Cifra inherits Rectangle {
     border-radius: Medidas.radio;
     background: root.oscuro ? Oscuro.sup : Claro.sup;
     border-width: 1px;
-    border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+    // El borde DELIMITA, no enmarca: en el boceto apenas se insinua. Con 1 px basta.
+    border-color: (root.oscuro ? Oscuro.linea : Claro.linea).with-alpha(0.45);
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 2px;
+        padding: 14px;
+        spacing: 3px;
         Text {
             text: root.numero;
             font-size: 26px;
@@ -55,6 +56,8 @@ component Zona inherits Rectangle {
     in property <int> nivel;        // 0 a 100
     in property <color> tono;
     in property <bool> oscuro: false;
+    // La pista: el mismo color, muy suave. **No gris**, porque el gris iguala las cinco zonas.
+    in property <color> pista_zona: transparent;
 
     height: 40px;
     background: transparent;
@@ -75,7 +78,7 @@ component Zona inherits Rectangle {
         Rectangle {
             height: 10px;
             border-radius: 5px;
-            background: root.oscuro ? Oscuro.pista : Claro.pista;
+            background: root.pista_zona;
             Rectangle {
                 width: parent.width * root.nivel / 100;
                 height: parent.height;
@@ -163,6 +166,12 @@ component Contenido inherits VerticalLayout {
                     : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
                     : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
                              : (root.oscuro ? Oscuro.z5 : Claro.z5);
+                // La pista, del mismo color pero muy suave: se VE que la barra es de esa zona.
+                pista_zona: (i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
+                    : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
+                    : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
+                    : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
+                             : (root.oscuro ? Oscuro.z5 : Claro.z5)).with-alpha(0.18);
             }
         }
     }
@@ -196,6 +205,10 @@ export component Ventana inherits Window {
     in property <bool> oscuro: false;
 
     title: "Pulso";
+    // SIN EL MARCO DEL SISTEMA, y no es un capricho: la barra de ventana de arriba **no es parte de
+    // la aplicacion**, y en el telefono no existe. Enseñarla en el escritorio hace que la ventana
+    // parezca un programa a medio hacer -- y ademas come 30 px de alto.
+    no-frame: true;
     width: 411px;
     height: 880px;
     background: root.oscuro ? Oscuro.bg : Claro.bg;

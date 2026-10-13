@@ -1,0 +1,57 @@
+references:
+- id: garmin-fit
+  type: webpage
+  title: "FIT SDK: Flexible and Interoperable Data Transfer"
+  author:
+    - literal: "Garmin"
+  URL: "https://developer.garmin.com/fit/overview/"
+  accessed:
+    date-parts: [[2026, 10, 13]]
+
+- id: health-connect-types
+  type: webpage
+  title: "Health Data Types: Health Connect"
+  author:
+    - literal: "Health Connector contributors"
+  URL: "https://pub.dev/documentation/health_connector/2.4.0/topics/Health%20Data%20Types-topic.html"
+  accessed:
+    date-parts: [[2026, 10, 13]]
+
+- id: who-actividad
+  type: report
+  title: "Directrices de la OMS sobre actividad física y hábitos sedentarios"
+  author:
+    - literal: "Organización Mundial de la Salud"
+  issued:
+    date-parts: [[2020]]
+  URL: "https://www.who.int/es/publications/b/55501"
+  accessed:
+    date-parts: [[2026, 10, 13]]
+
+- id: acsm-resistencia
+  type: report
+  title: "Resistance Training: Position Stand"
+  author:
+    - literal: "American College of Sports Medicine"
+  URL: "https://acsm.org/wp-content/uploads/2026/03/Pronouncement-ppt-deck_resistance-training-ps.pdf"
+  accessed:
+    date-parts: [[2026, 10, 13]]
+
+- id: karvonen
+  type: article
+  title: "El método de Karvonen y la reserva de frecuencia cardíaca"
+  author:
+    - literal: "Hungarian Review of Sports Medicine"
+  URL: "https://real-j.mtak.hu/11265/9/650.2002.08.04.pdf"
+  accessed:
+    date-parts: [[2026, 10, 13]]
+
+- id: trimp
+  type: thesis
+  title: "Quantification de la charge d'entraînement: la méthode TRIMP (Banister)"
+  author:
+    - family: Hourcade
+      given: Jean-Christophe
+  URL: "https://theses.hal.science/tel-02117612v1/file/va_Hourcade_Jean-Christophe.pdf"
+  accessed:
+    date-parts: [[2026, 10, 13]]

@@ -27,11 +27,11 @@ export global Medidas {
     out property <length> riel: 176px;
     out property <length> panel: 320px;
     out property <length> cabecera: 56px;
-    out property <length> nav_movil: 64px;
+    out property <length> nav_movil: 68px;
     // Las areas tocables, y son DOS medidas distintas a proposito.
     out property <length> toque_movil: 48px;   // el dedo
     out property <length> toque_raton: 32px;   // el puntero puede apuntar fino
-    out property <length> margen: 16px;
+    out property <length> margen: 18px;
     out property <length> radio: 10px;
 }
 
@@ -90,7 +90,8 @@ export component ArmazonEscritorio inherits Rectangle {
             background: transparent;
             VerticalLayout {
                 padding: Medidas.margen;
-                spacing: 12px;
+                // 14 y no 12: en el boceto las tarjetas respiran mas, y el apretado se nota.
+                spacing: 14px;
                 @children
             }
         }
@@ -126,7 +127,8 @@ export component ArmazonMovil inherits Rectangle {
             background: transparent;
             VerticalLayout {
                 padding: Medidas.margen;
-                spacing: 12px;
+                // 14 y no 12: en el boceto las tarjetas respiran mas, y el apretado se nota.
+                spacing: 14px;
                 @children
             }
         }
@@ -135,6 +137,11 @@ export component ArmazonMovil inherits Rectangle {
             height: Medidas.nav_movil;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             HorizontalLayout {
+                // EL AIRE ENTRE ITEMS, y es lo que faltaba: sin esto los textos se PEGAN unos a
+                // otros y sale «ResumenZonasSesionesDatos» -- que es lo que se vio en pantalla.
+                spacing: 4px;
+                padding-left: 4px;
+                padding-right: 4px;
                 for s[i] in root.secciones : Rectangle {
                     horizontal-stretch: 1;
                     background: transparent;
@@ -142,7 +149,13 @@ export component ArmazonMovil inherits Rectangle {
                     TouchArea { clicked => { root.elegir(i); } }
                     VerticalLayout {
                         alignment: center;
-                        spacing: 2px;
+                        spacing: 3px;
+                        // LA LINEA DEL ACTIVO, arriba del icono: es lo que hace que se distinga
+                        // de un vistazo cual esta elegido, sin leer el texto.
+                        Rectangle {
+                            width: 20px; height: 2px; border-radius: 1px;
+                            background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac) : transparent;
+                        }
                         Rectangle {
                             width: 18px; height: 18px; border-radius: 5px;
                             background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
@@ -151,6 +164,8 @@ export component ArmazonMovil inherits Rectangle {
                         Text {
                             text: s.nombre;
                             font-size: 11px;
+                            // Y el texto, CENTRADO en su hueco: sin esto se pega al de al lado.
+                            horizontal-alignment: center;
                             color: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
                                             : (root.oscuro ? Oscuro.muted : Claro.muted);
                         }

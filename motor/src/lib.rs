@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod adaptador;
+pub mod analisis;
 pub mod contexto;
 pub mod datos;
 pub mod esfuerzo;
@@ -24,12 +25,14 @@ pub mod hrv;
 pub mod informe;
 pub mod formulas_v2;
 pub mod juicio;
+pub mod memoria;
 pub mod patron;
 pub mod rango;
 pub mod tendencia;
 pub mod umbral;
 
 pub use contexto::{Comida, Contexto, Escenario, Fuente};
+pub use analisis::Real;
 pub use datos::{Dato, Persona, Sesion};
 pub use esfuerzo::{NivelSalto, Salto};
 pub use fuentes::{Consenso, Procedencia, Valor};

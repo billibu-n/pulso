@@ -29,6 +29,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 | **la norma** | **82 reglas**, 15 patrones de fallo | `~/.dsh/skills/norma-app/SKILL.md` |
 | **los controles** | **DECIDIDO**: los de serie, con su precio medido | `docs/SLINT-…` §12 · `motor/ui/sonda-borde.slint` |
 | **8 pruebas de medición** | 6 de geometría + **2 de los controles de serie** | `cargo test --test medir-interfaz` |
+| **la memoria entre arranques** | **5,40 s -> 0,001 s** (6.586x), con el resultado idéntico | `motor/src/memoria.rs` + `motor/src/analisis.rs` |
 
 ## 3. Qué FALTA, en orden, y por qué ese orden
 
@@ -43,7 +44,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 | **4** | **el primer arranque sin datos** | hoy dice `169±3` **y** «sin datos» a la vez: **se contradice** |
 | **5** | **pulsar para analizar** | hoy calcula al abrir, y **tarda 5,4 s sin decir nada** |
 | **6** | **vincular la cuenta** | no existe. Y necesita **credenciales de Garmin** |
-| **7** | **recordar entre arranques** | hoy relee 102 ficheros cada vez |
+| ~~**7**~~ | ~~**recordar entre arranques**~~ | **HECHO el 2026-10-13**: medido **5,40 s -> 0,001 s**. Falta conectarlo al abrir (lo hace la otra tarea en curso). |
 
 ## 4. Dónde está cada cosa (para no buscarla)
 
@@ -112,6 +113,14 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 19. **`match_id` casa con el id INTERNO del elemento, no con el `accessible-id`.** Para buscar por
     `accessible-id` hay que **filtrar** sobre `find_all()`. Y `group` **no existe** como papel de
     accesibilidad: el catálogo tiene **`groupbox`** y **`region`**.
+20. **El tiempo de abrir NO está en calcular, está en LEER.** Medido con 102 ficheros: leer **5,50 s**,
+    contar 549.842 muestras **0,000 s**, calcular la deriva de 102 sesiones **0,00 s**. Optimizar el
+    cálculo habría sido perder el tiempo: lo que había que evitar era **volver a leer**. Con la
+    memoria: **5,40 s -> 0,001 s**, y el fichero que lo consigue pesa **9.473 bytes**.
+21. **La huella de los ficheros se hace por TAMAÑO, no por fecha** — y es a propósito: la fecha cambia
+    al **copiar** un fichero aunque el contenido sea el mismo, así que con la fecha, copiar sus datos
+    invalidaría la memoria sin motivo. Y un fichero de memoria **corrupto o de otra versión** no puede
+    impedir abrir: se recalcula y ya. **Una memoria que no se puede invalidar es una forma de mentir.**
 
 ## 6. Cómo se comprueba que algo funciona (el método, no la fe)
 
@@ -122,6 +131,7 @@ cargo test --test medir-interfaz        # 8 pruebas de GEOMETRIA y de los contro
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --bin inventario -- ../datos/garmin_files/storage   # cuenta los 625 resultados
 cargo run -q --bin ventana -- ../datos/garmin_files/storage --texto   # lo que enseña, SIN ABRIR
+cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mide la memoria
 ```
 
 **Y dos reglas del método, que están en la norma (AU-63 y AU-70):**

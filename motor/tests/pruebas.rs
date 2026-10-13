@@ -1445,3 +1445,183 @@ fn el_contexto_nunca_dice_tener_precision_ALTA() {
     assert_eq!(c.cuantos(), (4, 4), "estan los cuatro");
     assert_ne!(c.precision(), motor::rango::Precision::Alta, "pero nunca es «alta»");
 }
+
+// ==================================================================================================
+// LA MEMORIA ENTRE ARRANQUES (paso 8 del recorrido del usuario)
+// ==================================================================================================
+//
+// MEDIDO antes de escribir esto: abrir la aplicacion con 102 ficheros tardaba **5,50 s**, y de esos
+// 5,50 s, **5,50 eran leer los ficheros**. Contar 549.842 muestras y calcular la deriva de las 102
+// sesiones: **0,000 s y 0,00 s**. O sea que el problema nunca fue calcular, era **volver a leer lo
+// que no ha cambiado**.
+//
+// Estas pruebas comprueban las tres cosas de las que depende que la memoria sirva: que la huella
+// detecta un cambio, que NO se inventa un acierto cuando los ficheros son otros, y que la memoria
+// inutil no rompe nada.
+
+/// Una carpeta de mentira, propia de cada prueba, para no pisarse entre ellas.
+fn carpeta_de_prueba(nombre: &str) -> std::path::PathBuf {
+    let c = std::env::temp_dir().join(format!("pulso-prueba-{nombre}"));
+    let _ = std::fs::remove_dir_all(&c);
+    std::fs::create_dir_all(&c).expect("tiene que poder crearse la carpeta de prueba");
+    c
+}
+
+#[test]
+fn la_huella_cambia_si_aparece_o_desaparece_un_fichero() {
+    // La huella es lo unico que decide si la memoria vale. Si no cambiara, la aplicacion enseñaria
+    // los numeros de ANTES con datos nuevos -- que es el peor fallo posible: un dato viejo con
+    // aspecto de bueno.
+    let c = carpeta_de_prueba("huella-aparece");
+    assert_eq!(motor::memoria::huella(&c).len(), 0, "una carpeta vacia no tiene huella");
+
+    std::fs::write(c.join("a.fit"), b"contenido").unwrap();
+    let una = motor::memoria::huella(&c);
+    assert_eq!(una.len(), 1, "ahora hay un fichero");
+    assert_eq!(una[0].0, "a.fit");
+    assert_eq!(una[0].1, 9, "y su tamaño son 9 bytes");
+
+    std::fs::write(c.join("b.fit"), b"otro").unwrap();
+    assert_eq!(motor::memoria::huella(&c).len(), 2, "y ahora dos");
+
+    // Y los ficheros que NO son FIT no cuentan: no se leen, asi que no cambian el resultado.
+    std::fs::write(c.join("notas.txt"), b"da igual").unwrap();
+    assert_eq!(motor::memoria::huella(&c).len(), 2, "un .txt no es un FIT");
+
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn la_huella_cambia_si_un_fichero_cambia_de_tamaño() {
+    // EL TAMAÑO Y NO LA FECHA, y esta prueba lo fija: la fecha cambia al COPIAR un fichero aunque el
+    // contenido sea el mismo, y entonces copiar sus datos invalidaria la memoria sin motivo.
+    let c = carpeta_de_prueba("huella-tamano");
+    std::fs::write(c.join("a.fit"), b"corto").unwrap();
+    let antes = motor::memoria::huella(&c);
+
+    std::fs::write(c.join("a.fit"), b"mucho mas largo que antes").unwrap();
+    let despues = motor::memoria::huella(&c);
+
+    assert_ne!(antes, despues, "si cambia el tamaño, la huella tiene que cambiar");
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn la_memoria_NO_se_usa_si_los_ficheros_han_cambiado() {
+    // ESTA ES LA PRUEBA QUE IMPORTA. Sin ella, la memoria seria una forma de mentir: guardaria un
+    // resultado y lo enseñaria para siempre, aunque sus datos ya no fueran esos.
+    let c = carpeta_de_prueba("memoria-invalidada");
+    let ruta = c.join("memoria.json");
+
+    // Sin ficheros FIT, el resultado esta vacio.
+    let vacio = motor::analisis::Real::default();
+    motor::memoria::guardar(&ruta, &c, &vacio);
+    assert!(motor::memoria::leer(&ruta, &c).is_some(), "recien guardada, la memoria vale");
+
+    // Y AHORA APARECE UN FICHERO: la memoria guardada ya no corresponde a esta carpeta.
+    std::fs::write(c.join("nuevo.fit"), b"x").unwrap();
+    assert!(
+        motor::memoria::leer(&ruta, &c).is_none(),
+        "si la carpeta cambio, la memoria NO se puede usar"
+    );
+
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn una_memoria_corrupta_o_de_otra_version_no_rompe_nada_solo_se_recalcula() {
+    // Un fichero de memoria a medias (el programa se cerro mientras escribia) o de una version vieja
+    // NO puede impedir abrir la aplicacion. La respuesta correcta es siempre la misma: recalcular.
+    let c = carpeta_de_prueba("memoria-corrupta");
+    let ruta = c.join("memoria.json");
+
+    std::fs::write(&ruta, b"esto no es json {{{").unwrap();
+    assert!(motor::memoria::leer(&ruta, &c).is_none(), "corrupta: se recalcula");
+
+    // Y de otra version: los campos podrian significar otra cosa, asi que tampoco se usa.
+    std::fs::write(
+        &ruta,
+        br#"{"version": 99, "huella": [], "real": {"sesiones": 5}}"#,
+    )
+    .unwrap();
+    assert!(motor::memoria::leer(&ruta, &c).is_none(), "de otra version: se recalcula");
+
+    // Y si no hay fichero, tampoco es un error: es la primera vez.
+    let sin_nada = c.join("no-existe.json");
+    assert!(motor::memoria::leer(&sin_nada, &c).is_none(), "sin memoria: primera vez");
+
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn el_resultado_va_y_vuelve_entero_por_la_memoria() {
+    // Guardar y leer tiene que devolver LO MISMO. Si se perdiera un campo al guardar, la segunda
+    // apertura enseñaria menos que la primera, y nadie sabria por que.
+    let c = carpeta_de_prueba("memoria-ida-y-vuelta");
+    let ruta = c.join("memoria.json");
+
+    let original = motor::analisis::Real {
+        sesiones: 102,
+        muestras: 549_842,
+        rr: 1_259_082,
+        deriva_media: Some(9.7),
+        eficiencia_media: Some(0.98),
+        escapados: 43,
+        hrv_medio: Some(9.2),
+        maxima_vista: Some(183),
+        no_leidos: vec![("roto.fit".to_string(), "no se pudo leer".to_string())],
+    };
+
+    motor::memoria::guardar(&ruta, &c, &original);
+    let leido = motor::memoria::leer(&ruta, &c).expect("tiene que poder leerse");
+
+    assert_eq!(leido, original, "el resultado tiene que volver entero");
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn los_ficheros_que_no_se_pudieron_leer_SE_DICEN() {
+    // ESTE ERA UN DATO QUE SE TIRABA A LA BASURA. Si de 102 ficheros se leen 99, todos los promedios
+    // salen de 99 y nada en la pantalla lo decia. Un dato que falta hay que decirlo.
+    let no_leidos = vec![("roto.fit".to_string(), "no es un FIT".to_string())];
+    let r = motor::analisis::de_lecturas(&[], no_leidos);
+
+    assert_eq!(r.sesiones, 0, "no se leyo ninguna");
+    assert_eq!(r.no_leidos.len(), 1, "pero el fallo se cuenta");
+    assert!(!r.hay_datos(), "sin sesiones no hay nada que analizar");
+    assert!(!r.esta_completo(), "y no se leyo todo");
+}
+
+#[test]
+fn una_carpeta_sin_datos_NO_produce_numeros_inventados() {
+    // Sin datos no hay resultado. Ni ceros, ni medias de nada: **nada**. Un cero aqui seria un dato
+    // falso, que es exactamente lo que este motor existe para no hacer.
+    let r = motor::analisis::de_lecturas(&[], Vec::new());
+    assert!(!r.hay_datos());
+    assert_eq!(r.deriva_media, None, "sin sesiones no hay deriva");
+    assert_eq!(r.eficiencia_media, None);
+    assert_eq!(r.hrv_medio, None);
+    assert_eq!(r.maxima_vista, None);
+}
+
+#[test]
+fn la_frecuencia_maxima_que_MANDA_es_la_que_declara_la_persona() {
+    // Decision del dueño (2026-10-13): el perfil manda sobre el aparato. El aparato aporta lo que el
+    // usuario no puede saber; el usuario aporta lo que el aparato no puede saber. Cuando los dos
+    // hablan del mismo dato, gana el que se declaro a proposito.
+    use motor::Dato;
+
+    // Lo declaro y el aparato vio otra: manda lo declarado.
+    assert_eq!(
+        motor::analisis::maxima_que_manda(&Dato::Hay(169), Some(183)),
+        Dato::Hay(169),
+        "lo que la persona declara manda sobre lo que vio el aparato"
+    );
+    // No lo declaro: se usa lo que vio el aparato, que es mejor que nada.
+    assert_eq!(
+        motor::analisis::maxima_que_manda(&Dato::Falta, Some(183)),
+        Dato::Hay(183)
+    );
+    // No hay ni una cosa ni la otra: falta, y el motor ya sabe decirlo.
+    assert_eq!(motor::analisis::maxima_que_manda(&Dato::Falta, None), Dato::Falta);
+}

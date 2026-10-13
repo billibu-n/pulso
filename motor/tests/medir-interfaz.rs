@@ -168,7 +168,7 @@ fn ver_el_arbol_para_saber_que_se_puede_medir() {
 }
 
 #[test]
-fn se_puede_BUSCAR_por_accessible_id_sin_depender_del_nombre_interno() {
+fn se_puede_buscar_por_accessible_id_sin_depender_del_nombre_interno() {
     // POR QUE ESTA PRUEBA: buscar por `ArmazonMovil::cabecera` funciona, pero **depende de como se
     // llame el componente por dentro**. Si alguien renombra el componente, la prueba se rompe sin que
     // nada este mal.

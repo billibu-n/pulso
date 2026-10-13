@@ -39,6 +39,18 @@ impl<T: Copy> Dato<T> {
 /// Van en su propio bloque a propósito: `Tendencia` lleva texto dentro y no es `Copy`, así que con el
 /// bloque de arriba —que sí lo exige— no se podía ni preguntar si había valor. Rust no deja relajar una
 /// condición dentro del mismo `impl`.
+impl<T> Default for Dato<T> {
+    /// **El valor por defecto de un dato es que FALTE.**
+    ///
+    /// Y no es un detalle: la alternativa sería un cero, y **un cero es un dato falso** — «no sé su
+    /// peso» no es «pesa cero kilos». Que lo natural sea «falta» significa que **si alguien se olvida
+    /// de rellenarlo, el motor lo trata como ausente**, que es lo correcto, en vez de calcular con un
+    /// cero que parece un número.
+    fn default() -> Self {
+        Dato::Falta
+    }
+}
+
 impl<T> Dato<T> {
     /// El valor, **prestado**.
     pub fn prestado(&self) -> Option<&T> {

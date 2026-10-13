@@ -947,3 +947,116 @@ fn la_precision_de_un_patron_depende_de_las_muestras_que_lo_sostienen() {
     // Y 129.418 lecturas de sensores en un mes dan precision alta.
     assert_eq!(patron::precision_del_patron(129_418), Precision::Alta);
 }
+
+// ============================================= 12. EL LECTOR DE FIT
+//
+// Hasta aqui el motor leia un JSON que se preparaba a mano. Con esto, los ficheros del aparato
+// entran directamente. La prueba que lo valida es LA COMPROBACION CRUZADA: si el motor calcula el
+// pulso medio y el fichero declara otro, uno de los dos esta mal.
+
+use motor::fit;
+use std::path::Path;
+
+/// La carpeta con los FIT de ejemplo, si existe en esta maquina.
+fn carpeta_fit() -> std::path::PathBuf {
+    // Ruta relativa al directorio del crate, para que funcione desde `cargo test`.
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../datos/garmin_files/storage")
+}
+
+#[test]
+fn un_fichero_que_no_existe_da_un_error_CLARO_y_no_un_panic() {
+    // Un fichero que falta es un dato que falta, y eso **se dice**, no se revienta.
+    let r = fit::leer(Path::new("/no/existe/esto.fit"));
+    assert!(r.is_err());
+    let e = r.unwrap_err();
+    assert!(e.contains("no se pudo abrir"), "el error tiene que decir que paso: {e}");
+}
+
+#[test]
+fn un_fichero_que_no_es_FIT_da_un_error_y_no_un_panic() {
+    let ruta = std::env::temp_dir().join("no-es-un-fit.fit");
+    std::fs::write(&ruta, b"esto no es un FIT, es texto").unwrap();
+    let r = fit::leer(&ruta);
+    assert!(r.is_err(), "un fichero que no es FIT tiene que fallar, no dar una sesion vacia");
+    let _ = std::fs::remove_file(&ruta);
+}
+
+#[test]
+fn una_carpeta_que_no_existe_se_dice_y_no_se_cae() {
+    let (bien, mal) = fit::leer_carpeta(Path::new("/no/existe/esta/carpeta"));
+    assert!(bien.is_empty());
+    assert_eq!(mal.len(), 1, "tiene que decir que la carpeta no se pudo leer");
+}
+
+#[test]
+fn EL_LECTOR_CUADRA_CON_LOS_TOTALES_QUE_DECLARA_EL_FICHERO() {
+    // ESTA ES LA PRUEBA QUE VALE, y es la comprobacion cruzada:
+    // el pulso medio que el motor calcula a partir de las muestras tiene que coincidir con el que
+    // el propio FIT declara. Si no coinciden, **uno de los dos esta mal**.
+    let carpeta = carpeta_fit();
+    if !carpeta.exists() {
+        eprintln!("(sin ficheros FIT en esta maquina: la prueba se salta)");
+        return;
+    }
+    // Se leen DOCE ficheros, no los 102: comprobar el lector no necesita el historico entero, y una
+    // prueba que tarda 23 segundos es una prueba que se deja de correr.
+    let (bien, _) = fit::leer_carpeta_hasta(&carpeta, 12);
+    if bien.is_empty() {
+        eprintln!("(no se leyo ningun FIT: la prueba se salta)");
+        return;
+    }
+
+    let mut comparadas = 0;
+    let mut coinciden = 0;
+    for (_, l) in &bien {
+        let pulsos = l.sesion.pulsos();
+        let declarado = match (pulsos.is_empty(), l.declarado.pulso_medio.valor()) {
+            (false, Some(d)) => d,
+            _ => continue,
+        };
+        let calculado = pulsos.iter().map(|v| f64::from(*v)).sum::<f64>() / pulsos.len() as f64;
+        comparadas += 1;
+        if (calculado - f64::from(declarado)).abs() <= 3.0 {
+            coinciden += 1;
+        }
+    }
+
+    assert!(comparadas > 0, "tiene que haber podido comparar alguna sesion");
+    let proporcion = coinciden as f64 / comparadas as f64;
+    assert!(
+        proporcion >= 0.85,
+        "el lector tiene que cuadrar con el fichero en al menos el 85 % de las sesiones: \
+         {coinciden} de {comparadas}"
+    );
+}
+
+#[test]
+fn el_lector_saca_muestras_y_la_duracion_del_fichero() {
+    let carpeta = carpeta_fit();
+    if !carpeta.exists() {
+        eprintln!("(sin ficheros FIT: la prueba se salta)");
+        return;
+    }
+    let (bien, _) = fit::leer_carpeta_hasta(&carpeta, 1);
+    let (_, l) = match bien.first() {
+        Some(x) => x,
+        None => return,
+    };
+    assert!(!l.sesion.muestras.is_empty(), "tiene que sacar muestras");
+    assert!(l.declarado.duracion_s.lo_hay(), "y la duracion");
+    // Y el FIT trae mas de lo que el motor usa todavia: eso se conserva en `mensajes`.
+    assert!(!l.mensajes.is_empty(), "y el recuento de mensajes");
+    let tiene_record = l.mensajes.iter().any(|(k, _)| k == "Record");
+    assert!(tiene_record, "todo FIT de actividad trae mensajes Record");
+}
+
+#[test]
+fn lo_que_no_se_usa_NO_se_guarda_y_eso_esta_dicho() {
+    // El motor no usa la cadencia ni la distancia todavia. Guardarlas daria a entender que si se
+    // usan. Se comprueba que el modelo de la muestra solo lleva lo que se usa.
+    let m = Muestra { segundo: 0, pulso: Dato::Hay(140), potencia_w: Dato::Hay(200) };
+    assert_eq!(m.pulso, Dato::Hay(140));
+    assert_eq!(m.potencia_w, Dato::Hay(200));
+    // Y si un dia se anade la cadencia, esta prueba es la que obliga a decirlo.
+}

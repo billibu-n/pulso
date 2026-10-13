@@ -16,6 +16,7 @@
 pub mod adaptador;
 pub mod datos;
 pub mod esfuerzo;
+pub mod fit;
 pub mod fuentes;
 pub mod formulas;
 pub mod formulas_v2;

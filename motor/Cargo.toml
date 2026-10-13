@@ -9,6 +9,9 @@ license = "POR-DECIDIR"
 # Para leer el JSON del cliente. La version se fija AQUI y se sube a proposito, no sola.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# El lector de FIT. Es la libreria mas viva: 82.000 descargas, actualizada este ano.
+# Las otras dos estan abandonadas (una de 2020, otra de 2023).
+fitparser = "0.11"
 # La interfaz. Version fijada a proposito, no flotante.
 slint = { version = "1", features = ["renderer-software"] }
 

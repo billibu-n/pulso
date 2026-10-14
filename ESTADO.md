@@ -546,3 +546,12 @@ el login hoy** (ventana de espera de horas); al pasar, reintentar UNA vez con el
 persiste el 429/401, **decisión pendiente del dueño** (la cláusula ya escrita: el crate de suplantación
 TLS se pide solo si Garmin responde 403/429 — ahora hay 429 medido): huella TLS en Rust (`wreq`) o
 portar la vía `portal` nueva de la librería.
+
+**La primera diferencia MEDIDA entre los dos clientes** (misma tarde, con el rastreo de nombres de
+cookies ya commiteado): la jarra de `ureq` en el POST lleva **7 cookies con una extra, `_cfuvid`**
+(Cloudflare), y la de la librería (`curl_cffi`), en los mismos pasos y el mismo día, **6 sin `_cfuvid`**
+(las otras seis coinciden: `ADRUM_BT1`, `ADRUM_BTa`, `SESSION`, `__cf_bm`, `__cflb`, `LOCALE`). Es la
+pista de que el borde de Cloudflare nos trata distinto por **huella TLS** (rustls ≠ Chrome). La corrida
+del dueño fue ANTES de que pasara la ventana (minutos, no horas): el 401 era esperable y no cambia la
+decisión de esperar. Queda encargado que el rastreo diga también los NOMBRES del `set-cookie` de cada
+respuesta, para saber en qué paso nos plantan el `_cfuvid` en la próxima corrida (tras la ventana).

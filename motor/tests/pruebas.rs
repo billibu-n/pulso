@@ -1563,6 +1563,43 @@ fn sin_fechas_el_periodo_queda_en_None_y_no_se_inventa() {
     assert_eq!(r.sesiones, 1, "pero la sesion SI se cuenta");
 }
 
+// ==================================================================================================
+// ELEGIR LA CARPETA: la logica del selector, sin abrir ninguna ventana
+// ==================================================================================================
+
+#[test]
+fn el_selector_lista_subcarpetas_sin_ocultas_ni_ficheros() {
+    let c = carpeta_de_prueba("selector-carpetas");
+    std::fs::create_dir_all(c.join("garmin_files")).unwrap();
+    std::fs::create_dir_all(c.join("b")).unwrap();
+    std::fs::create_dir_all(c.join(".oculta")).unwrap();
+    std::fs::write(c.join("un.fit"), b"x").unwrap();
+
+    let s = motor::carpeta::subcarpetas(&c);
+    assert_eq!(
+        s,
+        vec!["b".to_string(), "garmin_files".to_string()],
+        "ordenadas, sin ocultas y sin ficheros"
+    );
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn subir_desde_la_raiz_no_se_puede_y_se_dice() {
+    assert!(motor::carpeta::ruta_padre(std::path::Path::new("/")).is_none());
+    assert_eq!(
+        motor::carpeta::ruta_padre(std::path::Path::new("/home")),
+        Some(std::path::PathBuf::from("/"))
+    );
+}
+
+#[test]
+fn una_carpeta_que_no_se_puede_leer_no_revienta() {
+    let no = std::path::Path::new("/no/existe/esta/carpeta");
+    assert!(motor::carpeta::subcarpetas(no).is_empty(), "vacio, no panico");
+    assert!(!motor::carpeta::es_carpeta(no));
+}
+
 #[test]
 fn un_fit_ilegible_se_recuerda_con_su_motivo_y_no_aborta() {
     // Un fichero que no se puede leer NO puede tirar el analisis entero, y su fallo NO se puede

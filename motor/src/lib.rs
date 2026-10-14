@@ -17,6 +17,7 @@ pub mod adaptador;
 pub mod analisis;
 pub mod avisos;
 pub mod cara;
+pub mod carpeta;
 pub mod contexto;
 pub mod datos;
 pub mod esfuerzo;

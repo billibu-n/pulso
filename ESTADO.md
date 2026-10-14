@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **183 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **186 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -59,7 +59,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/bin/          18: pulso (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs 150 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
+│   ├── tests/pruebas.rs 153 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 183 pruebas, en verde, 0 avisos
+cargo test                              # 186 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -254,7 +254,7 @@ es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye*
 Y el binario de la aplicación **se llama `pulso`**: `ventana.rs` → `pulso.rs`, y `default-run = "pulso"`
 hace que **`cargo run` a secas sea LA aplicación**. Los otros 17 son **instrumentos de medida**, no la
 aplicación.
-**Medido**: **183 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei`).
+**Medido**: **186 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei` + 3 del selector).
 
 **2 · DECISIÓN DEL DUEÑO (2026-10-14): el aviso de la rodilla NO dice «diagnóstico».** Se le preguntó,
 porque el encargo pedía dos cosas que no caben a la vez («di que no es un diagnóstico» y «que el texto
@@ -292,10 +292,13 @@ era la correcta: falló el modelo, no la ruta.** Los informes están en
 `docs/ESTADO-DEL-ARTE-revision-1-2.md` y `-3-6.md`.
 
 **EN MARCHA (no cerrado, y hay que retomarlo):**
-- **Elegir la carpeta con un botón** (paso 5): **medido** que **Slint 1.18.1 NO trae `FileDialog` ni
-  `FolderDialog`** (búsqueda sobre los 13 crates de Slint instalados: cero coincidencias). El botón exige
-  o bien **un selector escrito a mano** (sin dependencia nueva) o `rfd` (dependencia nueva, que la norma
-  del proyecto no permite sin autorización). **Decisión: selector propio, sin dependencia nueva.**
+- **Elegir la carpeta con un botón** (paso 5): **EN CURSO**. **Medido**: Slint 1.18.1 **no trae
+  `FileDialog` ni `FolderDialog`** (búsqueda sobre los 13 crates instalados). **Decisión: selector
+  propio, sin dependencia nueva** (autorizar `rfd` es la otra vía, y no se toma sin el dueño). **YA
+  HECHO**: el contrato (`docs/CONTRATO-carpeta.md`) y el **núcleo probado** (`motor/src/carpeta.rs`, 3
+  pruebas): lista subcarpetas sin ocultas ni ficheros, sube hasta la raíz, y no revienta con una carpeta
+  ilegible. **FALTA la capa 5**: el panel que lo dibuja y su conexión a `pulso.rs` para que al elegir se
+  vuelva a analizar.
 
 ---
 

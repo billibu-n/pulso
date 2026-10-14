@@ -10,6 +10,13 @@ comprobar contra sus ficheros**. Esto es esa comprobación.
 > **La regla de este documento**: cada fila está **medida sobre sus 102 sesiones y sus 1.360 ficheros
 > de Garmin**, no supuesta. Lo que no se pudo medir, lo dice.
 
+**Añadido el 2026-10-14, por el dueño: la meta PRIMA.** El objetivo de arriba es la meta del proyecto.
+Las sugerencias del encargo se **filtran**: se implementan solo si sirven a la meta, y siempre como
+**pauta del cliente** (AU-87), nunca como hallazgo médico ni como oráculo. Ninguna sugerencia puede
+desviar el rumbo; si una sugerencia esconde un objetivo útil, se incorpora y se anota. El texto crudo
+del encargo (con datos personales) vive SOLO en `datos/trabajo-ui/objetivo-del-cliente.md` (carpeta
+ignorada por git); este documento es su versión anonimizada y medida.
+
 ---
 
 ## 1. La fecha, que lo cambia todo

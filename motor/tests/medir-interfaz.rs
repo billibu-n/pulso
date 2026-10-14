@@ -20,6 +20,73 @@ slint::include_modules!();
 
 use i_slint_backend_testing::ElementQuery;
 
+// ==================================================================================================
+// EL MISMO PINTADO QUE LA APLICACION (Fase 2, 2026-10-14)
+// ==================================================================================================
+//
+// POR QUE LA PRUEBA USA EL CAMINO DE VERDAD, y es la correccion mas importante de este fichero:
+// hasta hoy esta prueba se montaba una ventana a mano, con **valores escritos aqui** (`"169±3"`,
+// `"recuperacion"`, `nivel 68`...). Eso es un fixture, y un fixture **diverge**: el dia que el motor
+// cambie de donde saca un numero, la prueba sigue midiendo los suyos y **da verde midiendo algo que ya
+// no existe**. Estaba anotado como riesgo, y se cierra aqui.
+//
+// Ahora la prueba hace lo que hace la aplicacion: pide a `cara` que decida (`lo_que_ensena`, que es
+// una funcion pura) y lo pinta con **el mismo modulo** que usan `pulso` y `capturar-ui`. Asi lo que se
+// mide es **lo que el usuario va a ver**, y si el contrato del motor cambia, la prueba lo nota sola.
+#[path = "../src/bin/compartido/pintar.rs"]
+mod pintar;
+
+use motor::analisis::Real;
+use motor::cara;
+use motor::datos::Persona;
+use motor::profile;
+
+/// Una persona CON edad y CON umbral de lactato: el unico caso en el que se puede diagnosticar, y por
+/// tanto el unico en el que hay tarjetas, bandas y eje.
+///
+/// Se construye con `profile::aplicar`, que es **el mismo traductor que usa el boton de guardar**:
+/// escribir los campos a mano dejaria la puerta abierta a unos datos que el motor no aceptaria.
+fn persona_con_umbral() -> Persona {
+    let mut p = Persona::desconocida();
+    profile::aplicar(
+        &mut p,
+        &[
+            ("edad", "52"),
+            ("umbral_lactato", "169"),
+            ("pulso_maximo_medido", "183"),
+            ("peso_kg", "70,2"),
+        ],
+    )
+    .expect("los datos de prueba tienen que ser validos");
+    p
+}
+
+/// **LOS MISMOS DATOS QUE EN `tests/recorrido.rs`**: 102 sesiones, con deriva y con eficiencia.
+///
+/// No se inventan otros a proposito: son los que se usaron para juzgar la pantalla, y unos numeros
+/// distintos aqui esconderian el fallo que aquellos enseñaron -- el recuento largo es justo el que
+/// partia en dos lineas dentro de la tarjeta de 52.
+fn sus_sesiones() -> Real {
+    Real {
+        sesiones: 102,
+        muestras: 549_842,
+        rr: 1_259_082,
+        deriva_media: Some(9.682),
+        eficiencia_media: Some(0.98),
+        escapados: 43,
+        hrv_medio: Some(9.2),
+        maxima_vista: Some(183),
+        no_leidos: Vec::new(),
+        desde: Some(1_700_000_000),
+        hasta: Some(1_720_000_000),
+    }
+}
+
+/// Lo que el motor decide para unos datos: **la prueba NO lo escribe, lo pregunta**.
+fn ensenado_de(p: &Persona, real: Option<&Real>) -> cara::Ensenado {
+    cara::lo_que_ensena(p, real)
+}
+
 fn ventana_de_prueba() -> Ventana {
     i_slint_backend_testing::init_no_event_loop();
     otra_ventana()
@@ -31,35 +98,9 @@ fn ventana_de_prueba() -> Ventana {
 /// literal («platform already initialized», medido el 2026-10-14).
 fn otra_ventana() -> Ventana {
     let v = Ventana::new().expect("la ventana tiene que construirse");
-    v.set_cifras(
-        vec!["169±3".into(), "183".into(), "0,98".into(), "+9,7".into()]
-            .as_slice()
-            .into(),
-    );
-    v.set_etiquetas(
-        vec!["umbral".into(), "maxima".into(), "vatios".into(), "deriva".into()]
-            .as_slice()
-            .into(),
-    );
-    v.set_zonas_nombres(
-        vec!["recuperacion".into(), "resistencia".into(), "tempo".into(), "umbral".into(), "maximo".into()]
-            .as_slice()
-            .into(),
-    );
-    v.set_zonas_tramos(
-        vec!["hasta 137".into(), "137 - 152".into(), "152 - 159".into(), "159 - 169".into(), "169 - 203".into()]
-            .as_slice()
-            .into(),
-    );
-    v.set_zonas_niveles(vec![68, 75, 78, 83, 100].as_slice().into());
-    v.set_precision("precision alta".into());
-    v.set_aviso("deriva +9,7 %".into());
-    v.set_vacio("102 sesiones".into());
-    // EL PERIODO, que en la pantalla real esta: es la linea que da sentido a la tarjeta de 52 (§3.8) y
-    // la que hace que el bloque se pueda NOMBRAR en un fallo (lleva `accessible-id: "periodo"`).
-    v.set_periodo("Análisis del 2026-05-02 al 2026-10-11".into());
-    // La ventana de prueba representa el estado CON datos. Su contrario se prueba aparte.
-    v.set_puede(true);
+    // EL CAMINO DE VERDAD: lo decide `cara`, lo pinta el modulo compartido. Aqui no se escribe ni una
+    // propiedad a mano, y por eso esta ventana no puede divergir de la aplicacion.
+    pintar::pintar(&v, &ensenado_de(&persona_con_umbral(), Some(&sus_sesiones())));
     v
 }
 
@@ -2163,8 +2204,514 @@ fn los_iconos_de_la_barra_existen_todos_en_el_catalogo() {
         );
         cuantos += 1;
     }
-    assert_eq!(cuantos, 4, "la barra tiene CUATRO secciones, cada una con su icono: {cuantos}");
+    assert_eq!(cuantos, 4 + 1 + 3, "los iconos de ventana.slint: 4 de la barra, 3 de las lineas de aviso (precision, lo que falta, deriva) y 1 valor por defecto del componente Aviso: {cuantos}");
     for n in ["casa", "corazon", "bicicleta", "ajustes"] {
         assert!(ventana.contains(&format!("icono: \"{n}\"")), "falta el icono {n} en la barra");
     }
+    // Y LOS DE LAS LINEAS DEL RESUMEN (§3.7): la linea de lo que falta, la de la precision y la del
+    // aviso de la deriva. Tienen que ser del catalogo, o saldrian invisibles.
+    for n in ["aviso", "informacion", "reloj"] {
+        assert!(
+            ventana.contains(&format!("icono: \"{n}\"")),
+            "falta el icono {n} de las lineas del Resumen (§3.7)"
+        );
+    }
+}
+
+// ==================================================================================================
+// FASE 2 · LA VISTA LEE EL CONTRATO DEL MOTOR (2026-10-14)
+// ==================================================================================================
+//
+// QUE SE COMPRUEBA AQUI, y es el encargo de la Fase 2: que la pantalla dibuje lo que el motor YA
+// entrega -- `cifras_atadas`, `zonas_ppm`, `eje`, `precision_corta`, `que_falta_corto` --, y que lo
+// dibuje **obedeciendo su contrato**:
+//
+//   · §3.5 y AU-91: una cifra que NO existe (`dato: None`) **no deja tarjeta en el arbol**, ni hueca
+//     ni oculta con ancho 0;
+//   · §3.6: las cinco zonas se pintan como **BANDAS sobre un eje comun en ppm**, en su tramo, y sin
+//     zonas (o con un eje que no vale) **no hay grafico ni su marco**;
+//   · §3.7, AU-44/AU-45: la precision y lo que falta van en **UNA linea con su icono**;
+//   · §3.5: la composicion de la rejilla (2+2, 2+1 a la izquierda, 1 centrada).
+//
+// Y TODO SE MIDE CON EL CAMINO DE VERDAD (`cara::lo_que_ensena` + el modulo `pintar` compartido), no
+// con valores escritos aqui.
+
+/// Los elementos que llevan un `accessible-id` exacto.
+fn con_id<'a>(todos: &'a [i_slint_backend_testing::ElementHandle], id: &str) -> Vec<&'a i_slint_backend_testing::ElementHandle> {
+    todos
+        .iter()
+        .filter(|e| e.accessible_id().map(|s| s.to_string()) == Some(id.to_string()))
+        .collect()
+}
+
+/// Cuantos elementos miden EXACTAMENTE ese alto: es como se cuentan las tarjetas (66) y las filas de
+/// zona (40) en este fichero, porque su alto es un numero del contrato (§3.5 y §3.6).
+fn cuantos_de_alto(todos: &[i_slint_backend_testing::ElementHandle], alto: f64) -> usize {
+    todos
+        .iter()
+        .filter(|e| (f64::from(e.size().height) - alto).abs() < 0.5)
+        .count()
+}
+
+/// Cuantos elementos son de ese TIPO (el nombre del componente). Es como se cuentan las tarjetas y
+/// las filas: **por su tipo**, porque el ALTO lo comparten los contenedores de dentro (medido: una
+/// tarjeta de 66 arrastra tres cajas de 66 -- la tarjeta, su layout y los envoltorios -- y contar por
+/// altura daba 18 donde hay 4).
+fn cuantos_de_tipo(todos: &[i_slint_backend_testing::ElementHandle], tipo: &str) -> usize {
+    todos
+        .iter()
+        .filter(|e| e.type_name().map(|t| t.to_string()).as_deref() == Some(tipo))
+        .count()
+}
+
+/// El texto de un elemento, tal como lo lee la accesibilidad (es la unica forma de leer TEXTO desde
+/// una prueba de geometria, y es lo que permite comprobar QUE cifra se enseña).
+fn texto_de(e: &i_slint_backend_testing::ElementHandle) -> String {
+    e.accessible_label().map(|s| s.to_string()).unwrap_or_default()
+}
+
+#[test]
+fn con_datos_salen_las_tarjetas_que_existen_y_las_cinco_bandas_en_su_sitio_del_eje() {
+    // §3.5 y §3.6, con los datos completos: cuatro cifras y cinco zonas.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+    let e = ensenado_de(&persona_con_umbral(), Some(&sus_sesiones()));
+    pintar::pintar(&v, &e);
+    let todos = ElementQuery::from_root(&v).find_all();
+
+    // 1) LAS TARJETAS: las que EXISTEN, ni una mas.
+    let con_dato = e.cifras_atadas.iter().filter(|c| c.existe()).count();
+    println!("  el motor manda {} cifras que existen de {}", con_dato, e.cifras_atadas.len());
+    assert_eq!(con_dato, 4, "con umbral, maxima medida, deriva y eficiencia, existen las cuatro");
+    assert_eq!(
+        cuantos_de_tipo(&todos, "Tarjeta"),
+        con_dato,
+        "tiene que haber exactamente una tarjeta por cifra que existe (§3.5)"
+    );
+    for i in 0..con_dato {
+        let t = buscar(&todos, &format!("tarjeta-{i}")).unwrap_or_else(|| panic!("falta la tarjeta {i}"));
+        let tam = t.size();
+        assert!(
+            (f64::from(tam.height) - 66.0).abs() < 0.5,
+            "la tarjeta {i} mide 66 de alto (§3.5), y mide {:.1}",
+            f64::from(tam.height)
+        );
+    }
+
+    // Y LO QUE ENSEÑAN: el numero y su etiqueta, leidos por accesibilidad. Se comprueba en orden.
+    let etiquetas_esperadas: Vec<&str> = e
+        .cifras_atadas
+        .iter()
+        .filter(|c| c.existe())
+        .map(|c| c.etiqueta.as_str())
+        .collect();
+    let textos: Vec<String> = con_id(&todos, "tarjeta-0")
+        .iter()
+        .flat_map(|t| t.query_descendants().find_all())
+        .map(|t| texto_de(&t))
+        .filter(|s| !s.is_empty())
+        .collect();
+    println!("  la primera tarjeta dice {textos:?}");
+    assert!(
+        textos.contains(&etiquetas_esperadas[0].to_string()),
+        "la primera tarjeta tiene que llevar su etiqueta «{}»: enseña {textos:?}",
+        etiquetas_esperadas[0]
+    );
+
+    // 2) EL GRAFICO: cinco BANDAS, cada una EN SU SITIO del eje comun.
+    assert!(e.eje.es_valido(), "con las cinco zonas el eje tiene que valer (contrato 3)");
+    assert_eq!(e.zonas_ppm.len(), 5, "las zonas del umbral son cinco");
+    assert!(buscar(&todos, "grafico").is_some(), "con zonas, el grafico existe (§3.6)");
+    let mut con_cuerpo = 0;
+    for (i, z) in e.zonas_ppm.iter().enumerate() {
+        let pista = buscar(&todos, &format!("pista-{i}"))
+            .unwrap_or_else(|| panic!("falta la pista de la zona {i}"));
+        let banda = buscar(&todos, &format!("banda-{i}"))
+            .unwrap_or_else(|| panic!("falta la banda de la zona {i}"));
+        let (px, pancho) = (
+            f64::from(pista.absolute_position().x),
+            f64::from(pista.size().width),
+        );
+        // LA CUENTA ESPERADA, del contrato: el tramo, sobre el rango del eje, en pixeles de la pista.
+        let recorrido = e.eje.fin_ppm - e.eje.inicio_ppm;
+        let fraccion_ini = (z.inicio_ppm - e.eje.inicio_ppm) / recorrido;
+        let fraccion_fin = (z.fin_ppm - e.eje.inicio_ppm) / recorrido;
+        let x = f64::from(banda.absolute_position().x);
+        let w = f64::from(banda.size().width);
+        println!(
+            "  banda {i} «{}»: {:.0}..{:.0} ppm -> x {x:.1} (esperado {:.1}), ancho {w:.1} (esperado {:.1})",
+            z.nombre,
+            z.inicio_ppm,
+            z.fin_ppm,
+            px + fraccion_ini * pancho,
+            (fraccion_fin - fraccion_ini) * pancho
+        );
+        assert!(
+            (x - (px + fraccion_ini * pancho)).abs() < 1.0,
+            "la banda {i} no empieza donde dice su tramo: esta en {x:.1} y su ppm pide {:.1}",
+            px + fraccion_ini * pancho
+        );
+        assert!(
+            (w - (fraccion_fin - fraccion_ini) * pancho).abs() < 1.0,
+            "la banda {i} no mide lo que dice su tramo: mide {w:.1} y su ppm pide {:.1}",
+            (fraccion_fin - fraccion_ini) * pancho
+        );
+        assert!(
+            x >= px - 0.5 && x + w <= px + pancho + 0.5,
+            "la banda {i} se sale de su pista: [{x:.1},{:.1}] contra [{px:.1},{:.1}]",
+            x + w,
+            px + pancho
+        );
+        if w >= 1.0 {
+            con_cuerpo += 1;
+        }
+    }
+    // LA PRIMERA ZONA ES UN TECHO, NO UN TRAMO: su inicio y su fin COINCIDEN (contrato 1), asi que su
+    // banda mide CERO. **Y eso se dice, no se disimula**: no se le pone un ancho minimo inventado
+    // -- seria dibujar una zona que no tiene anchura --; su texto dice «hasta 137 ppm» y su pista
+    // queda con el color de la zona. Lo que se exige es que exista y que este en su sitio.
+    println!("  {con_cuerpo} de las 5 bandas tienen anchura propia; la otra es un techo (inicio = fin)");
+    assert!(con_cuerpo >= 4, "cuatro zonas son tramos con anchura: solo tienen {con_cuerpo}");
+
+    // 3) EL EJE, CON SU UNIDAD ESCRITA (defecto 4: un numero de pulsaciones sin «ppm» no dice nada).
+    let ini = buscar(&todos, "eje-inicio").expect("el eje tiene que llevar su extremo de inicio");
+    let fin = buscar(&todos, "eje-fin").expect("el eje tiene que llevar su extremo de fin");
+    let unidad = buscar(&todos, "eje-unidad").expect("el eje tiene que decir su unidad");
+    assert_eq!(texto_de(unidad), "ppm", "la unidad del eje se escribe (§3.6)");
+    assert_eq!(
+        texto_de(ini),
+        format!("{:.0}", e.eje.inicio_ppm),
+        "el extremo de inicio del eje es el del motor: {:.0}",
+        e.eje.inicio_ppm
+    );
+    assert_eq!(
+        texto_de(fin),
+        format!("{:.0}", e.eje.fin_ppm),
+        "el extremo de fin del eje es el del motor: {:.0}",
+        e.eje.fin_ppm
+    );
+}
+
+#[test]
+fn una_cifra_que_no_existe_no_deja_tarjeta_en_el_arbol_ni_hueca_ni_oculta() {
+    // §3.5, AU-91 y el defecto 5: la tarjeta de una cifra que no se midio **sale del arbol**. Lo que
+    // estaba mal antes: el motor mandaba «—» y la vista pintaba el marco igual, con un guion de 26 px
+    // a la izquierda. Aqui se comprueba con la cifra que la especificacion nombra: **sin frecuencia
+    // maxima medida, esa tarjeta no se dibuja**.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+    // Sin `pulso_maximo_medido` y sin sesiones: solo existe el umbral.
+    let mut p = Persona::desconocida();
+    profile::aplicar(&mut p, &[("edad", "52"), ("umbral_lactato", "169")]).expect("datos validos");
+    let e = ensenado_de(&p, None);
+    pintar::pintar(&v, &e);
+    let todos = ElementQuery::from_root(&v).find_all();
+
+    assert_eq!(e.cifras_atadas.len(), 4, "el motor sigue entregando las cuatro, con su etiqueta");
+    let con_dato = e.cifras_atadas.iter().filter(|c| c.existe()).count();
+    assert_eq!(con_dato, 1, "sin maxima y sin sesiones, solo existe el umbral: {con_dato}");
+    let sin_dato: Vec<&str> = e
+        .cifras_atadas
+        .iter()
+        .filter(|c| !c.existe())
+        .map(|c| c.etiqueta.as_str())
+        .collect();
+    println!("  las tres que NO existen: {sin_dato:?}");
+    assert!(
+        sin_dato.contains(&"frecuencia máxima"),
+        "la de la frecuencia maxima tiene que ser una de las que no existen: {sin_dato:?}"
+    );
+
+    // Y EN EL ARBOL: una sola tarjeta, la del umbral. Las otras tres **no estan**, ni con ancho 0:
+    // por eso se cuentan TAMBIEN los elementos de 66 de alto, que es lo que cazaria una tarjeta
+    // "oculta" (una caja de 66 con ancho 0 seguiria siendo una tarjeta en el arbol).
+    assert_eq!(cuantos_de_tipo(&todos, "Tarjeta"), 1, "tiene que haber UNA tarjeta, no cuatro");
+    // Y NO UNA TARJETA ESCONDIDA: el caso que se quiere cazar es el de una caja de 66 con ancho 0, que
+    // un conteo por alto no distingue de una tarjeta de verdad.
+    for e in &todos {
+        let t = e.size();
+        assert!(
+            !(f64::from(t.height) > 60.0 && f64::from(t.width) < 1.0),
+            "hay una tarjeta escondida (ancho {:.1}, alto {:.1}): no es «fuera del arbol» (AU-91)",
+            f64::from(t.width),
+            f64::from(t.height)
+        );
+    }
+    for i in 1..4 {
+        assert!(
+            buscar(&todos, &format!("tarjeta-{i}")).is_none(),
+            "la tarjeta {i} NO puede estar en el arbol: su cifra no existe (AU-91)"
+        );
+    }
+    let unica = buscar(&todos, "tarjeta-0").expect("la tarjeta del umbral si existe");
+    let textos: Vec<String> = unica
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .map(|t| texto_de(&t))
+        .filter(|s| !s.is_empty())
+        .collect();
+    println!("  la unica tarjeta dice {textos:?}");
+    assert!(
+        textos.iter().any(|t| t == "umbral (pulsaciones)"),
+        "la tarjeta que queda es la del umbral: {textos:?}"
+    );
+    assert!(
+        !textos.iter().any(|t| t.contains('—')),
+        "el guion «—» esta PROHIBIDO en la pantalla (AU-91): {textos:?}"
+    );
+
+    // Y CENTRADA EN SU FILA (§3.5: «con 2 o 1, una fila»): una tarjeta sola pegada a la izquierda
+    // parece un boton mal puesto, que es lo que el dueño vio.
+    let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
+    let centro_contenido = f64::from(cont.absolute_position().x) + f64::from(cont.size().width) / 2.0;
+    let centro_tarjeta = f64::from(unica.absolute_position().x) + f64::from(unica.size().width) / 2.0;
+    println!("  la tarjeta sola: centro {centro_tarjeta:.1} · centro del contenido {centro_contenido:.1}");
+    assert!(
+        (centro_tarjeta - centro_contenido).abs() < 2.0,
+        "con UNA tarjeta, va centrada en la fila (§3.5): {centro_tarjeta:.1} contra {centro_contenido:.1}"
+    );
+}
+
+#[test]
+fn con_tres_tarjetas_la_tercera_va_abajo_y_en_la_columna_de_la_izquierda() {
+    // §3.5, regla de composicion: «con 3, dos arriba y una abajo (en la columna de la izquierda, para
+    // que la rejilla no baile)». Aqui hay 3 porque hay umbral y maxima, y no hay sesiones (vatios y
+    // deriva no existen): el caso real de una persona que acaba de estrenar el aparato.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+    // TRES CIFRAS: el umbral, la maxima medida y la eficiencia. La deriva NO (`None`), que es el caso
+    // que deja la rejilla en 2 + 1.
+    let solo_eficiencia = Real {
+        sesiones: 12,
+        muestras: 9_000,
+        rr: 8_000,
+        deriva_media: None,
+        eficiencia_media: Some(0.94),
+        escapados: 0,
+        hrv_medio: None,
+        maxima_vista: Some(183),
+        no_leidos: Vec::new(),
+        desde: None,
+        hasta: None,
+    };
+    let e = ensenado_de(&persona_con_umbral(), Some(&solo_eficiencia));
+    pintar::pintar(&v, &e);
+    let todos = ElementQuery::from_root(&v).find_all();
+
+    assert_eq!(
+        e.cifras_atadas.iter().filter(|c| c.existe()).count(),
+        3,
+        "umbral, maxima medida y eficiencia: tres cifras, y sin deriva"
+    );
+    assert_eq!(cuantos_de_tipo(&todos, "Tarjeta"), 3, "tres tarjetas (§3.5)");
+    let t0 = buscar(&todos, "tarjeta-0").expect("la primera");
+    let t1 = buscar(&todos, "tarjeta-1").expect("la segunda");
+    let t2 = buscar(&todos, "tarjeta-2").expect("la tercera");
+    let (p0, p1, p2) = (
+        t0.absolute_position(),
+        t1.absolute_position(),
+        t2.absolute_position(),
+    );
+    println!(
+        "  tarjetas: 0 en ({:.1},{:.1}) · 1 en ({:.1},{:.1}) · 2 en ({:.1},{:.1})",
+        f64::from(p0.x), f64::from(p0.y), f64::from(p1.x), f64::from(p1.y), f64::from(p2.x), f64::from(p2.y)
+    );
+    assert!(
+        (f64::from(p0.y) - f64::from(p1.y)).abs() < 0.5,
+        "las dos primeras van en la MISMA fila"
+    );
+    assert!(
+        f64::from(p2.y) >= f64::from(p0.y) + 66.0 - 0.5,
+        "la tercera va DEBAJO de las dos primeras"
+    );
+    assert!(
+        (f64::from(p2.x) - f64::from(p0.x)).abs() < 0.5,
+        "y en LA COLUMNA DE LA IZQUIERDA, para que la rejilla no baile (x {:.1} contra {:.1})",
+        f64::from(p2.x),
+        f64::from(p0.x)
+    );
+}
+
+#[test]
+fn sin_zonas_no_hay_grafico_y_sin_eje_que_valga_tampoco() {
+    // §3.6, literal: «cuando NO se dibuja: sin edad y sin umbral: no hay grafico ni su marco». Y el
+    // segundo caso, que es del contrato 3: **un eje que no vale no se pinta** (`Eje::es_valido`).
+    // Quien decide las dos cosas es el MOTOR; la vista solo obedece, y eso es lo que se mide.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+
+    // (a) SIN PODER DIAGNOSTICAR: no hay tarjetas, ni grafico, ni eje. Y SI la linea de lo que falta.
+    let e = ensenado_de(&Persona::desconocida(), None);
+    assert!(!e.puede_diagnosticar, "sin datos no se puede diagnosticar");
+    pintar::pintar(&v, &e);
+    let todos = ElementQuery::from_root(&v).find_all();
+    for id in ["grafico", "tarjeta-0", "banda-0", "pista-0", "eje-inicio"] {
+        assert!(
+            buscar(&todos, &id).is_none(),
+            "sin poder diagnosticar NO puede existir «{id}»"
+        );
+    }
+    assert_eq!(cuantos_de_alto(&todos, 66.0), 0, "ni una tarjeta vacia (AU-91)");
+    assert_eq!(cuantos_de_alto(&todos, 40.0), 0, "ni una fila de zona sin nombre (AU-91)");
+    let aviso = buscar(&todos, "aviso-texto").expect("la linea de lo que falta tiene que estar");
+    println!("  sin datos, la linea dice: «{}»", texto_de(aviso));
+    assert_eq!(
+        texto_de(aviso),
+        e.que_falta_corto,
+        "la pantalla enseña la frase CORTA del motor, no el parrafo de dos frases"
+    );
+
+    // (b) PUEDE DIAGNOSTICAR, PERO SIN ZONAS: el motor no manda ni una banda. Tampoco hay grafico.
+    let mut sin_zonas = ensenado_de(&persona_con_umbral(), None);
+    sin_zonas.zonas_ppm.clear();
+    sin_zonas.eje = cara::Eje { inicio_ppm: 0.0, fin_ppm: 0.0 };
+    pintar::pintar(&v, &sin_zonas);
+    let todos = ElementQuery::from_root(&v).find_all();
+    assert!(sin_zonas.puede_diagnosticar, "sus datos son suyos: si se puede diagnosticar");
+    assert!(
+        buscar(&todos, "grafico").is_none(),
+        "sin zonas no hay grafico NI su marco (§3.6)"
+    );
+    assert!(buscar(&todos, "banda-0").is_none(), "ni bandas que pintar");
+    assert_eq!(
+        cuantos_de_tipo(&todos, "Tarjeta"),
+        sin_zonas.cifras_atadas.iter().filter(|c| c.existe()).count(),
+        "las tarjetas NO dependen de las zonas: siguen las que existen"
+    );
+
+    // (c) CON ZONAS PERO CON UN EJE QUE NO VALE (0..0): el contrato 3 lo dice, no se pinta.
+    let mut eje_malo = ensenado_de(&persona_con_umbral(), None);
+    eje_malo.eje = cara::Eje { inicio_ppm: 0.0, fin_ppm: 0.0 };
+    assert!(!eje_malo.eje.es_valido(), "un eje 0..0 no vale: no hay escala que enseñar");
+    assert!(!eje_malo.zonas_ppm.is_empty(), "y sin embargo las zonas estan: es el caso que se prueba");
+    pintar::pintar(&v, &eje_malo);
+    let todos = ElementQuery::from_root(&v).find_all();
+    assert!(
+        buscar(&todos, "grafico").is_none(),
+        "un eje que no vale NO se pinta (contrato 3)"
+    );
+    assert!(buscar(&todos, "banda-0").is_none(), "ni sus bandas");
+}
+
+#[test]
+fn la_precision_y_lo_que_falta_van_en_una_linea_con_su_icono_y_caben_en_su_bloque() {
+    // §3.7 y AU-44/AU-45: **la pantalla no se explica**. La precision y lo que falta son UNA frase
+    // cada una (contratos 4 y 5), la pantalla enseña esas frases cortas, y el parrafo se queda en el
+    // motor para la ayuda.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+
+    // (1) EL CONTRATO, EN LAS CADENAS: una sola frase, sin salto de linea, y diciendo donde se
+    // rellena cuando falta algo.
+    let con_datos = ensenado_de(&persona_con_umbral(), Some(&sus_sesiones()));
+    let sin_datos = ensenado_de(&Persona::desconocida(), None);
+    for (cual, texto) in [
+        ("precision_corta", con_datos.precision_corta.clone()),
+        ("que_falta_corto", sin_datos.que_falta_corto.clone()),
+    ] {
+        assert!(!texto.is_empty(), "{cual} tiene que decir algo en su caso");
+        assert!(!texto.contains('\n'), "{cual} tiene que ser UNA linea: {texto:?}");
+        println!("  {cual}: «{texto}» ({} caracteres)", texto.chars().count());
+        assert!(
+            texto.chars().count() <= 64,
+            "{cual} tiene que ser CORTO (la pantalla no se explica): {} caracteres",
+            texto.chars().count()
+        );
+    }
+    // La precision es UNA frase (contrato 4): un solo punto, y al final.
+    let primera = con_datos.precision_corta.trim_end_matches('.');
+    assert!(
+        !primera.contains(". "),
+        "la precision de pantalla tiene que ser UNA frase: «{}»",
+        con_datos.precision_corta
+    );
+    // Y lo que falta dice DONDE se rellena (contrato 5): un aviso que no dice donde se arregla es una
+    // queja, no una ayuda.
+    assert!(
+        sin_datos.que_falta_corto.contains("Se rellenan en Datos."),
+        "lo que falta tiene que decir donde se rellena: «{}»",
+        sin_datos.que_falta_corto
+    );
+    // Y CON SUS DATOS NO FALTA NADA: si quedara una frase suelta, la pantalla pediria algo que ya
+    // tiene.
+    assert!(con_datos.que_falta_corto.is_empty(), "con datos completos no falta nada");
+
+    // (2) LA GEOMETRIA: el bloque mide 44 (§3.7), lleva su ICONO (y no un cuadrado de color), y el
+    // texto NO se sale del bloque.
+    pintar::pintar(&v, &con_datos);
+    let todos = ElementQuery::from_root(&v).find_all();
+    let bloques = con_id(&todos, "aviso");
+    assert!(
+        !bloques.is_empty(),
+        "con datos tiene que haber la linea de la precision (§3.7)"
+    );
+    for b in &bloques {
+        let tb = b.size();
+        assert!(
+            (f64::from(tb.height) - 44.0).abs() < 0.5,
+            "el bloque de aviso mide 44 (§3.7), y mide {:.1}",
+            f64::from(tb.height)
+        );
+        // EL ICONO: un `Path` de 24, del catalogo. Sin icono, este bloque seria el circulo de color
+        // que la especificacion manda sustituir.
+        // El icono se busca por SU CAJA (24 x 24), que es como lo hace la prueba de la barra: el
+        // `type_name` de un componente con nombre no es el del `Path` que hereda.
+        let iconos: Vec<_> = b
+            .query_descendants()
+            .find_all()
+            .into_iter()
+            .filter(|e| {
+                let t = e.size();
+                (f64::from(t.width) - 24.0).abs() < 0.5 && (f64::from(t.height) - 24.0).abs() < 0.5
+            })
+            .collect();
+        assert_eq!(iconos.len(), 1, "la linea lleva UN icono del catalogo (§3.7)");
+        let ti = iconos[0].size();
+        assert!(
+            (f64::from(ti.width) - 24.0).abs() < 0.5 && (f64::from(ti.height) - 24.0).abs() < 0.5,
+            "el icono de la linea mide 24, y mide {:.1}x{:.1}",
+            f64::from(ti.width),
+            f64::from(ti.height)
+        );
+        // EL TEXTO DENTRO DEL BLOQUE: es lo que hace que «UNA linea» sea medible. Con la caja de una
+        // linea de 12 px (17), o a lo sumo dos (34) si la frase es larga de verdad; lo que NO puede
+        // es salirse por debajo del borde, que es el defecto que ya se cazo en la tarjeta de 52.
+        let pb = b.absolute_position();
+        let fin_bloque = f64::from(pb.y) + f64::from(tb.height);
+        for t in b.query_descendants().find_all() {
+            if t.accessible_id().map(|s| s.to_string()).as_deref() != Some("aviso-texto") {
+                continue;
+            }
+            let tt = t.size();
+            let pt = t.absolute_position();
+            println!(
+                "  la linea «{}»: caja de {:.1} de alto dentro de un bloque de {:.0}",
+                texto_de(&t),
+                f64::from(tt.height),
+                f64::from(tb.height)
+            );
+            assert!(
+                f64::from(tt.height) <= 34.5,
+                "una frase de pantalla no puede ocupar mas de dos lineas de 12 px: mide {:.1}",
+                f64::from(tt.height)
+            );
+            assert!(
+                f64::from(pt.y) + f64::from(tt.height) <= fin_bloque + 0.5,
+                "el texto se sale por debajo del bloque de 44: acaba en {:.1} y el bloque en {fin_bloque:.1}",
+                f64::from(pt.y) + f64::from(tt.height)
+            );
+        }
+    }
+
+    // (3) Y SIN DATOS, la linea que se enseña es la de lo que falta, con SU icono: el mismo bloque.
+    pintar::pintar(&v, &sin_datos);
+    let todos = ElementQuery::from_root(&v).find_all();
+    let textos: Vec<String> = con_id(&todos, "aviso-texto").iter().map(|e| texto_de(e)).collect();
+    println!("  sin datos, las lineas de aviso dicen: {textos:?}");
+    assert_eq!(
+        textos,
+        vec![sin_datos.que_falta_corto.clone()],
+        "sin datos solo va la linea de lo que falta, y es la frase CORTA"
+    );
 }

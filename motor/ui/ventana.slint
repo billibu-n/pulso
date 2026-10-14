@@ -10,6 +10,9 @@
 
 import { Claro, Oscuro } from "temas.slint";
 import { ArmazonEscritorio, ArmazonMovil, Medidas, Seccion } from "armazon.slint";
+// LOS ICONOS DE VERDAD, del catalogo (`iconos.slint`). El aviso del Resumen dibujaba un CIRCULO DE
+// COLOR de 10 px, y eso no es un icono: la especificacion pide uno real (§3.7, AU-90).
+import { Icono } from "iconos.slint";
 // EL SELECTOR DE CARPETA, en su propio fichero: es una capa superpuesta y no toca la navegacion.
 import { EntradaCarpeta, SelectorCarpeta } from "selector.slint";
 // LOS CONTROLES DE SERIE, que son una decision tomada del dueño: traen probado el foco, el teclado,
@@ -40,16 +43,54 @@ export struct DatosPersona {
     sexo: int,
 }
 
+// ---- LO QUE EL MOTOR ENTREGA A LA PANTALLA (Fase 2: `docs/CONTRATO-cara-datos.md`) ----
+//
+// POR QUE DOS ESTRUCTURAS Y NO CINCO LISTAS PARALELAS (AU-73): con listas paralelas, el dia que una
+// cifra no existe y se quita, **las etiquetas se desalinean** y la pantalla miente sin que ninguna
+// prueba lo vea. Aqui cada dato viaja con lo suyo dentro.
+
+// UNA TARJETA DE CIFRA: el numero ya escrito, y su etiqueta. **Las dos cosas juntas.**
+//
+// OJO CON LO QUE ESTA ESTRUCTURA NO TIENE: no hay campo para «esta cifra no existe». El motor manda
+// SOLO las que existen (`dato: Some`, contrato 2), asi que una tarjeta sin dato **no se puede
+// construir aqui**: no es que la vista se acuerde de no dibujarla, es que no llega.
+export struct TarjetaCifra {
+    numero: string,
+    etiqueta: string,
+}
+
+// UNA ZONA, EN PULSACIONES: lo que hace falta para pintar SU BANDA sobre el eje comun.
+//
+// LOS NUMEROS VAN CRUDOS (contrato 1): `inicio_ppm` y `fin_ppm` son el TRAMO de la zona, y son los
+// que sitúan la banda en el eje. **No hay ningun nivel 0-100**, y no es un olvido: el nivel era «el
+// techo de la zona dividido por el techo mayor», o sea una barra que no representaba nada
+// (auditoria:33), y la especificacion lo prohibe (`doc:298`).
+export struct BandaZona {
+    nombre: string,
+    // El tramo YA ESCRITO y CON SU UNIDAD («hasta 137 ppm», «137 – 152 ppm»). El defecto 4 era
+    // enseñar «hasta 114» sin decir de que unidad habla (`doc:299`).
+    tramo: string,
+    inicio_ppm: float,
+    fin_ppm: float,
+}
+
 // ---- Las piezas que se repiten, declaradas UNA vez (AU-41: una accion, una forma) ----
 
-// Una cifra: el numero, su etiqueta, y su margen si lo tiene.
-// EL MARGEN VA CON EL NUMERO, no en una nota al pie: es lo que este motor tiene de distinto, y
-// esconderlo seria quedarse con lo de siempre.
-component Cifra inherits Rectangle {
-    // El id permite MEDIRLO desde las pruebas (AU-63).
+// Una tarjeta de cifra: el numero CENTRADO y su etiqueta debajo, tambien centrada (§3.5).
+//
+// QUE ARREGLA, y es el defecto 6 de la auditoria: el numero salia a la IZQUIERDA dentro de una
+// tarjeta ancha, y el dueño las vio como «botones mal centrados». Aqui no se alinea nada a la
+// izquierda: lo unico que hay en la tarjeta se centra.
+//
+// Y EL ALTO (66) NO SE TOCA: hay una prueba que localiza las tarjetas **por su alto** (`§3.5`,
+// `medir-interfaz.rs`), asi que cambiarlo dejaria ese portero ciego.
+component Tarjeta inherits Rectangle {
     in property <string> numero;
     in property <string> etiqueta;
+    // El indice que ocupa entre las que EXISTEN: es lo que permite nombrarla para medirla.
+    in property <int> indice: 0;
     in property <bool> oscuro: false;
+    // El acento SOLO en las que el cliente mira primero (§3.5).
     in property <bool> destacada: false;
 
     height: 66px;
@@ -58,15 +99,31 @@ component Cifra inherits Rectangle {
     border-width: 1px;
     // El borde DELIMITA, no enmarca: en el boceto apenas se insinua. Con 1 px basta.
     border-color: (root.oscuro ? Oscuro.linea : Claro.linea).with-alpha(0.45);
+    // Un papel de accesibilidad es lo que permite NOMBRAR y MEDIR la tarjeta (AU-63). Es `image`
+    // porque es una caja que se mide, como la pildora de la barra.
+    accessible-role: image;
+    accessible-id: "tarjeta-" + root.indice;
 
     VerticalLayout {
-        // 12, como el diseno. Estaba en 14: otro valor cambiado sin decirlo.
-        padding: 12px;
+        // EL RELLENO VERTICAL ES 8 Y NO 12, Y ESTA MEDIDO: con 12, lo que la tarjeta tiene que
+        // enseñar (numero de 22 = caja de 30, hueco de 3, etiqueta de 12 = caja de 17) pide
+        // 12 + 30 + 3 + 17 + 12 = **74** dentro de una tarjeta de **66** (§3.5): la etiqueta se salia
+        // por debajo del borde. Con 8 la cuenta da **66 exactos**: 8 + 30 + 3 + 17 + 8. El ALTO y el
+        // NUMERO no se tocan (los manda la especificacion y hay un portero que los cuenta); lo que
+        // cede es el aire, que es lo unico que no miente si falta. Lo vigila
+        // `la_tarjeta_de_cifra_ensena_su_numero_y_su_etiqueta_DENTRO_de_los_66`.
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
         spacing: 3px;
         Text {
             text: root.numero;
-            font-size: 26px;
+            // 22 (title-large) Y NO 26: lo manda la especificacion (§3.5), y con el alto de la
+            // tarjeta sin tocar.
+            font-size: 22px;
             font-weight: 700;
+            horizontal-alignment: center;
             // El acento SOLO en las dos primeras: son las que el cliente mira.
             color: root.destacada ? (root.oscuro ? Oscuro.ac : Claro.ac)
                                   : (root.oscuro ? Oscuro.fg : Claro.fg);
@@ -74,17 +131,26 @@ component Cifra inherits Rectangle {
         Text {
             text: root.etiqueta;
             font-size: 12px;
+            horizontal-alignment: center;
             color: root.oscuro ? Oscuro.muted : Claro.muted;
         }
     }
 }
 
-// Una zona: el nombre, su tramo, y la barra.
-// EL ANCHO ES PROPORCIONAL AL LIMITE: si el limite sube, la barra crece. **No es decoracion.**
+// Una zona: el nombre, su tramo, y SU BANDA SOBRE EL EJE COMUN (§3.6).
+//
+// EL ALTO DE LA FILA (40) NO SE TOCA: la prueba de los vacios localiza las filas de zona por su
+// altura (AU-91), asi que un alto distinto deja ese portero ciego.
 component Zona inherits Rectangle {
     in property <string> nombre;
     in property <string> tramo;
-    in property <int> nivel;        // 0 a 100
+    // EL TRAMO, en pulsaciones (contrato 1). Son los dos numeros que sitúan la banda.
+    in property <float> inicio_ppm;
+    in property <float> fin_ppm;
+    // EL EJE COMUN, tambien en pulsaciones (contrato 3): la escala de la que cuelgan las cinco.
+    in property <float> eje_inicio_ppm: 0;
+    in property <float> eje_fin_ppm: 0;
+    in property <int> indice: 0;
     in property <color> tono;
     in property <bool> oscuro: false;
     // La pista: el mismo color, muy suave. **No gris**, porque el gris iguala las cinco zonas.
@@ -106,44 +172,85 @@ component Zona inherits Rectangle {
                 color: root.oscuro ? Oscuro.fg : Claro.fg;
             }
         }
+        // LA PISTA ES EL EJE ENTERO -- por eso todas las pistas miden lo mismo y se pueden comparar
+        // de un vistazo --, y LA BANDA VA DENTRO, EN SU SITIO DEL EJE.
         Rectangle {
             height: 10px;
             border-radius: 5px;
             background: root.pista_zona;
+            // La pista se puede MEDIR: es contra su caja (el eje entero) contra lo que se comprueba
+            // que la banda cae en su sitio (AU-63).
+            accessible-role: image;
+            accessible-id: "pista-" + root.indice;
             Rectangle {
-                width: parent.width * root.nivel / 100;
+                // LA BANDA: del inicio al fin del tramo, EN SU SITIO.
+                //
+                // ESTA ES LA UNICA CUENTA DEL FICHERO, y hay que decir por que no rompe la regla de
+                // «aqui no se calcula nada»: **no es un dato, es un cambio de unidades**. Los cuatro
+                // numeros que la mandan (`inicio_ppm`, `fin_ppm`, `eje_inicio_ppm`, `eje_fin_ppm`)
+                // vienen del motor; lo unico que se hace aqui es pasar de pulsaciones a pixeles, que
+                // es lo que significa dibujar. Un dato nuevo NO puede salir de esta linea: si el
+                // motor dijera otro tramo, la banda se moveria sola.
+                x: (root.inicio_ppm - root.eje_inicio_ppm) * parent.width
+                    / (root.eje_fin_ppm - root.eje_inicio_ppm);
+                width: (root.fin_ppm - root.inicio_ppm) * parent.width
+                    / (root.eje_fin_ppm - root.eje_inicio_ppm);
                 height: parent.height;
                 border-radius: 5px;
                 background: root.tono;
+                // La banda se puede MEDIR por su nombre: sin nombre, la prueba dependeria de un
+                // tamano casual (AU-63).
+                accessible-role: image;
+                accessible-id: "banda-" + root.indice;
             }
         }
     }
 }
 
-// Una linea de aviso: el punto, y UNA frase. Ni un parrafo ni una explicacion.
+// Una linea de aviso: el ICONO del catalogo, y UNA frase. Ni un parrafo ni una explicacion.
+//
+// QUE ARREGLA: el punto de hoy era **un circulo de color de 10 px** (§3.7), y el circulo de color no
+// dice nada -- la especificacion pide un icono REAL del catalogo de 192 (AU-90).
 component Aviso inherits Rectangle {
     in property <string> texto;
+    // El icono es DATO, no decoracion: lo elige quien conoce el mensaje. Su nombre tiene que existir
+    // en `iconos.slint`, y lo vigila el portero de iconos.
+    in property <string> icono: "informacion";
     in property <bool> oscuro: false;
     height: 44px;
     border-radius: Medidas.radio;
     background: root.oscuro ? Oscuro.pista : Claro.pista;
+    // La linea entera se puede medir por su nombre (AU-63).
+    accessible-role: image;
+    accessible-id: "aviso";
     HorizontalLayout {
         padding-left: 12px;
         padding-right: 12px;
         spacing: 8px;
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                width: 10px; height: 10px; border-radius: 5px;
-                background: root.oscuro ? Oscuro.ok : Claro.ok;
+            // 24, como los iconos de la barra: es la medida del catalogo en la pantalla.
+            Icono {
+                nombre: root.icono;
+                tamano: 24px;
+                tono: root.oscuro ? Oscuro.muted : Claro.muted;
             }
         }
-        Text {
-            text: root.texto; font-size: 12px;
-            color: root.oscuro ? Oscuro.fg : Claro.fg;
-            vertical-alignment: center;
+        VerticalLayout {
+            alignment: center;
             horizontal-stretch: 1;
-            wrap: word-wrap;
+            Text {
+                accessible-role: text;
+                accessible-id: "aviso-texto";
+                text: root.texto; font-size: 12px;
+                color: root.oscuro ? Oscuro.fg : Claro.fg;
+                // UNA LINEA (AU-44/AU-45: la pantalla no se explica): el texto que llega ya es UNA
+                // frase -- la recorta el motor (`precision_corta`, `que_falta_corto`, contrato 4 y 5)
+                // --, y aqui se deja partir antes que recortarla: **una frase cortada por la mitad
+                // seria peor que una frase en dos lineas**. Se comprueba midiendo: el bloque mide 44
+                // y el texto no se sale de el.
+                wrap: word-wrap;
+            }
         }
     }
 }
@@ -189,42 +296,98 @@ component Bloque inherits HorizontalLayout {
 // movil a efectos de reparto.**
 component Contenido inherits VerticalLayout {
     in property <bool> oscuro: false;
-    in property <[string]> cifras;
-    in property <[string]> etiquetas;
-    in property <[string]> zonas_nombres;
-    in property <[string]> zonas_tramos;
-    in property <[int]> zonas_niveles;
-    in property <string> precision;
+    // LO QUE EL MOTOR ENTREGA (Fase 2). Ya NO hay `cifras` + `etiquetas` ni `zonas_nombres` +
+    // `zonas_tramos` + `zonas_niveles`: eran listas paralelas (AU-73) y llevaban dentro lo que
+    // justamente habia que quitar -- el guion de las cifras que no existen y el nivel 0-100 de las
+    // barras. Ahora cada dato viaja con lo suyo, y lo que no existe no llega.
+    in property <[TarjetaCifra]> tarjetas;
+    in property <[BandaZona]> bandas;          // las cinco zonas, EN PULSACIONES
+    in property <float> eje_inicio_ppm: 0;     // el rango del eje (contrato 3)
+    in property <float> eje_fin_ppm: 0;
+    in property <string> eje_inicio_texto;     // y el mismo rango, ya escrito, para que se lea
+    in property <string> eje_fin_texto;
+    in property <bool> eje_valido: false;      // `Eje::es_valido()`, decidido por el motor
+    in property <string> precision_corta;      // §3.7: UNA frase (el parrafo va a la ayuda)
+    in property <string> que_falta_corto;      // §3.7: UNA frase, y vacia si no falta nada
     in property <string> aviso;
     in property <string> vacio;
     in property <string> periodo;
-    // ¿Se puede diagnosticar? Si no, NO se dibujan cifras ni zonas: serian tarjetas vacias, que es un
-    // hueco olvidado (AU-07) y un dato de nadie con aspecto de dato (AU-24).
+    // ¿Se puede diagnosticar? Si no, NO se dibujan cifras ni el grafico: serian tarjetas vacias, que
+    // es un hueco olvidado (AU-07) y un dato de nadie con aspecto de dato (AU-24).
     in property <bool> puede: false;
 
     spacing: 12px;
-    // CADA BLOQUE CON SU `Bloque`: la fila de cifras, la tarjeta del grafico, el aviso, el periodo.
-    if root.puede : Bloque {
+
+    // ---- §3.5 · LAS TARJETAS, Y SOLO LAS QUE EXISTEN ----
+    //
+    // `tarjetas` trae SOLO las cifras que el motor tiene (`dato: Some`): la que no existe no ha
+    // llegado hasta aqui, asi que **no puede estar en el arbol** (AU-91). Antes la vista recibia
+    // cuatro cadenas con un «—» dentro y dibujaba el marco igual: el defecto 5 de la auditoria.
+    //
+    // LA REGLA DE COMPOSICION (§3.5), y se cumple caso a caso:
+    //   · 4 -> dos filas de dos;
+    //   · 3 -> dos arriba y la tercera **en la columna de la IZQUIERDA**, con un hueco del mismo
+    //          tamano a su derecha, para que la rejilla no baile;
+    //   · 2 -> una fila de dos;
+    //   · 1 -> una fila con la tarjeta **CENTRADA** (los dos huecos de los lados, del mismo tamano
+    //          que ella): una tarjeta sola pegada a la izquierda parece un boton mal puesto, que es
+    //          exactamente lo que el dueño vio.
+    if root.puede && root.tarjetas.length > 0 : Bloque {
         HorizontalLayout {
             spacing: 12px;
-            Cifra { horizontal-stretch: 1; numero: root.cifras[0]; etiqueta: root.etiquetas[0]; oscuro: root.oscuro; destacada: true; }
-            Cifra { horizontal-stretch: 1; numero: root.cifras[1]; etiqueta: root.etiquetas[1]; oscuro: root.oscuro; destacada: true; }
+            if root.tarjetas.length == 1 : Rectangle { horizontal-stretch: 1; }
+            Tarjeta {
+                horizontal-stretch: root.tarjetas.length == 1 ? 2 : 1;
+                numero: root.tarjetas[0].numero; etiqueta: root.tarjetas[0].etiqueta;
+                indice: 0; destacada: true; oscuro: root.oscuro;
+            }
+            if root.tarjetas.length >= 2 : Tarjeta {
+                horizontal-stretch: 1;
+                numero: root.tarjetas[1].numero; etiqueta: root.tarjetas[1].etiqueta;
+                indice: 1; destacada: true; oscuro: root.oscuro;
+            }
+            if root.tarjetas.length == 1 : Rectangle { horizontal-stretch: 1; }
         }
     }
-    if root.puede : Bloque {
+    if root.puede && root.tarjetas.length > 2 : Bloque {
         HorizontalLayout {
             spacing: 12px;
-            Cifra { horizontal-stretch: 1; numero: root.cifras[2]; etiqueta: root.etiquetas[2]; oscuro: root.oscuro; }
-            Cifra { horizontal-stretch: 1; numero: root.cifras[3]; etiqueta: root.etiquetas[3]; oscuro: root.oscuro; }
+            Tarjeta {
+                horizontal-stretch: 1;
+                numero: root.tarjetas[2].numero; etiqueta: root.tarjetas[2].etiqueta;
+                indice: 2; oscuro: root.oscuro;
+            }
+            if root.tarjetas.length == 3 : Rectangle { horizontal-stretch: 1; }
+            if root.tarjetas.length >= 4 : Tarjeta {
+                horizontal-stretch: 1;
+                numero: root.tarjetas[3].numero; etiqueta: root.tarjetas[3].etiqueta;
+                indice: 3; oscuro: root.oscuro;
+            }
         }
     }
-    if root.puede : Bloque {
+
+    // ---- §3.6 · EL GRAFICO: LAS BANDAS SOBRE EL EJE, EN PULSACIONES ----
+    //
+    // LO QUE ESTABA MAL, y es el fallo de fondo: el ancho de la barra era **el techo de la zona
+    // dividido por el techo mayor** (67 %..100 %), y eso no representa nada (auditoria:33). Lo que se
+    // pinta ahora es el TRAMO: cada banda empieza y acaba donde dice el motor, sobre UN eje comun en
+    // ppm, con la unidad escrita.
+    //
+    // CUANDO NO SE DIBUJA (§3.6): sin zonas, o con un eje que no vale -- y quien lo decide es el
+    // motor (`Eje::es_valido`), no la vista. Tampoco sin poder diagnosticar: entonces no hay ni
+    // grafico ni su marco, y queda la linea de lo que falta.
+    if root.puede && root.eje_valido && root.bandas.length > 0 : Bloque {
         Rectangle {
-            height: 268px;
+            // EL ALTO ES EL QUE PIDA EL CONTENIDO (§3.6): con el eje deja de ser un numero fijo.
+            height: self.preferred-height;
             border-radius: Medidas.radio;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             border-width: 1px;
             border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            // El grafico entero se puede MEDIR: es lo que permite comprobar que **sin zonas no hay ni
+            // grafico ni su marco** (§3.6), en vez de suponerlo.
+            accessible-role: image;
+            accessible-id: "grafico";
             VerticalLayout {
                 padding: 14px;
                 spacing: 4px;
@@ -233,17 +396,43 @@ component Contenido inherits VerticalLayout {
                     font-size: 14px; font-weight: 700;
                     color: root.oscuro ? Oscuro.fg : Claro.fg;
                 }
-                for i in 5 : Zona {
-                    nombre: root.zonas_nombres[i];
-                    tramo: root.zonas_tramos[i];
-                    nivel: root.zonas_niveles[i];
+                // EL EJE, y el eje es el MISMO para las cinco bandas: es lo que permite compararlas.
+                // De la minima a la maxima de las cinco zonas (contrato 3), con la unidad escrita
+                // (defecto 4). Los dos numeros los formatea el motor: aqui no se calcula.
+                VerticalLayout {
+                    spacing: 0px;
+                    HorizontalLayout {
+                        Text {
+                            accessible-role: text; accessible-id: "eje-inicio";
+                            text: root.eje_inicio_texto; font-size: 12px;
+                            color: root.oscuro ? Oscuro.muted : Claro.muted;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            accessible-role: text; accessible-id: "eje-fin";
+                            text: root.eje_fin_texto; font-size: 12px;
+                            color: root.oscuro ? Oscuro.muted : Claro.muted;
+                        }
+                    }
+                    Text {
+                        accessible-role: text; accessible-id: "eje-unidad";
+                        text: "ppm"; font-size: 12px; horizontal-alignment: center;
+                        color: root.oscuro ? Oscuro.muted : Claro.muted;
+                    }
+                }
+                for b[i] in root.bandas : Zona {
+                    nombre: b.nombre;
+                    tramo: b.tramo;
+                    inicio_ppm: b.inicio_ppm; fin_ppm: b.fin_ppm;
+                    eje_inicio_ppm: root.eje_inicio_ppm; eje_fin_ppm: root.eje_fin_ppm;
+                    indice: i;
                     oscuro: root.oscuro;
                     tono: i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
                         : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
                         : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
                         : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
                                  : (root.oscuro ? Oscuro.z5 : Claro.z5);
-                    // La pista, del mismo color pero muy suave: se VE que la barra es de esa zona.
+                    // La pista, del mismo color pero muy suave: se VE que la banda es de esa zona.
                     pista_zona: (i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
                         : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
                         : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
@@ -253,7 +442,22 @@ component Contenido inherits VerticalLayout {
             }
         }
     }
-    if root.precision != "" : Bloque { Aviso { texto: root.precision; oscuro: root.oscuro; } }
+    // ---- §3.7 · LO QUE FALTA, EN UNA LINEA CON SU ICONO ----
+    //
+    // Cuando NO se puede diagnosticar, el Resumen dice **que falta y donde se rellena**, en UNA frase
+    // (`que_falta_corto`, contrato 5). El parrafo de dos frases que habia antes (`que_falta`) se
+    // queda en el motor, para la ayuda, que es donde AU-44/AU-45 lo mandan.
+    if !root.puede && root.que_falta_corto != "" : Bloque {
+        Aviso { icono: "aviso"; texto: root.que_falta_corto; oscuro: root.oscuro; }
+    }
+    // ---- §3.7 · LA PRECISION, EN UNA LINEA CON SU ICONO ----
+    //
+    // El texto de pantalla es `precision_corta` (contrato 4): UNA frase. El parrafo entero se queda
+    // en el motor (`precision`) para la AYUDA. Y si esta vacio, el bloque NO existe (AU-07): hoy ya
+    // era asi y se conserva.
+    if root.puede && root.precision_corta != "" : Bloque {
+        Aviso { icono: "informacion"; texto: root.precision_corta; oscuro: root.oscuro; }
+    }
     // EL PERIODO Y EL RECUENTO, en la misma tarjeta de alto FIJO: son las dos cosas que dicen «que
     // datos hay», y asi la linea del periodo no absorbe el hueco sobrante del reparto (medido: 116 px
     // de celda cuando iba suelta, con un vacio de 98 px debajo). El periodo lo escribe Rust (`cara`),
@@ -301,7 +505,11 @@ component Contenido inherits VerticalLayout {
             }
         }
     }
-    if root.aviso != "" : Bloque { Aviso { texto: root.aviso; oscuro: root.oscuro; } }
+    // El aviso de lo que se deduce del aparato (la deriva), tambien en UNA linea con su icono. El
+    // icono es el reloj porque habla de sesiones, que es lo que se mide en el tiempo.
+    if root.aviso != "" : Bloque {
+        Aviso { icono: "reloj"; texto: root.aviso; oscuro: root.oscuro; }
+    }
 }
 
 // ================================================================================================
@@ -535,13 +743,17 @@ component Datos inherits VerticalLayout {
 export component Ventana inherits Window {
     // LOS NOMBRES DE LOS SITIOS, para poder MEDIRLOS desde las pruebas (AU-63).
     // No son decorativos: sin un nombre, un elemento no se puede consultar ni medir.
-    // Lo que el motor entrega. TODO son cadenas: la ventana NO formatea numeros, los recibe hechos.
-    in property <[string]> cifras;
-    in property <[string]> etiquetas;
-    in property <[string]> zonas_nombres;
-    in property <[string]> zonas_tramos;
-    in property <[int]> zonas_niveles;
-    in property <string> precision;
+    // Lo que el motor entrega. TODO son cadenas y numeros YA DECIDIDOS: la ventana NO formatea
+    // numeros de significado ni calcula nada (solo el motor decide que se enseña).
+    in property <[TarjetaCifra]> tarjetas;
+    in property <[BandaZona]> bandas;
+    in property <float> eje_inicio_ppm: 0;
+    in property <float> eje_fin_ppm: 0;
+    in property <string> eje_inicio_texto;
+    in property <string> eje_fin_texto;
+    in property <bool> eje_valido: false;
+    in property <string> precision_corta;
+    in property <string> que_falta_corto;
     in property <string> aviso;
     in property <string> vacio;
     in property <string> periodo;
@@ -662,10 +874,12 @@ export component Ventana inherits Window {
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
-            cifras: root.cifras; etiquetas: root.etiquetas;
-            zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
-            zonas_niveles: root.zonas_niveles;
-            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
+            tarjetas: root.tarjetas; bandas: root.bandas;
+            eje_inicio_ppm: root.eje_inicio_ppm; eje_fin_ppm: root.eje_fin_ppm;
+            eje_inicio_texto: root.eje_inicio_texto; eje_fin_texto: root.eje_fin_texto;
+            eje_valido: root.eje_valido;
+            precision_corta: root.precision_corta; que_falta_corto: root.que_falta_corto;
+            aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
         }
     }
 
@@ -690,10 +904,12 @@ export component Ventana inherits Window {
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
-            cifras: root.cifras; etiquetas: root.etiquetas;
-            zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
-            zonas_niveles: root.zonas_niveles;
-            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
+            tarjetas: root.tarjetas; bandas: root.bandas;
+            eje_inicio_ppm: root.eje_inicio_ppm; eje_fin_ppm: root.eje_fin_ppm;
+            eje_inicio_texto: root.eje_inicio_texto; eje_fin_texto: root.eje_fin_texto;
+            eje_valido: root.eje_valido;
+            precision_corta: root.precision_corta; que_falta_corto: root.que_falta_corto;
+            aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
         }
     }
 

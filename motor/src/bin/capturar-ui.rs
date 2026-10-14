@@ -11,7 +11,13 @@
 
 slint::include_modules!();
 
-use motor::cara::{self, Ensenado};
+// EL MISMO PINTADO QUE LA APLICACION (Fase 2). Aqui vivia una COPIA de `fn pintar`, y una copia es
+// una promesa de divergencia: el dia que la aplicacion cambiara, **la captura mentiria**, y la
+// captura es justo lo que se mira para juzgar el diseño. Ahora el camino es UNO.
+#[path = "compartido/pintar.rs"]
+mod pintar;
+
+use motor::cara;
 use motor::datos::Persona;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
@@ -86,7 +92,7 @@ fn main() {
         (p, analisis_de(Path::new(&carpeta), &ruta_memoria))
     };
     let ensenado = cara::lo_que_ensena(&persona, real.as_ref());
-    pintar(&ventana, &ensenado);
+    pintar::pintar(&ventana, &ensenado);
 
     ventana.show().expect("la ventana tiene que mostrarse");
     let mut buffer = vec![PremultipliedRgbaColor::default(); (ANCHO * ALTO) as usize];
@@ -113,26 +119,6 @@ fn analisis_de(carpeta: &Path, ruta_memoria: &Path) -> Option<motor::analisis::R
     } else {
         None
     }
-}
-
-/// Escribe en el componente lo MISMO que `pulso::pintar`. Si esto divergiera, la captura mentiria.
-fn pintar(v: &Ventana, e: &Ensenado) {
-    let cifras: Vec<slint::SharedString> = e.cifras.iter().map(|s| s.as_str().into()).collect();
-    let etiquetas: Vec<slint::SharedString> = e.etiquetas.iter().map(|s| s.as_str().into()).collect();
-    v.set_cifras(cifras.as_slice().into());
-    v.set_etiquetas(etiquetas.as_slice().into());
-    let nombres: Vec<slint::SharedString> = e.zonas.iter().map(|(n, _, _)| n.as_str().into()).collect();
-    let tramos: Vec<slint::SharedString> = e.zonas.iter().map(|(_, t, _)| t.as_str().into()).collect();
-    let niveles: Vec<i32> = e.zonas.iter().map(|(_, _, n)| *n).collect();
-    v.set_zonas_nombres(nombres.as_slice().into());
-    v.set_zonas_tramos(tramos.as_slice().into());
-    v.set_zonas_niveles(niveles.as_slice().into());
-    v.set_precision(e.precision.as_str().into());
-    v.set_periodo(e.periodo.as_str().into());
-    v.set_puede(e.puede_diagnosticar);
-    let aviso = if e.puede_diagnosticar { &e.aviso } else { &e.que_falta };
-    v.set_aviso(aviso.as_str().into());
-    v.set_vacio(e.vacio.as_str().into());
 }
 
 /// El PPM P6, sin dependencia nueva: es el formato mas simple que entiende `convert`.

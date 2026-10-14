@@ -23,8 +23,16 @@
 
 slint::include_modules!();
 
+// EL PINTADO, EN UN SOLO SITIO (Fase 2). Antes habia DOS `fn pintar` -- este y el de
+// `capturar-ui.rs`, con el cuerpo copiado --, y eso significa que **la captura podia mentir**: el dia
+// que la aplicacion pintara una cosa y la captura otra, nadie lo veria. Vive en un subdirectorio de
+// `src/bin` porque Cargo no lo mira como binario, y lo incluyen los tres que tienen que pintar igual:
+// la aplicacion, la captura y **la prueba de geometria**, que asi mide lo que la aplicacion pinta.
+#[path = "compartido/pintar.rs"]
+mod pintar;
+
 use motor::analisis::{self, Real};
-use motor::cara::{self, Ensenado};
+use motor::cara;
 use motor::datos::{Dato, Persona, Sexo};
 use motor::avisos::Hoy;
 use motor::{carpeta, memoria, profile};
@@ -186,46 +194,6 @@ fn pintar_selector(ventana: &Ventana, dir: &Path) {
         .collect();
     let modelo = slint::VecModel::from_slice(&entradas);
     ventana.set_carpetas(slint::ModelRc::new(modelo));
-}
-
-/// Escribe en la ventana lo que hay que enseñar. **No decide nada**: recibe y escribe.
-fn pintar(ventana: &Ventana, e: &Ensenado) {
-    let cifras: Vec<slint::SharedString> = e
-        .cifras
-        .iter()
-        .map(|s| slint::SharedString::from(s.as_str()))
-        .collect();
-    let etiquetas: Vec<slint::SharedString> = e
-        .etiquetas
-        .iter()
-        .map(|s| slint::SharedString::from(s.as_str()))
-        .collect();
-    ventana.set_cifras(cifras.as_slice().into());
-    ventana.set_etiquetas(etiquetas.as_slice().into());
-    let nombres: Vec<slint::SharedString> = e
-        .zonas
-        .iter()
-        .map(|(n, _, _)| slint::SharedString::from(n.as_str()))
-        .collect();
-    let tramos: Vec<slint::SharedString> = e
-        .zonas
-        .iter()
-        .map(|(_, t, _)| slint::SharedString::from(t.as_str()))
-        .collect();
-    // (`cifras` y `etiquetas` son `Vec<String>` y NO se convierten solas con `as_slice().into()`;
-    //  estas dos necesitan el tipo dicho, porque el `into()` de dentro no sabe a que convertir.)
-    let niveles: Vec<i32> = e.zonas.iter().map(|(_, _, n)| *n).collect();
-    ventana.set_zonas_nombres(nombres.as_slice().into());
-    ventana.set_zonas_tramos(tramos.as_slice().into());
-    ventana.set_zonas_niveles(niveles.as_slice().into());
-    ventana.set_precision(e.precision.as_str().into());
-    ventana.set_periodo(e.periodo.as_str().into());
-    // ¿Hay algo que diagnosticar? Si no, la ventana NO dibuja cifras ni zonas (nada de tarjetas vacias).
-    ventana.set_puede(e.puede_diagnosticar);
-    // El aviso: si no se puede diagnosticar, **lo que falta, y donde se rellena**.
-    let aviso = if e.puede_diagnosticar { &e.aviso } else { &e.que_falta };
-    ventana.set_aviso(aviso.as_str().into());
-    ventana.set_vacio(e.vacio.as_str().into());
 }
 
 /// **¿El usuario pide que se le explique?** `--ayuda`, `-h` o `--help`, y nada mas.
@@ -428,7 +396,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // ---- LO QUE SE ENSEÑA: LO DECIDE `cara`, NO ESTE FICHERO ----
     let ensenado = cara::lo_que_ensena(&persona, real.as_ref());
-    pintar(&ventana, &ensenado);
+    pintar::pintar(&ventana, &ensenado);
 
     // ---- Y SI SE PIDE, SE IMPRIME LO MISMO QUE VA A LA PANTALLA ----
     //
@@ -442,17 +410,32 @@ fn main() -> Result<(), slint::PlatformError> {
         println!("--- LO QUE LA VENTANA RECIBE Y ENSEÑA ---");
         if !ensenado.puede_diagnosticar {
             println!("  NO SE PUEDE DIAGNOSTICAR TODAVIA");
-            println!("  {}", ensenado.que_falta);
+            // LA MISMA FRASE QUE VA A LA PANTALLA (Fase 2): antes se imprimia el parrafo de dos
+            // frases y la pantalla enseñaba otra cosa. Lo que se comprueba tiene que ser lo que se ve.
+            println!("  {}", ensenado.que_falta_corto);
         } else {
-            for i in 0..ensenado.cifras.len() {
-                println!("  {:<12} {}", ensenado.cifras[i], ensenado.etiquetas[i]);
+            // SOLO LAS CIFRAS QUE EXISTEN, que es justo lo que dibuja la ventana: la que no se midio
+            // viaja con `None` y **no tiene tarjeta** (AU-91).
+            for c in ensenado.cifras_atadas.iter().filter(|c| c.existe()) {
+                println!("  {:<12} {}", c.dato.as_deref().unwrap_or(""), c.etiqueta);
             }
             println!();
-            for (n, t, nivel) in &ensenado.zonas {
-                println!("  {n:<16} {t:<14} barra {nivel}%");
+            // LAS ZONAS EN PULSACIONES, con su margen y su banda sobre el eje comun: es lo que se
+            // pinta. El nivel 0-100 de la barra vieja no se imprime porque ya no se dibuja.
+            for z in &ensenado.zonas_ppm {
+                println!(
+                    "  {:<16} {:>6.1} ±{:>4.1} .. {:>6.1} ±{:>4.1} ppm",
+                    z.nombre, z.inicio_ppm, z.margen_inicio_ppm, z.fin_ppm, z.margen_fin_ppm
+                );
             }
+            println!(
+                "  eje ............. {:.0} .. {:.0} ppm ({})",
+                ensenado.eje.inicio_ppm,
+                ensenado.eje.fin_ppm,
+                if ensenado.eje.es_valido() { "se pinta" } else { "NO vale: sin grafico" }
+            );
             println!();
-            println!("  {}", ensenado.precision);
+            println!("  {}", ensenado.precision_corta);
             println!("  {}", ensenado.aviso);
         }
         println!("  {}", ensenado.vacio);
@@ -519,7 +502,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     // Y SE VUELVE A CALCULAR CON SUS DATOS NUEVOS.
                     let real = el_analisis(carpeta_guardar.borrow().as_path(), &ruta_memoria_guardar);
                     let e = cara::lo_que_ensena(&nueva, real.as_ref());
-                    pintar(&w, &e);
+                    pintar::pintar(&w, &e);
                     w.set_campos(campos_de(&nueva));
                 }
             },
@@ -589,7 +572,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 let real = el_analisis(d.borrow().as_path(), &mem);
                 let persona = profile::leer(&perfil).unwrap_or_else(|_| Persona::desconocida());
                 let e = cara::lo_que_ensena(&persona, real.as_ref());
-                pintar(&v, &e);
+                pintar::pintar(&v, &e);
             }
         }
     });

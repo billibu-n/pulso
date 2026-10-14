@@ -68,8 +68,8 @@ aprobado.
 
 ## Lo que se corrige en este bloque
 
-1. **Iconos de verdad** en la barra: los 187 de Lucide que ya están en `iconos.slint` — `casa`,
-   `grafico-linea`, `bicicleta`, `ajustes` — a **24 dp**.
+1. **Iconos de verdad** en la barra: los 192 de Lucide que ya están en `iconos.slint` — `casa`,
+   `corazon` (antes `grafico-linea`; cambiado por decisión del dueño el 2026-10-14), `bicicleta`, `ajustes` — a **24 dp**.
 2. **Medidas Android**: cabecera **64**, barra de abajo **80**, radio **12**, etiqueta **12 px**, y el
    activo con **píldora detrás del icono** en vez de línea arriba.
 3. **El motor no dibuja vacíos**: las cifras y las zonas se dibujan **solo si se puede diagnosticar**;

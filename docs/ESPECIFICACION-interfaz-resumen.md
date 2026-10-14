@@ -56,12 +56,12 @@ desde aquí:
 | **temas** | **2**: claro cálido y **negro OLED** | `estado:26` · `motor/ui/temas.slint` |
 
 **Las cuatro secciones, con su icono** — el icono es **dato**, no decoración, y sale del catálogo de
-187 iconos de Lucide (`estado:28`, `ventana.slint:516-520`):
+192 iconos de Lucide (`estado:28`, `ventana.slint:529-534`):
 
 | # | sección | icono (`iconos.slint`) | qué es |
 |---|---|---|---|
 | 0 | **Resumen** | `casa` | lo que se puede afirmar hoy, en cifras, zonas y una línea |
-| 1 | **Zonas** | `grafico-linea` | las cinco zonas **con su tramo en ppm** y, si hay sesiones, el tiempo en cada una |
+| 1 | **Zonas** | `corazon` | las cinco zonas **con su tramo en ppm** y, si hay sesiones, el tiempo en cada una |
 | 2 | **Sesiones** | `bicicleta` | **las sesiones, una por fila** |
 | 3 | **Datos** | `ajustes` | los datos de la persona, la carpeta de sus ficheros y el tema |
 
@@ -160,7 +160,7 @@ título de una sección no cabe, **no se recorta el texto**: se acorta el nombre
 | alto | **80** | `estudio:25` · `armazon.slint:45` |
 | huecos | **4**, **repartidos por igual**: `parent.width / 4` (= 102,75 en 411) | AU-68 · `slint:37-53` · `armazon.slint:196` |
 | icono | **icono real** de `iconos.slint` a **24** | `estudio:25`, `estudio:34-35`, AU-90 |
-| iconos concretos | `casa`, `grafico-linea`, `bicicleta`, `ajustes` | `estado:472-476` · `ventana.slint:516-520` |
+| iconos concretos | `casa`, `corazon`, `bicicleta`, `ajustes` | `estado:472-476` · `ventana.slint:529-534` |
 | etiqueta | **12 px** (label-medium), **centrada** en su hueco | `estudio:25` · `armazon.slint:224-225` |
 | indicador | **píldora** detrás del icono: 64 × 32, radio 16, acento al 18 % | `estudio:26` · `armazon.slint:205-209` |
 | área táctil | **≥ 48**, por hueco entero | `estudio:27` · `armazon.slint:199` |
@@ -177,10 +177,26 @@ secciones, el divisor es 3 (AU-08: instalar o quitar no reajusta la geometría a
 
 | qué | valor | fuente |
 |---|---|---|
-| margen del contenido | **16** por los cuatro lados | `armazon.slint:175` · `estado:469-491` |
-| hueco entre bloques | **14** | `armazon.slint:177` |
-| alto del contenido | **`alto − cabecera − barra = 880 − 64 − 80 = 736`**, declarado como **altura MÍNIMA** | AU-93 · `armazon.slint:172` |
-| papel | `main`, `accessible-id: "contenido"` | `armazon.slint:167-168` |
+| margen del contenido | **16** por los cuatro lados, **puesto por CADA BLOQUE** (enmienda del 2026-10-14) | `armazon.slint:58` (`Medidas.margen`) · `estado:469-491` |
+| hueco entre bloques | **14** | `armazon.slint:243` |
+| alto del contenido | **`alto − cabecera − barra = 880 − 64 − 80 = 736`**, declarado como **altura MÍNIMA** | AU-93 · `armazon.slint:217` |
+| papel | `main`, `accessible-id: "contenido"` | `armazon.slint:211-212` |
+
+**ENMIENDA (medida el 2026-10-14) · el margen del contenido lo aplica CADA BLOQUE, no el armazón.** El
+**16** es el mismo número y sigue declarado **UNA sola vez**, en `global Medidas.margen` (AU-67,
+`armazon.slint:58`); lo que cambia es **quién lo pone**: cada bloque del contenido lo **REFERENCIA**, y el
+armazón **no** lo pone en el layout de dentro de lo que se desplaza. **Medido, y por eso**: con un
+`padding` en el layout de **dentro** del `ScrollView`, el contenido se mide a **411 + 2·16 = 443** donde
+**caben 411**, el `ScrollView` concluye que hay algo que desplazar **a lo ancho** y **pinta su barra de
+desplazamiento horizontal**: una **línea gris de 370 px** pegada al borde de abajo del contenido
+(y = 794..795, `#898887` — la que se ve en la captura). **Probado también con 20**, con
+`width/height: parent.width/height` y con el relleno puesto en el `Rectangle` (ahí Slint avisa
+**«padding only has effect on layout elements»**): **la línea vuelve siempre**. Consecuencia: la prueba
+que **exige** el margen en el primer bloque (`motor/tests/medir-interfaz.rs`,
+`el_primer_bloque_del_contenido_empieza_con_el_margen_de_16`) queda **`#[ignore]`** —«Fase 2: el margen
+del contenido lo aplica CADA bloque…»— hasta que los bloques del contenido apliquen `Medidas.margen`; la
+que vigila que el armazón **no** lo ponga (`el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza`)
+sigue activa y en verde. **Fuente del cambio**: `armazon.slint` (la nota del margen y del `ScrollView`).
 
 **Por qué la altura mínima está declarada, y no se confía en el layout**: al dejar de dibujar los vacíos
 (AU-91), el armazón **encogió y la barra de abajo subió al centro de la pantalla**; se cazó **midiendo**,
@@ -307,7 +323,7 @@ la edad y el umbral ya se calculan las zonas. **Se rellenan en Datos.**» — au
 |---|---|---|---|
 | **precisión** | tarjeta de aviso del Resumen | **el texto se recorta a UNA frase**; el detalle entero se va a la ayuda | auditoría:59-60 |
 | **lo que falta** | **bloque de una línea, con su icono** | una frase que dice **qué falta y dónde se rellena** | `cara.rs:253-255` |
-| icono de la línea | **real, del catálogo**, no un cuadrado de color | `iconos.slint` (187 iconos) | AU-90, `estudio:56-60` |
+| icono de la línea | **real, del catálogo**, no un cuadrado de color | `iconos.slint` (192 iconos) | AU-90, `estudio:56-60` |
 | el punto de hoy | `Aviso` (ventana.slint:124-149) pinta **un círculo de color de 10 px** | **se sustituye por el icono** | `ventana.slint:136-139` |
 
 **Estado del bloque de aviso**: alto **44**, radio 12, fondo `pista`, `padding` lateral 12, `spacing` 8,
@@ -531,8 +547,9 @@ diciendo qué decía antes**. Las secciones 1, 2 y el plan se conservan **litera
 | 14 | **El selector de carpeta** | no aparecía | **§3.12**: capa superpuesta, 100 %×100 %, relleno 16, botones ≥ 48 | decisión del dueño (`estado:301-307`) |
 | 15 | **Tipografías corregidas a la escala 22/14/12** | 26 (cifra), 15 (títulos), 13 (recuento), 11 (etiquetas de campo y del selector) | **22 / 14 / 12** | el dueño fijó **tres** tamaños; los demás eran del boceto |
 | 16 | **§E13, los huecos** | no existía | **ocho huecos** con la función de `cara.rs` que hay que tocar | el encargo lo pide como entregable, y `arq:150-163` exige contrato antes que código |
-| 17 | **Anexo A (esta tabla)** | no existía | los 17 cambios, anotados | la regla del encargo: «anota TODO cambio respecto al texto previo» |
+| 17 | **Anexo A (esta tabla)** | no existía | los 19 cambios, anotados | la regla del encargo: «anota TODO cambio respecto al texto previo» |
 | 18 | **El plan** | «Este chat lleva más de 250 000 tokens… propuesta: nueva conversación» | **§5**: las tres fases con **las cuatro cosas** de la definición de TERMINADO | el bloque se cerró: el plan pasa a ser por fases, no por conversaciones |
+| 19 | **El margen del contenido (§3.3)** | **16** por los cuatro lados, **puesto por el armazón** | **16**, aplicado por **CADA BLOQUE**; el armazón no lo pone dentro de lo que se desplaza | **medido el 2026-10-14**: un `padding` dentro del `ScrollView` **pinta la barra de desplazamiento horizontal** (el contenido se mide a **443** donde caben **411**: una línea gris de 370 px) — `armazon.slint` y la prueba **ignorada** `motor/tests/medir-interfaz.rs` · `el_primer_bloque_del_contenido_empieza_con_el_margen_de_16` |
 
 **Lo que NO se cambió, y a propósito**: §1 (por qué costaba), §2 (la auditoría de los 10 defectos) y las
 tres causas del «diagnóstico sin excusas». **Son el motivo del documento y siguen siendo ciertos.**

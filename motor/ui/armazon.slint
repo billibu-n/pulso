@@ -1,5 +1,9 @@
 // EL ARMAZON: los sitios de la ventana, y el orden en que se repliegan.
 //
+// CONTRATO: `docs/ESPECIFICACION-interfaz-resumen.md`, fase 0 CONGELADA (2026-10-14).
+// Cada numero de este fichero sale de ahi y lleva su cita `doc:linea` (la linea del documento).
+// Regla de uso, literal: **quien construya no dibuja nada que no este en la especificacion**.
+//
 // LA NORMA QUE CUMPLE, y cada regla con su motivo (norma-app, AU-01 a AU-08):
 //
 //   AU-01  Al encoger, los sitios pierden EN ESTE ORDEN y el contenido es el ULTIMO:
@@ -11,6 +15,7 @@
 //   AU-05  Apilado, el armazon CRECE con su contenido y se desplaza la pagina.
 //   AU-06  Todo sitio que se repliega deja forma de volver.
 //   AU-07  Un sitio RESERVADO se declara; un hueco olvidado no se dibuja.
+//   AU-93  La barra de abajo NO SE MUEVE: el contenido declara su altura MINIMA.
 //
 // Y HAY DOS REPARTOS, no uno, porque el cliente usa el MOVIL como dispositivo principal:
 //   ESCRITORIO (>= 900 px): riel de 176 a la izquierda, panel de 320 a la derecha, franja abajo
@@ -22,33 +27,53 @@ import { Claro, Oscuro } from "temas.slint";
 // LOS ICONOS DE VERDAD. Existian 187 y la barra dibujaba cuadrados: el boceto dibujo un cuadrado
 // como marcador y el marcador llego a produccion. Lo cazo el estudio del 2026-10-14.
 import { Icono } from "iconos.slint";
+// El desplazamiento del contenido es un control DE SERIE (AU-05, doc:190-192): no se reescribe.
+import { ScrollView } from "std-widgets.slint";
 
-// ---- Las medidas, declaradas una sola vez (AU-10: un valor vive en UN sitio) ----
+// ---- Las medidas, declaradas UNA sola vez (AU-67, `slint:186`; doc:34-56) ----
+//
+// `global Medidas` es la **UNICA** declaracion de medidas del proyecto (AU-67, AU-73): ninguna otra
+// pieza escribe un 64, un 80 o un 16. Y `motor/tests/medir-interfaz.rs` las comprueba **contra la
+// geometria real**, no contra este comentario.
 export global Medidas {
-    // ESTAS MEDIDAS SON LAS DEL DISENO APROBADO (`bocetos/generar-movil.py`), y NO se cambian
-    // «para que quede mejor». Se cambiaron el 2026-10-13 -- margen de 16 a 18 y nav de 64 a 68 --
-    // y el resultado fue que **la pantalla dejo de parecerse al diseno que el dueno aprobo**, sin
-    // que nadie se enterara. **Si un valor del diseno no cuadra, se corrige el DISENO, y entonces
-    // cambian los dos.** Hay una prueba que lo comprueba: `tests/medir-interfaz.rs`.
+    // ESTAS MEDIDAS NO SE CAMBIAN «para que quede mejor»: cambiarlas mueve la pantalla entera.
+    // Se cambiaron una vez a ojo el 2026-10-13 (margen 16 -> 18, nav 64 -> 68) y la pantalla dejo de
+    // parecerse al diseno aprobado **sin que nadie se enterara**. Ahora hay quien lo comprueba.
 
-    // EL TAMANO DE LA VENTANA, declarado UNA vez (AU-67). La ventana no se redimensiona: es un
-    // telefono de 411x880 dp. Antes estaba en dos sitios (aqui y en ventana.slint).
+    // EL TAMANO DE LA VENTANA (doc:43, `armazon.slint:36-37`; prueba `medir-interfaz.rs:88-89`).
+    // La ventana no se redimensiona: es un telefono de 411 x 880 dp. Un solo sitio.
     out property <length> ancho: 411px;
     out property <length> alto: 880px;
     // El corte entre movil y escritorio, en pixeles logicos.
     out property <length> corte: 900px;
     out property <length> riel: 176px;
     out property <length> panel: 320px;
-    // MEDIDAS DE ANDROID (Material 3), no del boceto: top app bar 64 y barra de navegacion 80.
-    // El estudio y sus fuentes: docs/ESTUDIO-interfaz-android-2026-10-14.md.
-    out property <length> cabecera: 64px;
-    out property <length> nav_movil: 80px;
+    // MEDIDAS DE ANDROID (Material 3): top app bar small 64, navigation bar con etiquetas 80.
+    // Fuente: docs/ESTUDIO-interfaz-android-2026-10-14.md:24-25 (`estudio:24`, `estudio:25`).
+    out property <length> cabecera: 64px;      // doc:44   (antes 56, que era del boceto)
+    out property <length> nav_movil: 80px;     // doc:46   (antes 64)
     // Las areas tocables, y son DOS medidas distintas a proposito.
-    out property <length> toque_movil: 48px;   // el dedo
+    out property <length> toque_movil: 48px;   // doc:50 el dedo (`minimumInteractiveComponentSize`)
     out property <length> toque_raton: 32px;   // el puntero puede apuntar fino
-    out property <length> margen: 16px;
-    // 12 es el radio de tarjeta de Material 3 (antes 10, que era del boceto).
+    out property <length> margen: 16px;        // doc:52 el margen de la pantalla, por los CUATRO lados
+    // 12 es el radio de tarjeta de Material 3 (`estudio:28`, doc:51). Antes 10, que era del boceto.
     out property <length> radio: 12px;
+    // El hueco entre bloques del contenido: 14 (`armazon.slint:117`, doc:53).
+    out property <length> hueco_bloques: 14px;
+    // LA ALTURA MINIMA DEL CONTENIDO, declarada y no deducida (AU-93, doc:182):
+    //   alto - cabecera - nav = 880 - 64 - 80 = **736**.
+    // POR QUE SE DECLARA: al dejar de dibujar los vacios (AU-91) el armazon ENCOGIO y **la barra de
+    // abajo subio al centro de la pantalla**. Se cazo midiendo, no mirando (`estado:486-487`).
+    // Consecuencia para las fases 2 y 3: **quitar o anadir un bloque NO puede mover la barra**.
+    out property <length> alto_contenido: alto - cabecera - nav_movil;
+    // EL AIRE DE LA BARRA DE ABAJO (doc:169): 4 px. Son LOS DOS de la misma medida -- el que va
+    // entre cada dos huecos y el que queda en los extremos --, y por eso se declara UNA vez: el
+    // ancho de cada hueco se DERIVA de aqui (ver el armazon de movil), y asi los dos numeros no
+    // pueden divergir.
+    //
+    // Y el reparto NO lo decide el texto -- eso fue el fallo que se vio en pantalla
+    // («ResumenZonasSesionesDatos», todo pegado) y que `medir-interfaz.rs` vigila.
+    out property <length> aire_nav: 4px;
 }
 
 // ---- Una seccion del riel o de la navegacion ----
@@ -82,26 +107,29 @@ export component ArmazonEscritorio inherits Rectangle {
             width: Medidas.riel;
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
                 padding-top: 20px;
                 spacing: 4px;
+                // El titulo del riel, a la izquierda y en su sitio: SIN `x` (doc:133, `slint:19-35`).
                 Text {
                     text: root.titulo;
-                    font-size: 15px; font-weight: 700;
+                    font-size: 14px;
+                    font-weight: 700;
                     color: root.oscuro ? Oscuro.fg : Claro.fg;
-                    x: 20px;
+                    horizontal-alignment: left;
                 }
                 for s[i] in root.secciones : Rectangle {
                     height: 36px;
-                    width: Medidas.riel - 20px;
-                    x: 10px;
                     border-radius: 7px;
                     background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac) : transparent;
                     Text {
                         text: s.nombre;
-                        font-size: 13px;
+                        font-size: 14px;
                         color: s.activa ? (root.oscuro ? Oscuro.ac_txt : Claro.ac_txt)
                                         : (root.oscuro ? Oscuro.muted : Claro.muted);
-                        x: 14px; vertical-alignment: center;
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
                     }
                     TouchArea { clicked => { root.elegir(i); } }
                 }
@@ -113,8 +141,7 @@ export component ArmazonEscritorio inherits Rectangle {
             background: transparent;
             VerticalLayout {
                 padding: Medidas.margen;
-                // 14 y no 12: en el boceto las tarjetas respiran mas, y el apretado se nota.
-                spacing: 14px;
+                spacing: Medidas.hueco_bloques;
                 @children
             }
         }
@@ -125,19 +152,22 @@ export component ArmazonEscritorio inherits Rectangle {
 //
 // Sin riel, y con la navegacion ABAJO. Por que: en 411 dp, un riel de 176 se comeria el 43 % del
 // ancho. Eso no es un diseno, es un desperdicio.
+//
+// ESTE ES EL ARMAZON DEL CONTRATO: el lienzo es 411 x 880 y **la barra de abajo no se mueve**.
 export component ArmazonMovil inherits Rectangle {
-    // Ids para MEDIR: la cabecera, el cuerpo del contenido y la barra de abajo.
     in property <bool> oscuro: false;
     in property <[Seccion]> secciones;
+    // EL TITULO ES LA SECCION, no el nombre de la app (doc:145): el top app bar de Android dice
+    // DONDE ESTAS. «Pulso» no va en la barra (auditoria:39, 44-45).
     in property <string> titulo;
     callback elegir(int);
 
-    // EL TAMANO DE LA VENTANA (ver el otro armazon): mantiene la barra ABAJO aunque no haya datos.
+    // EL TAMANO DE LA VENTANA: mantiene la barra ABAJO aunque no haya datos.
     width: Medidas.ancho;
     height: Medidas.alto;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
     VerticalLayout {
-        // --- La cabecera: el cromo de arriba ---
+        // --- La cabecera: el cromo de arriba (doc:139-154) ---
         cabecera := Rectangle {
             // `accessible-id` es la forma OFICIAL de identificar un elemento para PRUEBAS y para
             // accesibilidad. Buscar por el nombre del componente (`ArmazonMovil::cabecera`) funciona,
@@ -150,17 +180,31 @@ export component ArmazonMovil inherits Rectangle {
             // los que un lector de pantalla usa para saltar de una a otra.
             accessible-role: banner;
             accessible-id: "cabecera";
-            height: Medidas.cabecera;
-            background: root.oscuro ? Oscuro.sup : Claro.sup;
-            Text {
-                text: root.titulo;
-                // 22 px: title-large de Material 3 para el top app bar.
-                font-size: 22px; font-weight: 700;
-                color: root.oscuro ? Oscuro.fg : Claro.fg;
-                x: Medidas.margen; vertical-alignment: center;
+            height: Medidas.cabecera;                  // doc:143  alto 64
+            background: root.oscuro ? Oscuro.sup : Claro.sup;   // doc:144  fondo `sup` del tema
+            // La cabecera es UN sitio con su contenido: el titulo va a la izquierda con el margen de
+            // 16 y **centrado en los 64** (doc:147-148). Se hace con `padding` + `alignment: center`,
+            // NO con `x` ni con `y`: dentro de un layout la posicion la manda el layout (doc:133,
+            // `slint:19-35`). Estaba con `x:` y `vertical-alignment`, que es la trampa.
+            VerticalLayout {
+                padding: Medidas.margen;
+                alignment: center;
+                Text {
+                    text: root.titulo;
+                    // 22 px: title-large de Material 3 para el top app bar (`estudio:24`, doc:146).
+                    // Peso 700, y la escala de tipografia es SOLO 22 / 14 / 12 (doc:54).
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: root.oscuro ? Oscuro.fg : Claro.fg;
+                    horizontal-alignment: left;
+                    // NO se recorta el texto: si un titulo no cupiera, se acorta el NOMBRE en la
+                    // tabla de secciones, que es una decision (AU-68, doc:153-154).
+                    wrap: no-wrap;
+                    overflow: TextOverflow.elide;
+                }
             }
         }
-        // --- El contenido: apilado, y el armazon CRECE con el (AU-05) ---
+        // --- El contenido: apilado, con su margen y su hueco, y anclado (doc:176-192) ---
         Rectangle {
             // `main`: la zona del trabajo. Con `banner` arriba y `navigation` abajo, la pantalla
             // queda **navegable por zonas** para quien use un lector de pantalla.
@@ -168,61 +212,150 @@ export component ArmazonMovil inherits Rectangle {
             accessible-id: "contenido";
             vertical-stretch: 1;
             // ALTURA MINIMA DECLARADA: es lo que mantiene la barra de abajo PEGADA ABAJO aunque el
-            // contenido sea corto (estado sin datos). Medido: sin esto la barra subia al centro.
-            min-height: Medidas.alto - Medidas.cabecera - Medidas.nav_movil;
+            // contenido sea corto (el estado sin datos). Medido: sin esto la barra subia al centro
+            // (AU-93, doc:182-188). 880 - 64 - 80 = 736, declarado en `Medidas.alto_contenido`.
+            min-height: Medidas.alto_contenido;
             background: transparent;
-            VerticalLayout {
-                padding: Medidas.margen;
-                // 14 y no 12: en el boceto las tarjetas respiran mas, y el apretado se nota.
-                spacing: 14px;
-                @children
+            // ---- EL MARGEN DE 16, EL SCROLLVIEW, Y LA LINEA GRIS QUE SALIO (medido) ----
+            //
+            // El margen de la pantalla es 16 por los cuatro lados (doc:180) y el armazon lo deja
+            // puesto por CADA BLOQUE: aqui NO va el `padding`, y el por que esta medido. Con el
+            // relleno en el layout que esta DENTRO del `ScrollView`, el contenido se mide a
+            // 411 + 2·16 = 443; el `ScrollView` concluye que hay algo que desplazar **a lo ancho** y
+            // PINTA SU BARRA: una linea gris de 370 px pegada al borde de abajo del contenido
+            // (y = 794..795, #898887). Probado tambien con 20 de relleno: sale igual. Pedirle al
+            // `ScrollView` su ancho y su alto no lo arregla, ni poner el relleno en el `Rectangle`
+            // (Slint avisa: «padding only has effect on layout elements»).
+            //
+            // ASI QUE EL MARGEN LO LLEVA CADA BLOQUE, y hay una prueba que lo vigila
+            // (`el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza`) y otra que lo exige
+            // (`el_primer_bloque_del_contenido_empieza_con_el_margen_de_16`, **que hoy esta
+            // IGNORADA: mide algo de la fase 2, y se des-ignora cuando los bloques apliquen
+            // Medidas.margen**).
+            ScrollView {
+            width: parent.width;
+            height: parent.height;
+            vertical-stretch: 1;
+            mouse-drag-pan-enabled: true;
+                VerticalLayout {
+                    // SIN `padding` AQUI: el margen de 16 lo lleva cada bloque (ver la nota de arriba,
+                    // y la prueba `el_primer_bloque_del_contenido_empieza_con_el_margen_de_16`, que
+                    // hoy esta IGNORADA: mide algo de la fase 2, y se des-ignora cuando los bloques
+                    // apliquen Medidas.margen).
+                    spacing: Medidas.hueco_bloques;       // doc:181  14 entre bloques
+                    @children
+                }
             }
         }
-        // --- La navegacion: el cromo de abajo ---
+        // --- La navegacion: el cromo de abajo (doc:156-174) ---
         nav := Rectangle {
             // `navigation`: el papel de referencia que corresponde a una barra de navegacion.
             accessible-role: navigation;
             accessible-id: "navegacion";
-            height: Medidas.nav_movil;
+            height: Medidas.nav_movil;                    // doc:160  alto 80
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             HorizontalLayout {
-                // EL AIRE ENTRE ITEMS, y es lo que faltaba: sin esto los textos se PEGAN unos a
+                // EL AIRE ENTRE HUECOS, y es lo que faltaba: sin esto los textos se PEGAN unos a
                 // otros y sale «ResumenZonasSesionesDatos» -- que es lo que se vio en pantalla.
-                spacing: 4px;
-                padding-left: 4px;
-                padding-right: 4px;
+                // `spacing: 4` y `padding` lateral 4 (doc:169, `slint:37-53`), los dos de
+                // `Medidas.aire_nav`: son la misma medida dicha una sola vez (AU-67).
+                spacing: Medidas.aire_nav;
+                padding-left: Medidas.aire_nav;
+                padding-right: Medidas.aire_nav;
                 for s[i] in root.secciones : Rectangle {
-                    // REPARTIDA POR IGUAL, no al tamano del texto (AU-68).
-                    width: parent.width / 4;
+                    // REPARTIDO POR IGUAL, no al tamano del texto (AU-68, doc:161). Y el ancho va
+                    // ESCRITO, no dejado al layout: con `horizontal-stretch` el hueco encogia a 64
+                    // --el ancho de su contenido, la pildora-- y los cuatro se apelotonaban a la
+                    // izquierda. Medido, no supuesto.
+                    //
+                    // Los 411 se reparten asi: el aire de los DOS extremos + el aire entre cada
+                    // dos huecos (×3) + 4 huecos iguales. Con `Medidas.aire_nav` = 4:
+                    //   (411 − 2·4 − 3·4) / 4 = **97,75** cada uno.
+                    // Los dos numeros que pide el contrato estan dichos: el reparto puro es
+                    // 411 / 4 = 102,75 (doc:161) y lo que queda con el aire es 97,75 (doc:169).
+                    // El ancho se DERIVA de la ventana, no se escribe a mano.
+                    //
+                    // OJO, y es el limite de esto: el `4` de «cuatro huecos» es el numero de
+                    // secciones, y Slint no deja sacarlo de la lista aqui (el ancho tiene que ser una
+                    // constante en este punto). Con tres secciones, **esta linea se toca**, y por eso
+                    // el divisor esta a la vista y no escondido en una cuenta.
+                    width: (parent.width - 2 * Medidas.aire_nav - 3 * Medidas.aire_nav) / 4;
+                    // Es UN HUECO, y se puede medir: la prueba de geometria cuenta cuatro y mide
+                    // los cuatro. Sin nombre, la prueba dependeria de un tamano casual.
+                    accessible-role: button;
+                    accessible-id: "nav-hueco-" + i;
                     background: transparent;
-                    // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.**
+                    // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.** El hueco mide
+                    // 80 de alto y 97,75 de ancho, asi que los 48 se cumplen de sobra: el area
+                    // tactil es el hueco ENTERO (doc:166, `estudio:27`).
                     TouchArea { clicked => { root.elegir(i); } }
                     VerticalLayout {
+                        // El grupo (pildora+icono arriba, etiqueta debajo) va CENTRADO en su hueco.
+                        // El CENTRADO se hace con `padding` en horizontal, y no con `alignment`:
+                        // medido, Slint ESTIRA los hijos de un layout hasta llenar el hueco, asi que
+                        // `alignment: center` no movia nada y la pildora salia pegada a la izquierda
+                        // (x = 4 en un hueco que empieza en 4). El hueco que sobra es
+                        // (ancho del hueco - 64 de la pildora) / 2, y ese es el relleno.
+                        padding-left: (parent.width - 64px) / 2;
+                        padding-right: (parent.width - 64px) / 2;
                         alignment: center;
                         spacing: 2px;
-                        // EL INDICADOR DEL ACTIVO: una PILDE tras el icono, que es el patron de la
+                        // EL INDICADOR DEL ACTIVO: una PILDORA tras el icono, que es el patron de la
                         // barra de navegacion de Android (Material 3), NO la linea de 2 px de antes.
-                        Rectangle {
-                            width: 64px; height: 32px; border-radius: 16px;
-                            background: s.activa
-                                ? (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.18)
-                                : transparent;
-                            VerticalLayout {
-                                alignment: center;
-                                Icono {
-                                    // 24 dp: el tamano del icono en la barra de Android.
-                                    nombre: s.icono;
-                                    tamano: 24px;
-                                    tono: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
-                                                   : (root.oscuro ? Oscuro.muted : Claro.muted);
+                        // 64 x 32, radio 16, acento al 18 % (doc:165, `estudio:26`). Va DETRAS porque
+                        // en Slint el orden del arbol es el orden de pintado: se declara ANTES.
+                        //
+                        // La pildora y su icono van en una FILA de 64 x 32 -- lo que mide la pildora--,
+                        // porque asi el centrado del grupo es el centrado de la fila.
+                        HorizontalLayout {
+                            width: 64px;
+                            height: 32px;
+                            Rectangle {
+                                // La pildora es un ADORNO de la barra, y se puede medir por su
+                                // nombre: el contenedor, la fila y la capa de dentro miden 64 x 32
+                                // igual que ella, asi que buscarla por tamano encuentra cuatro.
+                                // Medido: cuatro por hueco, 16 en total.
+                                accessible-role: image;
+                                // Y EL NOMBRE LLEVA EL ESTADO, que es lo que hace medible «solo
+                                // hay UNA encendida»: el fondo de una capa transparente NO se puede
+                                // consultar desde una prueba, y **medir el tamano no distingue** la
+                                // pildora encendida de la apagada (las dos miden 64 x 32). Con el
+                                // estado en el nombre, el portero de «una sola forma» (AU-41) y el
+                                // de «una sola activa» (doc:165) son la misma consulta.
+                                accessible-id: "nav-pildora-" + i + (s.activa ? "-activa" : "-apagada");
+                                width: 64px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: s.activa
+                                    ? (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.18)
+                                    : transparent;
+                                // El icono de DENTRO de la pildora: una celda de 24 x 24, que es justo
+                                // el tamano del icono. Medido: pidiendo 24 con `padding`, el icono
+                                // salia a 22 (1 px por lado) y quedaba descentrado en la pildora;
+                                // con la celda cuadrada cae en su centro exacto.
+                                VerticalLayout {
+                                    width: 24px;
+                                    height: 24px;
+                                    Icono {
+                                        // 24 dp: el tamano del icono en la barra de Android
+                                        // (`estudio:25`, doc:162). Y es un icono REAL del catalogo de
+                                        // 187 (`iconos.slint`), no un cuadrado de color (AU-90).
+                                        nombre: s.icono;
+                                        tamano: 24px;
+                                        // Inactivo `muted`, activo `ac` (doc:172-173).
+                                        tono: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
+                                                       : (root.oscuro ? Oscuro.muted : Claro.muted);
+                                    }
                                 }
                             }
                         }
                         Text {
                             text: s.nombre;
-                            // 12 px: label-medium de Material 3 (antes 11).
+                            // 12 px: label-medium de Material 3 (antes 11), CENTRADA en su hueco.
                             font-size: 12px;
                             horizontal-alignment: center;
+                            wrap: no-wrap;
+                            overflow: TextOverflow.elide;
                             color: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
                                             : (root.oscuro ? Oscuro.muted : Claro.muted);
                         }

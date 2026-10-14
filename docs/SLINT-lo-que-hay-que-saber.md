@@ -1,6 +1,8 @@
 # Slint: lo que hay que saber (destilado de las fuentes oficiales)
 
-**Escrito el 2026-10-13.** Existe porque **el proyecto tenía nueve documentos y ninguno trataba del
+**Escrito el 2026-10-13**; **ampliado el 2026-10-14** con tres trampas nuevas, **medidas** (§11.4: el
+subcamino `m` relativo, los `<circle>` del sprite y el `padding` dentro del `ScrollView`). Existe porque
+**el proyecto tenía nueve documentos y ninguno trataba del
 lenguaje con el que está construido**. Se estaba escribiendo Slint **adivinando**, y eso costó tres
 intentos para una unidad, dos para una bandera, y una tarde entera corrigiendo una pantalla a ciegas.
 
@@ -365,7 +367,7 @@ layout**.
 otro no, cambia el tamaño del padre** — porque la fuente dice que *«if the element's x or y isn't set,
 these constraints are also automatically applied to the parent element»*. **Eso explica el desalineado.**
 
-### 11.4 · Otras cuatro trampas que hay que saber antes de escribir
+### 11.4 · Otras siete trampas que hay que saber antes de escribir
 
 | trampa | consecuencia |
 |---|---|
@@ -373,9 +375,33 @@ these constraints are also automatically applied to the parent element»*. **Eso
 | **`visible: false` NO libera el hueco** | *«still takes up layout space»* — para que desaparezca hay que quitarlo con `if` |
 | **`Text {};` con punto y coma NO compila** | el `;` es legal en un binding y letal en una instanciación |
 | **Los literales numéricos usan SIEMPRE el punto**, pero **`to-float()` usa el separador del idioma** | `"1.5".to-float()` devuelve **0** en un equipo alemán. **Código que funciona en Chile y falla en Alemania** |
+| **Un subcamino que empieza con `m` RELATIVO no lo dibuja el `Path`** | se pinta **solo el primer subcamino**; con `M` absoluto, **completo**. **No es el separador ni la orden anterior** |
+| **El conversor de iconos perdía los `<circle>` del sprite** | leía **solo los `<path>`**: la bicicleta de Lucide declara **las ruedas y el manillar con `<circle>`** y quedaba **sin ruedas** (tinta medida **8×10** en la celda de 24) |
+| **Un `padding` en el layout de DENTRO de un `ScrollView` pinta la barra de desplazamiento horizontal** | aunque no sobre nada: con **16** el `ScrollView` cree que hay **443** donde caben **411** y pinta una **línea gris de 370 px**. Y en un `Rectangle` Slint avisa *«padding only has effect on layout elements»* |
 
-**Y la última es especialmente importante aquí**, porque el cliente podría usar el programa en otro
+**Y la cuarta es especialmente importante aquí**, porque el cliente podría usar el programa en otro
 idioma. **Se comprueba midiendo, no suponiendo.**
+
+**Las tres últimas se midieron el 2026-10-14**, con el conversor de iconos (`herramientas/iconos-a-slint.py`)
+y el armazón:
+
+**a) Un subcamino que empieza con `m` RELATIVO no lo dibuja el `Path`.** Medido con una **sonda mínima de
+cuatro variantes**, contando la **tinta** que deja cada una: con `m` **relativo** se pinta **solo el primer
+subcamino**, con `M` **absoluto** se pinta **completo**; **no es el separador ni la orden anterior**. Las
+coordenadas de Lucide **ya son absolutas**, así que **el conversor ahora pasa `m` → `M` al regenerar**.
+
+**b) El conversor de iconos perdía los `<circle>` del sprite.** Leía **solo los `<path>`**. La **bicicleta
+de Lucide** declara **las ruedas y el manillar con `<circle>`**, y salía **sin ruedas** (medido: **8×10**
+de tinta en la celda de **24**). Ahora **lee `<circle>` y los emite como dos arcos**, que es lo mismo que
+dibuja un SVG.
+
+**c) Un `padding` en el layout de DENTRO de un `ScrollView` pinta la barra de desplazamiento horizontal
+aunque no sobre nada.** Medido: con **16** el `ScrollView` cree que el contenido mide **443** donde
+**caben 411** y **pinta la barra** — una **línea gris de 370 px**. En un `Rectangle` no hay salida: Slint
+avisa **«padding only has effect on layout elements»**. **Salida: el margen lo lleva cada bloque, no el
+contenedor del scroll** (§3.3 de la especificación, enmienda del 2026-10-14) y la prueba que lo exige
+(`motor/tests/medir-interfaz.rs`, `el_primer_bloque_del_contenido_empieza_con_el_margen_de_16`) queda
+**`#[ignore]`** hasta la fase 2.
 
 ### 11.5 · Y lo que hay que hacer distinto, por lo que se aprendió
 

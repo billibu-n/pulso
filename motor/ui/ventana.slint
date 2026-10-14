@@ -497,6 +497,19 @@ export component Ventana inherits Window {
     // tema en vez de al del sistema.
     out property <bool> controles_en_oscuro: Palette.color-scheme == ColorScheme.dark;
 
+    // FASE 1: SE INTENTO dejar esto como BINDING, que es lo que pide AU-84 (doc:131, doc:396), y
+    // **no compila**, y las dos formas se probaron:
+    //   1. `Palette.color-scheme: ...;` en el cuerpo  -> «Parse error» (un global NO se puede
+    //      enlazar asi; Slint solo admite `Global.prop = valor;` imperativo).
+    //   2. `propiedad <=> Palette.color-scheme;`      -> «Duplicated property binding» (el sistema
+    //      intentaria escribir en la nuestra).
+    // Lo que SI hace reactivo a `oscuro` es un manejador de cambio, y no un `init`: el `init` corre
+    // UNA vez, y el dia que el tema se cambie en caliente el esquema se quedaria atras.
+    changed oscuro => {
+        Palette.color-scheme = root.oscuro ? ColorScheme.dark : ColorScheme.light;
+    }
+    init => { Palette.color-scheme = root.oscuro ? ColorScheme.dark : ColorScheme.light; }
+
     title: "Pulso";
     // SIN EL MARCO DEL SISTEMA, y no es un capricho: la barra de ventana de arriba **no es parte de
     // la aplicacion**, y en el telefono no existe. Enseñarla en el escritorio hace que la ventana
@@ -515,7 +528,7 @@ export component Ventana inherits Window {
     // Las secciones, declaradas UNA vez y usadas por los dos armazones (AU-10).
     property <[Seccion]> las_secciones: [
         { nombre: "Resumen", icono: "casa", activa: root.seccion_activa == 0 },
-        { nombre: "Zonas", icono: "grafico-linea", activa: root.seccion_activa == 1 },
+        { nombre: "Zonas", icono: "corazon", activa: root.seccion_activa == 1 },
         { nombre: "Sesiones", icono: "bicicleta", activa: root.seccion_activa == 2 },
         { nombre: "Datos", icono: "ajustes", activa: root.seccion_activa == 3 },
     ];
@@ -530,20 +543,14 @@ export component Ventana inherits Window {
     // quien los traduce, los comprueba y los escribe en el fichero.
     callback guardar-datos(DatosPersona);
 
-    // EL TEMA DE LOS CONTROLES DE SERIE SE FIJA DESDE EL NUESTRO, NUNCA DESDE EL DEL SISTEMA.
-    //
-    // POR QUE, y esta medido (`temas/contraste-widgets.py`): los controles de serie sacan sus colores
-    // del esquema del sistema. Si el sistema esta en oscuro y nuestra pantalla en claro, el texto del
-    // control sale blanco sobre crema: **1,05:1**, con minimo 4,5:1. O sea: **el texto desaparece**.
-    //
-    // Y ES UN BINDING, no un `init`: `init` corre UNA vez al arrancar, y el usuario cambia de tema
-    // cuando quiere. Con el binding, el esquema de los controles **sigue** a nuestro tema.
-    init => { Palette.color-scheme = root.oscuro ? ColorScheme.dark : ColorScheme.light; }
+
 
     if root.es_movil : ArmazonMovil {
         // El armazon de movil, medible.
         oscuro: root.oscuro;
-        titulo: "Pulso";
+        // EL TITULO ES LA SECCION, no el nombre de la app (doc:145, auditoria:39): el top app bar de
+        // Android dice DONDE ESTAS. Fase 1: decia «Pulso» y la cabecera no decia nada de la pantalla.
+        titulo: root.las_secciones[root.seccion_activa].nombre;
         secciones: root.las_secciones;
         elegir(i) => { root.elegir(i); }
         if root.seccion_activa == 3 : Datos {
@@ -566,7 +573,8 @@ export component Ventana inherits Window {
 
     if !root.es_movil : ArmazonEscritorio {
         oscuro: root.oscuro;
-        titulo: "Pulso";
+        // Lo mismo en escritorio: el riel escribe la seccion en la que estas (doc:145).
+        titulo: root.las_secciones[root.seccion_activa].nombre;
         secciones: root.las_secciones;
         elegir(i) => { root.elegir(i); }
         if root.seccion_activa == 3 : Datos {

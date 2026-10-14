@@ -49,6 +49,24 @@ def leer_sprite(ruta):
     for m in re.finditer(r'<symbol\s+id="([^"]+)"([^>]*)>(.*?)</symbol>', s, re.S):
         nombre, atributos, cuerpo = m.group(1), m.group(2), m.group(3)
         trazados = re.findall(r'<path[^>]*\sd="([^"]+)"', cuerpo)
+        # Y LAS CIRCUNFERENCIAS, que es el fallo que se vio en pantalla: la bicicleta de Lucide son
+        # DOS RUEDAS (`<circle>`), un manillar (otro `<circle>`) y el cuadro (`<path>`). Leyendo solo
+        # los `<path>`, el icono salia con el cuadro y SIN RUEDAS -- «el de la bicicleta no se ve»,
+        # dijo el dueno, y tenia razon: el trazado medido era de 8x10 en un lienzo de 24.
+        # Un `<circle>` se convierte a dos arcos, que es lo mismo que dibuja un SVG.
+        for c in re.finditer(r'<circle\b([^/>]*)/?>', cuerpo):
+            at = c.group(1)
+            cx = re.search(r'\bcx="([-0-9.]+)"', at)
+            cy = re.search(r'\bcy="([-0-9.]+)"', at)
+            r = re.search(r'\br="([-0-9.]+)"', at)
+            if not (cx and cy and r):
+                continue
+            x, y, radio = cx.group(1), cy.group(1), r.group(1)
+            trazados.append(
+                f"M{float(x) - float(radio):g} {float(y):g}"
+                f"a{radio} {radio} 0 1 0 {2 * float(radio):g} 0"
+                f"a{radio} {radio} 0 1 0 {-2 * float(radio):g} 0"
+            )
         if not trazados:
             continue
         # `fill="none"` = icono de TRAZO (casi todos). Si no, es relleno y se dibuja distinto.
@@ -62,12 +80,26 @@ def leer_sprite(ruta):
 def limpiar(trazado):
     """Prepara un trazado para Slint.
 
-    DOS COSAS, y las dos se aprendieron probando:
+    TRES COSAS, y las tres se aprendieron probando:
+
       1. Slint separa las ordenes con ESPACIOS, y el SVG tambien: vale tal cual.
-      2. Pero los numeros pegados a una letra (`v-8`, `.709-1.528`) hay que dejarlos: Slint los
-         entiende igual que el SVG. **No se reescriben**, porque reescribirlos es donde se rompen.
+      2. Los numeros pegados a una letra (`v-8`, `.709-1.528`) hay que dejarlos: Slint los entiende
+         igual que el SVG. **No se reescriben**, porque reescribirlos es donde se rompen.
+      3. **PERO EL `m` RELATIVO NO LO DIBUJA** (medido el 2026-10-14, con una sonda de cuatro
+         variantes y midiendo la tinta): en un `Path` de Slint 1.18, un subcamino que empieza con
+         `m` (relativo) **no se dibuja**, y con `M` (absoluto) **si**. No es el separador (se probo
+         `m 19 9` con espacios) ni la orden anterior (se probo sin el arco): es el `m`.
+
+         El sintoma en pantalla, que es lo que vio el dueño: `grafico-linea` es
+         `M3 3v16a2 2 0 0 0 2 2h16 m19 9-5 5-4-4-3 3`, y salia **solo la L de los ejes**, sin la
+         polilinea. Y `bicicleta` perdia el manillar.
+
+         Se cambia el `m` por `M` **sin tocar los numeros**: en los trazados de Lucide las
+         coordenadas del `m` ya son las ABSOLUTAS del SVG original (los convierte el propio
+         generador del sprite, que las aplana antes de escribirlas). Cambiar la letra es, por tanto,
+         lo mismo que dibuja el sprite; reescribir los numeros seria inventarse otra cosa.
     """
-    return trazado.strip()
+    return re.sub(r'(?<![A-Za-z])m(?=[\s\-\d.])', 'M', trazado.strip())
 
 
 def generar(iconos, salida):

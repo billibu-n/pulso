@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **158 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **177 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -56,10 +56,10 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 ├── motor/                el motor (Rust) y la interfaz (Slint)
 │   ├── src/              14 módulos: datos, rango, formulas_v2, umbral, patron, hrv,
 │   │                     contexto, informe, fit, tendencia, juicio, fuentes, adaptador
-│   ├── src/bin/          18: ventana (abre), y los INSTRUMENTOS de medida
+│   ├── src/bin/          18: pulso (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs  139 pruebas · medir-interfaz.rs  8 · recorrido.rs  11
+│   ├── tests/pruebas.rs 148 pruebas · huawei.rs 8 · medir-interfaz.rs 8 · recorrido.rs 11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,12 +133,12 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 158 pruebas, en verde, 0 avisos
+cargo test                              # 177 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
 cargo run -q --bin inventario -- ../datos/garmin_files/storage   # cuenta los 625 resultados
-cargo run -q --bin ventana -- ../datos/garmin_files/storage --texto   # lo que enseña, SIN ABRIR
+cargo run -q --bin pulso -- ../datos/garmin_files/storage --texto   # lo que enseña, SIN ABRIR
 cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mide la memoria
 ```
 
@@ -149,7 +149,7 @@ cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mi
 
 ## 6-ter. La conexión, HECHA (2026-10-13, noche)
 
-**Las tres piezas están conectadas a `ventana.rs`**, y comprobado con la salida literal:
+**Las tres piezas están conectadas a `pulso.rs`** (antes `ventana.rs`), y comprobado con la salida literal:
 
 ```
 --- LO QUE LA VENTANA RECIBE Y ENSEÑA ---
@@ -244,11 +244,65 @@ es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye*
 
 ---
 
+## 6-quinquies. El bloque del 2026-10-14: la puerta de entrada, la decisión de la rodilla, y las investigaciones
+
+**Cinco cosas cerradas, y una en marcha.**
+
+**1 · `--ayuda` ya NO abre ventana, y hay UNA puerta de entrada.** El defecto conocido está corregido:
+`--ayuda` / `-h` / `--help` se comprueba **antes de crear la interfaz** y devuelve 0 sin abrir nada.
+**Medido**: `cargo run -q -- --ayuda` imprime el uso y sale con `exit=0`, sin tocar ninguna ventana.
+Y el binario de la aplicación **se llama `pulso`**: `ventana.rs` → `pulso.rs`, y `default-run = "pulso"`
+hace que **`cargo run` a secas sea LA aplicación**. Los otros 17 son **instrumentos de medida**, no la
+aplicación.
+**Medido**: **177 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 8 de `huawei`).
+
+**2 · DECISIÓN DEL DUEÑO (2026-10-14): el aviso de la rodilla NO dice «diagnóstico».** Se le preguntó,
+porque el encargo pedía dos cosas que no caben a la vez («di que no es un diagnóstico» y «que el texto
+nunca diga diagnóstico»). Eligió la opción recomendada: **decir el sentido, no el término**. El aviso de
+la rodilla usa `avisos::NO_ES_VALORACION_MEDICA` («es una observación de sus propios datos, no una
+valoración médica»), y la palabra «diagnóstico» solo se usa como nombre del informe global
+(«NO SE PUEDE DIAGNOSTICAR TODAVÍA»). Coincide con lo ya implementado y con la prueba `es_observacion`.
+**Es una línea, no un cambio de código.**
+
+**3 · La exportación de Huawei: INVESTIGADA, y su lector ESCRITO.** El formato está en
+`docs/HUAWEI-exportacion.md` (claves, unidades y las fuentes: el XLSX del propio export, tres parsers
+independientes y la API de Huawei). El contrato se escribió ANTES (`docs/CONTRATO-huawei.md`) y la pieza
+es `motor/src/huawei.rs`, con **8 pruebas propias** (`tests/huawei.rs`) que no necesitan la aplicación.
+Lo que respeta: un campo ausente es `Falta` y NUNCA 0; **no se filtra por `type`** (el mismo dato viene
+como 8 y como 10006), se filtra por `key == WEIGHT_BODYFAT_BROAD`; `value` es un texto con JSON dentro
+(doble codificación); y la fecha sale de `startTime` (ms UTC) **más la zona del propio registro**, no la
+del equipo.
+**Y una limitación que se dice**: **no abre ZIP** (Rust no trae descompresor, y una dependencia no la
+decide esta pieza); si le llega uno, lo dice con un error tipado en vez de fallar en silencio.
+
+**4 · EL ESTADO DEL ARTE, REVISADO FILA A FILA Y CORREGIDO.** Las 41 direcciones (30 únicas) se abrieron,
+y cada DOI se comprobó contra Crossref y PubMed. **El resultado no es bonito**: aparecieron **fuentes
+FALSAS** —el DOI de Morton no existe (el bueno es `10.1007/s00421-005-0088-2`), el de Vanhatalo 2016 da
+404 y su título no consta, el de Williams 2017 tampoco, el artículo del caldo de huesos es en realidad un
+estudio de supermercados, y el de la asimetría entre piernas es de ortesis plantares—. **Los DOI críticos
+los comprobé yo** en la API de Crossref, no solo el obrero. `docs/ESTADO-DEL-ARTE.md` queda reescrito:
+las fuentes que se sostienen, corregidas, y **14 filas marcadas SIN FUENTE LOCALIZADA antes que dejar una
+falsa**.
+**Y un hallazgo de método**: **403 NO es URL muerta**; **19 de 25 URLs de las secciones 3-6 bloquean a los
+programas** (Cloudflare), así que sus citas numéricas quedan **sin verificar**. El primer intento con el
+carril OBREROS (`openrouter/nvidia/nemotron-3-super-120b-a12b:free`) estuvo **25 minutos y escribió CERO
+ficheros**; se interrumpió y se relanzó con `deepseek-flash`. **La ruta del modelo iba en la llamada y
+era la correcta: falló el modelo, no la ruta.** Los informes están en
+`docs/ESTADO-DEL-ARTE-revision-1-2.md` y `-3-6.md`.
+
+**EN MARCHA (no cerrado, y hay que retomarlo):**
+- **Elegir la carpeta con un botón** (paso 5): **medido** que **Slint 1.18.1 NO trae `FileDialog` ni
+  `FolderDialog`** (búsqueda sobre los 13 crates de Slint instalados: cero coincidencias). El botón exige
+  o bien **un selector escrito a mano** (sin dependencia nueva) o `rfd` (dependencia nueva, que la norma
+  del proyecto no permite sin autorización). **Decisión: selector propio, sin dependencia nueva.**
+
+---
+
 ## 7. Lo que NO está resuelto, dicho claro
 
 - **La decisión de los controles** ya **NO** bloquea: se usan los de serie (paso 1, hecho).
 - **Los datos de la persona están en el código**: **los resultados no son del cliente todavía.** Y
-  están repetidos **a mano en 5 sitios de producción** (`ventana.rs`, `inventario.rs`, `informe.rs`,
+  están repetidos **a mano en 5 sitios de producción** (`pulso.rs`, `inventario.rs`, `informe.rs`,
   `sin_datos.rs`, `demo.rs`) y **en 4 de prueba**. Existe **un solo camino** para leerlos de un fichero:
   `adaptador::leer_perfil` — y **no existe guardar nada en disco** (no hay `Serialize` en el proyecto).
 - **Cuatro páginas de Slint sin traer**: tipos de propiedad, **propiedades y bindings** (el hueco más

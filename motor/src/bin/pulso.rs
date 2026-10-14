@@ -1,6 +1,6 @@
 //! **La ventana, con el motor dentro.**
 //!
-//! `cargo run --bin ventana`
+//! `cargo run --bin pulso`
 //!
 //! Y UNA REGLA QUE SE CUMPLE AQUI, y es la mas importante de este fichero: **aqui NO se calcula nada,
 //! y aqui NO se decide que se enseña.** Las dos cosas las hace `cara::lo_que_ensena`, que es una funcion
@@ -190,7 +190,49 @@ fn pintar(ventana: &Ventana, e: &Ensenado) {
     ventana.set_vacio(e.vacio.as_str().into());
 }
 
+/// **¿El usuario pide que se le explique?** `--ayuda`, `-h` o `--help`, y nada mas.
+///
+/// Es una funcion PURA sobre una lista de argumentos, y a proposito: una ayuda que no se puede
+/// comprobar es una ayuda que un dia deja de salir — y entonces `--ayuda` vuelve a abrir una ventana
+/// en la pantalla de quien lo escribio.
+fn pide_ayuda(argumentos: &[String]) -> bool {
+    argumentos
+        .iter()
+        .any(|a| a == "--ayuda" || a == "-h" || a == "--help")
+}
+
+/// **Lo que el programa hace y como se usa**, SIN abrir nada.
+///
+/// El nombre del programa sale de `CARGO_BIN_NAME` y no escrito a mano: el dia que la puerta de
+/// entrada se llame de otra forma, **la ayuda se renombra sola** y no queda mintiendo.
+fn imprimir_ayuda() {
+    let programa = env!("CARGO_BIN_NAME");
+    println!("{programa}: analiza tu entrenamiento y dice que se puede afirmar, y que no.");
+    println!();
+    println!("USO:");
+    println!("  {programa} [CARPETA] [--texto]");
+    println!();
+    println!("  CARPETA    la carpeta con tus ficheros (FIT de Garmin). Si no se indica, se usa la");
+    println!("             de por defecto. Elegirla con un boton es el paso siguiente.");
+    println!("  --texto    imprime lo MISMO que va a la pantalla y NO abre ninguna ventana.");
+    println!("  --ayuda    esto.");
+    println!();
+    println!("SIN TUS DATOS (edad, peso, umbral) NO SE ENSEÑA NINGUN NUMERO: lo dice y para.");
+    println!("Tus datos se guardan junto al programa, en un fichero que viaja con la aplicacion.");
+}
+
 fn main() -> Result<(), slint::PlatformError> {
+    // ---- LA AYUDA, LO PRIMERO DE TODO ----
+    //
+    // POR QUE VA AQUI Y NO AL FINAL: `--ayuda` abria una ventana, y es un defecto que cazo el dueño.
+    // Un modo que solo EXPLICA no puede tener un efecto que se vea, y menos en la pantalla de otro.
+    // Se comprueba ANTES de crear la interfaz: si se pide ayuda, no se construye nada y no se toca
+    // ningun dato.
+    let argumentos: Vec<String> = std::env::args().collect();
+    if pide_ayuda(&argumentos) {
+        imprimir_ayuda();
+        return Ok(());
+    }
     let ventana = Ventana::new()?;
 
     // ---- EL PERFIL: SUS DATOS, Y DE DONDE SE LEYERON ----
@@ -307,4 +349,25 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     ventana.run()
+}
+
+#[cfg(test)]
+mod pruebas {
+    use super::pide_ayuda;
+
+    #[test]
+    fn la_ayuda_se_reconoce_en_sus_tres_formas() {
+        for forma in ["--ayuda", "-h", "--help"] {
+            assert!(pide_ayuda(&[forma.to_string()]), "no reconoce {forma}");
+        }
+    }
+
+    #[test]
+    fn una_carpeta_o_texto_no_son_ayuda() {
+        assert!(!pide_ayuda(&[]));
+        assert!(!pide_ayuda(&[
+            "../datos".to_string(),
+            "--texto".to_string()
+        ]));
+    }
 }

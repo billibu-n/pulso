@@ -12,7 +12,7 @@
 // y leer `es_PELIGRO` dice mas que `es_peligro`. Rust avisa; aqui se le dice que es a proposito.
 #![allow(non_snake_case)]
 
-use motor::datos::{Dato, Muestra, Persona, Sesion, Sexo};
+use motor::datos::{Composicion, Dato, Muestra, Persona, Sesion, Sexo};
 use motor::formulas::{self, Zona};
 use motor::juicio::{Confianza, Juicio};
 
@@ -3475,4 +3475,34 @@ fn el_CICLO_COMPLETO_del_perfil_conserva_la_fecha() {
     assert_eq!(otro.fecha_nacimiento, Dato::Falta, "y vuelve a faltar, como debe");
 
     let _ = std::fs::remove_dir_all(&caja);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// La composicion corporal: un CENTINELA de sensor no es una medicion
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// **Un cero (o un 700) de bascula no es un dato: es una averia.**
+///
+/// Se prueba en los dos sentidos: el valor plausible PASA, y el centinela se RECHAZA. La leccion ya
+/// costo una vez en este proyecto: el PCO valia 0,00 en las 83 sesiones y un sensor que da siempre 0
+/// **no esta midiendo**. Aqui se filtra en el borde para que el motor no vea nunca un cero que
+/// parece un dato.
+#[test]
+fn un_centinela_de_bascula_no_es_una_medicion() {
+    assert_eq!(Composicion::plausible_kg(0.0), None, "0 kg es el centinela, no un peso");
+    assert_eq!(Composicion::plausible_kg(-1.0), None);
+    assert_eq!(Composicion::plausible_kg(700.0), None, "700 kg no es una persona");
+    assert_eq!(Composicion::plausible_kg(81.5), Some(81.5));
+
+    assert_eq!(Composicion::plausible_pct(0.0), None, "0 % de agua es un centinela");
+    assert_eq!(Composicion::plausible_pct(101.0), None);
+    assert_eq!(Composicion::plausible_pct(62.4), Some(62.4));
+}
+
+/// **Una composicion vacia NO inventa ceros**: todos los campos faltan.
+#[test]
+fn una_composicion_vacia_deja_todo_en_falta() {
+    let c = Composicion::vacia();
+    assert!(c.fecha.falta() && c.peso_kg.falta() && c.grasa_corporal_pct.falta());
+    assert!(c.agua_corporal_pct.falta() && c.masa_muscular_kg.falta() && c.masa_osea_kg.falta());
 }

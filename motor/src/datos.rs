@@ -157,6 +157,60 @@ impl Persona {
     }
 }
 
+/// **Una medición de composición corporal**, de una báscula (la de Huawei, hoy).
+///
+/// POR QUÉ VIVE EN EL MODELO Y NO EN EL ADAPTADOR: es **un dato de la persona**, no un formato. El
+/// adaptador (`huawei.rs`) **traduce** su JSON a esto, y el motor **no sabe de Huawei**. Es la misma
+/// separación que hace `fit.rs` con las sesiones: fuera el formato, dentro el modelo.
+///
+/// Y LA REGLA QUE LO DEFINE, la misma que en `Persona`: **un campo que no viene queda en `Dato::Falta`,
+/// NUNCA en `Hay(0.0)`.** «No se midió el agua» no es «el agua vale cero»: un cero ahí dispararía la
+/// regla de hidratación de una forma absurda.
+///
+/// UNIDADES: **kilogramos y porcentaje**, siempre. Si la exportación de Huawei trae gramos, la
+/// conversión es del adaptador y se prueba allí; no se filtra al motor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Composicion {
+    /// El día del pesaje. Fecha de calendario, **sin hora ni zona**.
+    pub fecha: Dato<Fecha>,
+    pub peso_kg: Dato<f32>,
+    pub grasa_corporal_pct: Dato<f32>,
+    /// **El dato que desbloquea la regla del agua** sin que nadie teclee.
+    pub agua_corporal_pct: Dato<f32>,
+    pub masa_muscular_kg: Dato<f32>,
+    pub masa_osea_kg: Dato<f32>,
+}
+
+impl Composicion {
+    /// Una medición de la que **no se sabe nada**. Es honesta: todos los campos en `Falta`.
+    pub fn vacia() -> Self {
+        Self {
+            fecha: Dato::Falta,
+            peso_kg: Dato::Falta,
+            grasa_corporal_pct: Dato::Falta,
+            agua_corporal_pct: Dato::Falta,
+            masa_muscular_kg: Dato::Falta,
+            masa_osea_kg: Dato::Falta,
+        }
+    }
+
+    /// **Un valor de báscula solo es dato si es físicamente posible.**
+    ///
+    /// Un sensor roto devuelve su centinela (0, 255, un número negativo), y ese centinela **no es una
+    /// medición**: es una avería. Un sensor que da siempre 0 **no está midiendo**, y ese caso ya está
+    /// medido en `docs/ENCARGO-farellones-2026.md` (un campo que valía 0,00 en las 83 sesiones, y por eso
+    /// el modelo **no tiene campo** para él). Aquí se filtra en el borde, para que el motor nunca vea un
+    /// cero que parece un dato.
+    pub fn plausible_kg(v: f32) -> Option<f32> {
+        (v > 0.0 && v <= 500.0).then_some(v)
+    }
+
+    /// Lo mismo para un porcentaje: fuera de `0..=100` no es un porcentaje.
+    pub fn plausible_pct(v: f32) -> Option<f32> {
+        (v > 0.0 && v <= 100.0).then_some(v)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sexo {
     Femenino,

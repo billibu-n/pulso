@@ -8,8 +8,8 @@ crítica del dueño que es correcta y hay que dejar escrita:
 > auto: el motor, la transmisión… Todos son piezas independientes que se acoplan entre sí.»*
 
 **Y LO QUE PASÓ, dicho sin adornos**: se construyeron **el motor, la transmisión y las ruedas**, cada uno
-por separado y bien —el motor con 158 pruebas— y **se descubrió al final que no había bancada**. La pieza
-que acopla todo, `ventana.rs`, fue **la última y la más frágil**: se escribió de una vez, no compilaba, y
+por separado y bien —el motor con 177 pruebas— y **se descubrió al final que no había bancada**. La pieza
+que acopla todo, `pulso.rs` (entonces `ventana.rs`), fue **la última y la más frágil**: se escribió de una vez, no compilaba, y
 hubo que delegar el arreglo. **Eso no es mala suerte: es haber empezado a ejecutar sin los planos.**
 
 ---
@@ -73,7 +73,7 @@ Cada una dice: **qué es**, **qué NO es**, **quién depende de quién**, y **c�
 | **`rango.rs`**, **`juicio.rs`**, **`fuentes.rs`** | **cuánto vale un número y de dónde sale**: el margen, la confianza, la procedencia | no calcula fisiología |
 | **`formulas*.rs`**, **`umbral.rs`**, **`esfuerzo.rs`**, **`patron.rs`**, **`hrv.rs`**, **`tendencia.rs`**, **`potencia.rs`**, **`avisos.rs`** | **el cálculo**, cada uno con su fórmula citada | **no saben qué es un FIT, ni un JSON, ni una pantalla** |
 
-**La prueba de que esta capa está bien separada**: `cargo test --test pruebas` → **139 pruebas que no
+**La prueba de que esta capa está bien separada**: `cargo test --test pruebas` → **148 pruebas que no
 tocan ningún fichero de fuera**. Se construyen personas y sesiones **a mano** y se comprueba el cálculo.
 **Si alguna de estas pruebas necesitara un FIT, la capa estaría mal.**
 
@@ -119,11 +119,11 @@ usuario **sin abrir una ventana**. Sin esta separación, comprobar que la aplica
 | pieza | qué es | quién decide |
 |---|---|---|
 | **`ventana.slint`** | el aspecto: los dos temas, el armazón, las piezas | **decisión de diseño, con fuente** |
-| **`bin/ventana.rs`** | **une**: lee argumentos, carga, pide lo que hay que enseñar, y lo escribe | **no calcula y no decide nada** |
+| **`bin/pulso.rs`** | **une**: lee argumentos, carga, pide lo que hay que enseñar, y lo escribe | **no calcula y no decide nada** |
 | **`temas/contraste*.py`** | mide el contraste WCAG de los dos temas y de los controles de serie | **mide, no opina** |
 
-**`ventana.rs` es la bancada de pruebas del auto**: sujeta el motor, pero **no es el motor**. Y su
-tamaño lo delata: **si `ventana.rs` crece, es que se está colando lógica dentro.**
+**`pulso.rs` es la bancada de pruebas del auto**: sujeta el motor, pero **no es el motor**. Y su
+tamaño lo delata: **si `pulso.rs` crece, es que se está colando lógica dentro.**
 
 ---
 
@@ -134,7 +134,7 @@ tamaño lo delata: **si `ventana.rs` crece, es que se está colando lógica dent
 
 | contrato | quién lo comprueba |
 |---|---|
-| **el motor no conoce el mundo exterior** | `cargo test --test pruebas`: 139 pruebas **sin tocar un fichero de fuera** |
+| **el motor no conoce el mundo exterior** | `cargo test --test pruebas`: 148 pruebas **sin tocar un fichero de fuera** |
 | **lo que se enseña se puede obtener sin ventana** | `cargo test --test recorrido`: 11 pruebas |
 | **sin datos de la persona, NO se enseña ningún número** | la prueba del paso 1 del recorrido, y **una que busca los números prohibidos en el texto** |
 | **`Falta` no es cero** | pruebas del perfil: un campo vacío vuelve como `Falta` |
@@ -155,7 +155,7 @@ tamaño lo delata: **si `ventana.rs` crece, es que se está colando lógica dent
    **está mal puesto**.
 3. **Cada pieza trae sus pruebas, y se ejecutan solas.** Una pieza que necesita las demás para
    probarse **no está terminada**.
-4. **La pieza que acopla se diseña al principio, no al final.** Es el error de hoy: `ventana.rs` fue
+4. **La pieza que acopla se diseña al principio, no al final.** Es el error de hoy: `pulso.rs` fue
    lo último y lo más frágil.
 
 **Y una consecuencia práctica**: cuando una pieza se pueda **tirar y rehacer** sin tocar las demás,
@@ -165,14 +165,18 @@ estará bien hecha. **Eso es lo que se puede comprobar, y por eso es lo que se e
 
 ## 5. Lo que falta en este mapa, dicho claro
 
-- **`huawei.rs` no existe.** Es la pieza que desbloquea la regla del agua corporal, y está en
-  investigación (formato del ZIP, nombres de campo, unidades).
-- **La fecha de nacimiento** no está en `Persona`. La edad está escrita a mano y **caduca el 25 de
-  enero**.
-- **Ninguna pieza del borde sabe elegir una carpeta.** Hoy la ruta entra por línea de órdenes.
-- **El estado del arte de la nutrición, la hidratación y la mecánica de pedaleo está escrito pero sin
-  terminar de verificar**: `docs/ESTADO-DEL-ARTE.md` tiene **41 direcciones** y **19 filas marcadas como
-  «sin fuente localizada»** (honestamente marcadas, no rellenadas con invenciones). Hay que revisarlo
-  fila a fila antes de construir sobre él.
-- **La exportación de Huawei sigue sin investigar**: su subagente falló. Es la pieza que desbloquea la
-  regla del agua corporal.
+- **`huawei.rs` YA EXISTE** (2026-10-14): lee la exportación de Huawei y desbloquea la regla del agua
+  corporal. El formato está en `docs/HUAWEI-exportacion.md`, el contrato en `docs/CONTRATO-huawei.md` y
+  sus 8 pruebas en `tests/huawei.rs`. **Falta conectarla**: que `Hoy` lleve el agua **y su fecha**, y
+  **no abre ZIP** (Rust no trae descompresor: una dependencia no la decide esta pieza).
+- **La fecha de nacimiento YA ESTÁ en `Persona`** (`datos.rs`), y la edad se calcula al usarla. Lo que
+  falta es **exponerla en la pantalla de Datos**: el campo está en el modelo y en el fichero, pero no en
+  el formulario.
+- **Ninguna pieza del borde sabe elegir una carpeta.** Hoy la ruta entra por línea de órdenes. **Medido**:
+  Slint 1.18.1 **no trae `FileDialog` ni `FolderDialog`**; el selector hay que **escribirlo** (sin
+  dependencia nueva) o autorizar `rfd`.
+- **El estado del arte está REVISADO fila a fila** (2026-10-14): `docs/ESTADO-DEL-ARTE.md` se reescribió
+  tras abrir las 41 direcciones y comprobar cada DOI. Aparecieron **fuentes falsas** (DOI inexistentes,
+  un autor inventado, un artículo que era de otro tema) y se corrigieron o se dejaron **SIN FUENTE
+  LOCALIZADA**. Quedan **14 filas sin fuente** y las citas numéricas de las URLs que bloquean a los
+  programas **sin verificar**: 403 no es URL muerta.

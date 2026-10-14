@@ -30,7 +30,7 @@ Asi que:
 
 | que | donde |
 |---|---|
-| **el motor** (Rust) | `motor/` -- **158 pruebas, cero avisos** (`pruebas.rs` 139 · `medir-interfaz.rs` 8 · `recorrido.rs` 11) |
+| **el motor** (Rust) | `motor/` -- **177 pruebas, cero avisos** (`pruebas.rs` 148 · `huawei.rs` 8 · `medir-interfaz.rs` 8 · `recorrido.rs` 11 · `pulso.rs` 2) |
 | **la documentacion** | `docs/` -- el caso, el flujo real, la investigacion, el plan |
 | **los analisis medidos** | `analisis/` |
 | **el informe generado** | `informe/ejemplo-generado.md` |

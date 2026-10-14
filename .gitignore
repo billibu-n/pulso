@@ -25,6 +25,9 @@ datos/
 captura-*
 *respaldo*
 *export*
+# ...pero el DOCUMENTO de investigacion NO es un dato del cliente: es lo que se publica.
+# (El patron *export* lo cogia por el nombre; esto es una excepcion DELIBERADA y con motivo.)
+!docs/HUAWEI-exportacion.md
 
 # Credenciales. NUNCA.
 .env

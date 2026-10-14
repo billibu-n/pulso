@@ -2,6 +2,9 @@
 name = "motor"
 version = "0.1.0"
 edition = "2021"
+# Con 18 binarios, `cargo run` a secas NO SABE cual es la aplicacion y falla. Esta linea dice cual es
+# la puerta de entrada. Los demas son INSTRUMENTOS de medida, no la aplicacion.
+default-run = "pulso"
 description = "El motor de análisis de entrenamiento: calcula, decide qué se puede afirmar, y lo justifica."
 license = "POR-DECIDIR"
 
@@ -16,8 +19,8 @@ fitparser = "0.11"
 slint = { version = "1", features = ["renderer-software"] }
 
 [[bin]]
-name = "ventana"
-path = "src/bin/ventana.rs"
+name = "pulso"
+path = "src/bin/pulso.rs"
 
 [build-dependencies]
 slint-build = "1"

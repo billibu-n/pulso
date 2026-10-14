@@ -6,6 +6,18 @@ pero no ve**. El bucle visual lo cierra otro paso (ver el final). Está también
 
 ---
 
+## Arranque del chat nuevo (primer mensaje para pegar)
+
+> Estoy retomando `pulso`. Quiero **rehacer la capa de interfaz desde la norma**, no parchearla. El
+> encargo completo está en `pulso/docs/PROMPT-rehacer-interfaz.md` y el contrato en
+> `pulso/docs/ESPECIFICACION-interfaz-resumen.md`. **Tú haces de ojos**: cada vez que se genere una
+> captura (`datos/capturas/` o `/tmp`), la miras con visión, la comparas con la especificación y
+> devuelves hallazgos concretos; el modelo que escribe código razona, pero **no ve**. Empezamos por la
+> **fase 0** (congelar la especificación) y seguimos fase por fase, cada una con `cargo test`, la
+> geometría (`--test medir-interfaz`) y su captura. Nada de parches sueltos.
+
+---
+
 ## El encargo (texto para pegar)
 
 Eres un ingeniero de interfaz. Vas a **rehacer la capa de interfaz** de la aplicación de escritorio
@@ -89,6 +101,19 @@ Por cada fase, **las cuatro cosas**:
 - **Un solo punto de entrada** en `build.rs`.
 - Para medir hace falta información de depuración.
 - Los controles de serie **no aceptan nuestros colores**; hay que fijar `Palette.color-scheme`.
+
+### Si tu entorno puede llamar a modelos de VISIÓN (subagentes)
+
+Si tienes la herramienta para lanzar **subagentes** con un modelo que **vea** (o un MCP de visión),
+**úsala** en el paso 4: pásale la **ruta del PNG** y **la especificación**, y pídele que conteste a las
+tres preguntas (¿se entiende qué representa cada cosa? ¿está todo alineado y centrado? ¿sobra texto o
+algún hueco?). Con tres reglas:
+
+- **El que mira NO es el que escribe.** Ni el mismo modelo en el mismo hilo: se enamora de su código.
+- Lo que devuelve la visión es un **indicio, no un veredicto**: **se confirma midiendo** (geometría). Un
+  modelo de visión pequeño **da falsos «está bien»**; la norma lo dice: **la visión solo descarta**.
+- Si **no** tienes visión a mano, **deja la captura y di exactamente qué hay que mirar**; no la declares
+  buena. El visto bueno final de la **estética** lo da una persona que mira.
 
 ### El bucle visual lo cierra OTRO (esto es para quien orquesta)
 

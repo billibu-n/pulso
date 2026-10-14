@@ -32,8 +32,10 @@ TEMAS = {
 }
 C = TEMAS["calido"]
 
-CABECERA_DP = 56
-NAV_DP = 64          # la barra de abajo, cromo
+# MEDIDAS DE ANDROID (Material 3), corregidas el 2026-10-14. El boceto dibujaba 56/64/10, que era
+# el marcador del boceto, no la norma del telefono. Ver docs/ESTUDIO-interfaz-android-2026-10-14.md.
+CABECERA_DP = 64     # top app bar (small) de Material 3
+NAV_DP = 80          # barra de navegacion con etiquetas
 MARGEN_DP = 16
 
 def px(dp): return int(dp*DP_A_PX)
@@ -49,7 +51,7 @@ def fuente(t, dp):
             return ImageFont.truetype(r, px(dp))
     return ImageFont.load_default()
 
-def caja(d, x, y, w, h, relleno, borde=None, r=10):
+def caja(d, x, y, w, h, relleno, borde=None, r=12):
     d.rounded_rectangle([x, y, x+w, y+h], radius=px(r), fill=relleno, outline=borde, width=1)
 
 def texto(d, x, y, t, f, color, anchor="la"):
@@ -57,7 +59,7 @@ def texto(d, x, y, t, f, color, anchor="la"):
 
 def movil(nombre_archivo, titulo, con_nav=True):
     im = Image.new("RGB", (W, H), C["bg"]); d = ImageDraw.Draw(im)
-    f_t = fuente("b", 20); f_s = fuente("n", 14); f_xs = fuente("n", 12); f_num = fuente("b", 34)
+    f_t = fuente("b", 22); f_s = fuente("n", 14); f_xs = fuente("n", 12); f_num = fuente("b", 34)
 
     M = px(MARGEN_DP)
     ancho_util = W - 2*M
@@ -122,11 +124,12 @@ def movil(nombre_archivo, titulo, con_nav=True):
         for i, (nom, act) in enumerate(items):
             cx = ancho*i + ancho//2
             col = C["ac"] if act else C["muted"]
-            # el icono: un cuadrado redondeado. En el boceto no hace falta dibujarlo bien.
-            caja(d, cx-px(9), yn+px(12), px(18), px(18), col, r=5)
-            texto(d, cx, yn+px(46), nom, f_xs, col, "mm")
+            # INDICADOR DEL ACTIVO detras del icono (patron de Android), no una linea arriba.
             if act:
-                d.rectangle([cx-px(16), yn, cx+px(16), yn+px(3)], fill=C["ac"])
+                caja(d, cx-px(32), yn+px(8), px(64), px(32), C["info"], r=16)
+            # El icono REAL (Lucide, 24 dp) esta en motor/ui/iconos.slint; el boceto lo insinua.
+            caja(d, cx-px(12), yn+px(12), px(24), px(24), col, r=6)
+            texto(d, cx, yn+px(56), nom, f_xs, col, "mm")
 
     im.save(nombre_archivo)
     return nombre_archivo

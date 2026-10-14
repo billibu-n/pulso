@@ -203,14 +203,18 @@ pub fn lo_que_ensena(p: &Persona, real: Option<&Real>) -> Ensenado {
             r.escapados,
             r.muestras
         ),
-        // SIN SESIONES, EL AVISO NO NOMBRA LO QUE NO HAY.
+        // SIN DERIVA, EL AVISO VA VACIO, y la ventana no lo dibuja (AU-07/AU-24).
         //
         // Antes decía «Sin datos todavía: la deriva y la eficiencia aparecerán aquí», y estaba mal
         // por dos motivos. El primero, de norma (AU-44 y AU-45): **la pantalla no se explica**, y
         // anunciar lo que aparecerá es explicarse. El segundo, y es el que lo cazó: **nombra dos
         // cosas que no existen** -- sin sesiones no hay deriva ni eficiencia, y un aviso que las
         // menciona hace pensar que hay algo que mirar. Lo encontró `tests/recorrido.rs`.
-        _ => "Sin datos de entrenamiento todavía.".to_string(),
+        //
+        // Y ADEMAS SE REPETIA: con cero sesiones, `vacio` ya dice «Sin datos de entrenamiento
+        // todavía.», y el aviso decia LO MISMO. Dos veces el mismo mensaje no es mas claro: es ruido.
+        // Lo cazo la captura del 2026-10-14 (ver docs/ESTUDIO-interfaz-android-2026-10-14.md).
+        _ => String::new(),
     };
 
     Ensenado {

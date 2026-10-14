@@ -463,3 +463,29 @@ datos son el estado real de hoy, no un defecto de la captura.
 - **13 iconos de Simple Icons** sin convertir: son de relleno, no de trazo.
 - **Nada probado en un segundo proyecto**: las 82 reglas **solo se han usado en uno**.
 - **`~` es un repositorio local** con 32 ficheros de caché sin decidir.
+
+---
+
+## 6-nonies. La interfaz, medida contra la norma de Android (2026-10-14)
+
+El dueño **vio la captura** y señaló lo que yo no había visto: *«se incumplen varias reglas de interfaz…
+el motor es el que está fallando»*. Tenía razón: **no era la captura, era el motor**. Estudio con fuentes
+y medidas: `docs/ESTUDIO-interfaz-android-2026-10-14.md`. Los fallos y su arreglo:
+
+- **La barra de abajo no tenía iconos**: 187 disponibles y dibujaba **cuadrados**. El boceto los dibujó
+  como marcador («en el boceto no hace falta dibujarlo bien») y el marcador llegó a producción. Ahora
+  lleva **iconos reales a 24 dp** (`casa`, `grafico-linea`, `bicicleta`, `ajustes`), con un **portero**
+  que comprueba que los nombres existen en el catálogo.
+- **Medidas del boceto, no de Android**: cabecera 56→**64**, barra 64→**80**, radio 10→**12**, etiqueta
+  11→**12**, icono 18→**24**, y el indicador del activo pasa de **línea arriba** a **píldora tras el
+  icono**. **La fuente del diseño (`bocetos/generar-movil.py`) se corrigió también** (AU-66).
+- **El motor dibujaba vacíos**: con la persona sin datos salían **4 tarjetas y 5 barras vacías** y una
+  **barra de precisión en blanco**. Ahora la vista **solo dibuja lo que hay** (`puede_diagnosticar` +
+  texto no vacío), y **no repite** «Sin datos…». Son AU-91 y AU-92, nuevas.
+- **AU-93**: al ocultar los vacíos el armazón **encogía y la barra subía al centro**. Se ancla con una
+  **altura mínima declarada**. Se cazó **midiendo**, no mirando.
+- **Lo que NO se toca**: **falta la acción primaria** («pulsar para analizar», paso 5 del recorrido). Hoy
+  calcula al abrir y no hay botón: es **decisión del dueño**, no mía.
+
+**Medido**: **207 pruebas en verde, 0 avisos**. Normas nuevas en `norma-app`: **AU-89 a AU-93**. Capturas
+actualizadas en `datos/capturas/` (**no se suben**: llevan el recuento y el periodo de sus ficheros).

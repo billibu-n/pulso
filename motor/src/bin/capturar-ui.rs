@@ -129,6 +129,7 @@ fn pintar(v: &Ventana, e: &Ensenado) {
     v.set_zonas_niveles(niveles.as_slice().into());
     v.set_precision(e.precision.as_str().into());
     v.set_periodo(e.periodo.as_str().into());
+    v.set_puede(e.puede_diagnosticar);
     let aviso = if e.puede_diagnosticar { &e.aviso } else { &e.que_falta };
     v.set_aviso(aviso.as_str().into());
     v.set_vacio(e.vacio.as_str().into());

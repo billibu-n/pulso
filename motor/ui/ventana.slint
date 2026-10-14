@@ -162,19 +162,22 @@ component Contenido inherits VerticalLayout {
     in property <string> aviso;
     in property <string> vacio;
     in property <string> periodo;
+    // ¿Se puede diagnosticar? Si no, NO se dibujan cifras ni zonas: serian tarjetas vacias, que es un
+    // hueco olvidado (AU-07) y un dato de nadie con aspecto de dato (AU-24).
+    in property <bool> puede: false;
 
     spacing: 12px;
-    HorizontalLayout {
+    if root.puede : HorizontalLayout {
         spacing: 12px;
         Cifra { horizontal-stretch: 1; numero: root.cifras[0]; etiqueta: root.etiquetas[0]; oscuro: root.oscuro; destacada: true; }
         Cifra { horizontal-stretch: 1; numero: root.cifras[1]; etiqueta: root.etiquetas[1]; oscuro: root.oscuro; destacada: true; }
     }
-    HorizontalLayout {
+    if root.puede : HorizontalLayout {
         spacing: 12px;
         Cifra { horizontal-stretch: 1; numero: root.cifras[2]; etiqueta: root.etiquetas[2]; oscuro: root.oscuro; }
         Cifra { horizontal-stretch: 1; numero: root.cifras[3]; etiqueta: root.etiquetas[3]; oscuro: root.oscuro; }
     }
-    Rectangle {
+    if root.puede : Rectangle {
         height: 268px;
         border-radius: Medidas.radio;
         background: root.oscuro ? Oscuro.sup : Claro.sup;
@@ -207,7 +210,7 @@ component Contenido inherits VerticalLayout {
             }
         }
     }
-    Aviso { texto: root.precision; oscuro: root.oscuro; }
+    if root.precision != "" : Aviso { texto: root.precision; oscuro: root.oscuro; }
     // EL PERIODO Y EL RECUENTO, en la misma tarjeta de alto FIJO: son las dos cosas que dicen «que
     // datos hay», y asi la linea del periodo no absorbe el hueco sobrante del reparto (medido: 116 px
     // de celda cuando iba suelta, con un vacio de 98 px debajo). El periodo lo escribe Rust (`cara`),
@@ -237,7 +240,7 @@ component Contenido inherits VerticalLayout {
             }
         }
     }
-    Aviso { texto: root.aviso; oscuro: root.oscuro; }
+    if root.aviso != "" : Aviso { texto: root.aviso; oscuro: root.oscuro; }
 }
 
 // ================================================================================================
@@ -455,6 +458,7 @@ export component Ventana inherits Window {
     in property <string> aviso;
     in property <string> vacio;
     in property <string> periodo;
+    in property <bool> puede: false;
     // EL TEMA. Cambiar de tema es cambiar ESTA linea: ninguna pieza se toca (AU-39).
     // Es `in-out` y no `in` porque el mando del tema vive DENTRO de la pantalla (el `Switch` de la
     // seccion «Datos»): un `in` solo lo puede escribir quien crea la ventana, y el usuario no es ese.
@@ -498,8 +502,9 @@ export component Ventana inherits Window {
     // la aplicacion**, y en el telefono no existe. Enseñarla en el escritorio hace que la ventana
     // parezca un programa a medio hacer -- y ademas come 30 px de alto.
     no-frame: true;
-    width: 411px;
-    height: 880px;
+    // Las medidas vienen del armazon (AU-67: un valor, un sitio).
+    width: Medidas.ancho;
+    height: Medidas.alto;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
 
     // La unica decision de reparto: ¿cabe el riel?
@@ -509,10 +514,10 @@ export component Ventana inherits Window {
 
     // Las secciones, declaradas UNA vez y usadas por los dos armazones (AU-10).
     property <[Seccion]> las_secciones: [
-        { nombre: "Resumen", activa: root.seccion_activa == 0 },
-        { nombre: "Zonas", activa: root.seccion_activa == 1 },
-        { nombre: "Sesiones", activa: root.seccion_activa == 2 },
-        { nombre: "Datos", activa: root.seccion_activa == 3 },
+        { nombre: "Resumen", icono: "casa", activa: root.seccion_activa == 0 },
+        { nombre: "Zonas", icono: "grafico-linea", activa: root.seccion_activa == 1 },
+        { nombre: "Sesiones", icono: "bicicleta", activa: root.seccion_activa == 2 },
+        { nombre: "Datos", icono: "ajustes", activa: root.seccion_activa == 3 },
     ];
 
     callback elegir(int);
@@ -555,7 +560,7 @@ export component Ventana inherits Window {
             cifras: root.cifras; etiquetas: root.etiquetas;
             zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
             zonas_niveles: root.zonas_niveles;
-            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo;
+            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
         }
     }
 
@@ -578,7 +583,7 @@ export component Ventana inherits Window {
             cifras: root.cifras; etiquetas: root.etiquetas;
             zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
             zonas_niveles: root.zonas_niveles;
-            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo;
+            precision: root.precision; aviso: root.aviso; vacio: root.vacio; periodo: root.periodo; puede: root.puede;
         }
     }
 

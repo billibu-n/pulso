@@ -423,6 +423,18 @@ fn sin_fechas_el_periodo_dice_que_no_consta_y_NO_se_inventa() {
 }
 
 #[test]
+fn sin_frecuencia_maxima_medida_la_tarjeta_dice_guion_y_NO_un_cero() {
+    // LO CAZO LA CAPTURA DE PANTALLA (2026-10-14): con el umbral de lactato pero SIN maxima medida,
+    // la tarjeta de «frecuencia maxima» ensenaba «0». No se midio 0: no se midio NADA. Es la regla
+    // que sostiene todo el proyecto («Falta» no es «0»), y las otras dos cifras ya la cumplian.
+    let p = el_cliente_declara_lo_suyo();
+    assert!(p.pulso_maximo_medido.falta(), "el caso de la prueba no trae maxima medida");
+    let e = cara::lo_que_ensena(&p, None);
+    assert!(e.puede_diagnosticar, "con umbral ya se puede diagnosticar");
+    assert_eq!(e.cifras[1], "—", "sin maxima medida no puede salir un 0: {:?}", e.cifras);
+}
+
+#[test]
 fn sin_sesiones_no_hay_linea_de_periodo_ni_hueco() {
     // Sin datos no se anuncia nada: el recuento ya habla por si solo (AU-07).
     for e in [

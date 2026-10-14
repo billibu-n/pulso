@@ -555,3 +555,26 @@ pista de que el borde de Cloudflare nos trata distinto por **huella TLS** (rustl
 del dueño fue ANTES de que pasara la ventana (minutos, no horas): el 401 era esperable y no cambia la
 decisión de esperar. Queda encargado que el rastreo diga también los NOMBRES del `set-cookie` de cada
 respuesta, para saber en qué paso nos plantan el `_cfuvid` en la próxima corrida (tras la ventana).
+
+**El lote de la ventana de espera (2026-10-14, tarde, chat DSH)** — trabajo hecho SIN tocar el login:
+
+| commit | pieza |
+|---|---|
+| `514f2a6` | el rastreo dice los NOMBRES del `set-cookie` de cada respuesta (353 pruebas) |
+| `d37b33e` | estado: la pista `_cfuvid` y el protocolo de la ventana |
+| `6b52c0f` | **hito B**: `motor/src/sincronizar.rs` (tipos `Actividad`/`Diario` con la forma REAL de la API citada a la librería, `que_es_nuevo` por id, `diarios_nuevos` por fecha, `resumen_de_nuevo`; 36 pruebas; sin red ni dependencias) |
+| `458f803` | **Fase 2 de la interfaz**: tarjetas solo-con-dato, bandas de zona sobre el eje ppm, frases de UNA línea con icono, pintado unificado en `bin/compartido/pintar.rs` (suite completa **394 pruebas, 0 avisos**) |
+
+**Dictamen wreq** (para la decisión del dueño tras la ventana): `datos/trabajo-ui/wreq-informe.md`.
+Medido, no citado: `ureq` es **HTTP/1.1 puro** (JA4 `t13d1010`) y `wreq 0.16.1` Chrome137 da **h2 con
+huella Akamai IDÉNTICA** a la de `curl_cffi` chrome; el precio es BoringSSL desde fuente (cmake),
+Tokio, y dos issues abiertos (#1299: no responde `Critical-CH`, los retos de Cloudflare siguen en
+403; #1320: peso HEADERS). Experimento previo sugerido antes de pagarlo: el mismo POST con
+`curl_cffi` vs `curl` de serie.
+
+**Al retomar**: (1) recoger el hito C (subagente en vuelo: bloque Garmin en la sección Datos —
+estado/vía/botón Sincronizar/resumen de UNA línea, sin red; su informe y diff quedan en el árbol),
+revisarlo, correr `cargo test` y commitear; (2) Fase 3 (Zonas/Sesiones/Datos completas, §3.9-3.12);
+(3) dos dudas para el dueño anotadas: el `0` de `sleepTimeSeconds` (`Some(0.0)` aquí vs «sin dato» en
+el instrumento: decidir en un solo sitio) y la deuda de los campos viejos de `cara.rs` (los usa
+`recorrido.rs`); (4) tras la ventana, la corrida real con el instrumento (una sola).

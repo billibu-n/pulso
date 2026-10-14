@@ -492,6 +492,171 @@ mod flujo {
             .collect()
     }
 
+    // -----------------------------------------------------------------------------------------
+    // LA VERIFICACIÓN NUEVA (OTP): los marcadores que la DECIDEN y los campos que la rellenan
+    // -----------------------------------------------------------------------------------------
+
+    /// **Los tres marcadores que DECIDEN que la página es la verificación NUEVA de Garmin** (el
+    /// código de un solo uso), medidos el 2026-10-14 con la cuenta del dueño y anotados en
+    /// `datos/trabajo-ui/pagina-nueva-informe.md`.
+    ///
+    /// Se exigen **los tres a la vez**, no uno: `challenge` y `device` son palabras que cualquier
+    /// página puede llevar, y `otp` es corto y aparece en media web. Lo que no es casualidad es que
+    /// salgan las tres juntas en la respuesta del POST del acceso. Por eso esta lista no se cambia
+    /// sin una medición nueva: es la que da el código 5.
+    ///
+    /// De dónde sale cada nombre, medido y no supuesto:
+    /// - `otp` — el `name` del campo donde el navegador teclea el código en esa página.
+    /// - `challenge`, `device` — los otros dos campos del mismo formulario, y a la vez el vocabulario
+    ///   del paso (`challenge` = el reto que pone Garmin; `device` = el aparato).
+    ///
+    /// **Ninguna librería publicada reconoce todavía esta página** (comprobado el 2026-10-14 en
+    /// `matin/garth` —deprecada—, en su fork mantenido `cyberfossa/garth-ng` y en
+    /// `cyberjunky/python-garminconnect`): las tres miran `mfaMethod`/`loginEnterMfaCode`. Lo cuenta
+    /// el informe `datos/trabajo-ui/flujo-nuevo-informe.md`.
+    pub const MARCADORES_DEL_OTP: [&str; 3] = ["otp", "challenge", "device"];
+
+    /// El TÍTULO de la página OTP medida. Se exige **junto con** los tres marcadores, nunca solo: la
+    /// página de acceso se titula igual («GARMIN Authentication Application», medido), así que el
+    /// título descarta pero no decide. Es la misma lección que con el MFA
+    /// (`garminconnect/client.py:850-855`).
+    pub const TITULO_DEL_OTP: &str = "GARMIN Authentication Application";
+
+    /// **Qué marcadores del OTP trae la página, por su NOMBRE.** Nunca sus valores.
+    pub fn marcadores_del_otp(html: &str) -> Vec<&'static str> {
+        MARCADORES_DEL_OTP
+            .iter()
+            .filter(|m| buscar_sin_mayusculas(html, m, 0).is_some())
+            .copied()
+            .collect()
+    }
+
+    /// **`true` cuando la página es la verificación por código de un solo uso**, la nueva: el título
+    /// de la aplicación de autenticación **y** los tres marcadores de [`MARCADORES_DEL_OTP`].
+    ///
+    /// Es una sola regla con dos consumidores —la clasificación, que la convierte en
+    /// [`Fallo::VerificacionOtpRequerida`], y el paso de la red, que necesita el cuerpo para derivar
+    /// el POST—, escrita una vez para que no puedan separarse.
+    pub fn es_pagina_otp(html: &str) -> bool {
+        titulo(html).eq_ignore_ascii_case(TITULO_DEL_OTP)
+            && marcadores_del_otp(html).len() == MARCADORES_DEL_OTP.len()
+    }
+
+    /// **Los nombres con los que la página puede llamar al campo del código**, en orden de
+    /// preferencia: `otp` (el medido en la página nueva), `verificationCode` y `mfa-code` (el que
+    /// mandan las librerías mantenidas para el segundo factor clásico: `garth-ng`
+    /// `src/garth/sso/widget_strategy.py:143` y `garminconnect/client.py:899`).
+    ///
+    /// **Se usa el primero que la página DECLARE**, y se lee de sus campos
+    /// ([`nombres_de_campos`]): el nombre lo pone Garmin, no este instrumento.
+    pub const CAMPOS_DEL_CODIGO: [&str; 3] = ["otp", "verificationCode", "mfa-code"];
+
+    /// **En qué campo de la página va el código**: el primero de [`CAMPOS_DEL_CODIGO`] que la página
+    /// traiga. `None` = no declara ninguno, y entonces **no se hace el POST**: sin saber dónde va el
+    /// código, mandarlo sería inventar.
+    pub fn campo_del_codigo(html: &str) -> Option<&'static str> {
+        let nombres = nombres_de_campos(html);
+        CAMPOS_DEL_CODIGO
+            .iter()
+            .copied()
+            .find(|c| nombres.iter().any(|n| n == c))
+    }
+
+    /// **Los NOMBRES de los campos de la página que NO se saben rellenar.**
+    ///
+    /// Se saben rellenar tres clases: el campo del código (el que declare la página), `_csrf` (que se
+    /// reutiliza) y los dos literales que mandan las librerías mantenidas, `embed` y `fromPage`
+    /// (`garth-ng` `src/garth/sso/widget_strategy.py:142-147`). **Cualquier otro campo es un hueco**:
+    /// su valor lo genera la página —medido: `deviceId` y `challenge`— y sacarlo sería volcar el
+    /// cuerpo, que puede traer datos de salud. Ese hueco se declara (código 7) y **no se rellena con
+    /// un remedio peor**: no se manda vacío ni inventado, porque un POST a ciegas puede quemar un
+    /// código de un solo uso.
+    pub fn campos_sin_relleno(html: &str) -> Vec<String> {
+        /// Los que este instrumento sabe poner, además del campo del código.
+        const RELLENABLES: [&str; 3] = ["_csrf", "embed", "fromPage"];
+        let codigo = campo_del_codigo(html);
+        nombres_de_campos(html)
+            .into_iter()
+            .filter(|n| Some(n.as_str()) != codigo && !RELLENABLES.contains(&n.as_str()))
+            .collect()
+    }
+
+    /// `widget_strategy.py:145` — el valor del campo `embed` en el POST del código: literalmente
+    /// `"true"` (el mismo que manda el flujo clásico, `client.py:900`).
+    pub const VALOR_DE_EMBED: &str = "true";
+
+    /// **El cuerpo del POST del código OTP, con los nombres que declara la PÁGINA y en su orden.**
+    ///
+    /// Aquí no hay ni un nombre inventado: se recorre [`nombres_de_campos`] de la página y se pone el
+    /// valor del nombre que toque —
+    /// - el campo del código ⇒ el código, que llega envuelto en [`Secreto`];
+    /// - `_csrf` ⇒ el de la PROPIA página si lo trae, y si no el de la sesión (las librerías
+    ///   mantenidas reescriben el `_csrf` con el de la página del segundo factor:
+    ///   `garth-ng` `widget_strategy.py:101`, `garminconnect/client.py:890`; el de la sesión es la
+    ///   reserva, que es lo que ya hace el paso del acceso);
+    /// - `embed` ⇒ [`VALOR_DE_EMBED`]; `fromPage` ⇒ [`FROM_PAGE_DEL_MFA`].
+    ///
+    /// Los nombres de [`campos_sin_relleno`] **no llegan aquí**: el paso comprueba antes que no haya
+    /// ninguno y, si lo hay, para y lo dice.
+    pub fn campos_del_otp(
+        pagina: &str,
+        campo: &str,
+        csrf_de_la_sesion: &str,
+        codigo: &Secreto,
+    ) -> Vec<(String, Secreto)> {
+        // El `_csrf` de la página manda; el de la sesión es la reserva. Va como `Secreto` igual que
+        // el código: es credencial de un solo uso.
+        let csrf = extraer_csrf(pagina).unwrap_or_else(|_| csrf_de_la_sesion.to_string());
+        let nombres = nombres_de_campos(pagina);
+        let mut campos: Vec<(String, Secreto)> = nombres
+            .iter()
+            .map(|nombre| {
+                // El código va **al campo que la página nombra**, y a ningún otro.
+                let valor = if nombre == campo {
+                    codigo.clone()
+                } else {
+                    match nombre.as_str() {
+                        "_csrf" => Secreto::nueva(csrf.clone()),
+                        "embed" => Secreto::nueva(VALOR_DE_EMBED.into()),
+                        "fromPage" => Secreto::nueva(FROM_PAGE_DEL_MFA.into()),
+                        // Cualquier otro nombre se manda VACÍO, que es un hueco declarado y no un
+                        // valor inventado. El paso comprueba antes que no haya ninguno
+                        // (`campos_sin_relleno`) y para si lo hay; esto es la red de seguridad, para
+                        // que un día no acabe el código en un campo que no es el suyo.
+                        _ => Secreto::nueva(String::new()),
+                    }
+                };
+                (nombre.clone(), valor)
+            })
+            .collect();
+        // El `_csrf` **no puede faltar**: es el campo que Garmin exige, y las librerías lo mandan
+        // siempre (`client.py:899-904`). Si la página no lo declara —o su `value` no se puede leer—,
+        // va el de la sesión, que es con el que ya se hizo el acceso.
+        if !nombres.iter().any(|n| n == "_csrf") {
+            campos.push(("_csrf".to_string(), Secreto::nueva(csrf)));
+        }
+        campos
+    }
+
+    /// **A dónde va el POST del código.** Dos destinos, en este orden, y ninguno inventado:
+    ///
+    /// 1. **La ruta que declare el `action` de la página** ([`rutas_de_formulario`]), colgada del SSO:
+    ///    es el destino que usa el propio navegador de Garmin. Si la página no declara `action` —la
+    ///    medición de 2026-10-14 NO lo traía, lo monta JavaScript— se pasa al segundo.
+    /// 2. **[`URL_MFA`]**: el endpoint del segundo factor de las librerías mantenidas, literal
+    ///    `https://sso.garmin.com/sso/verifyMFA/loginEnterMfaCode` (`garth-ng`
+    ///    `src/garth/sso/widget_strategy.py:102`; `cyberjunky/python-garminconnect`
+    ///    `garminconnect/client.py:895`). Es un destino **citado**, no adivinado.
+    ///
+    /// Lo que **no** se hace: probar el uno y, si falla, el otro a ciegas. Cada intento puede quemar
+    /// el código de un solo uso, así que se dice cuál se usó y qué contestó.
+    pub fn destino_del_otp(pagina: &str) -> String {
+        match rutas_de_formulario(pagina).into_iter().next() {
+            Some(ruta) if ruta.starts_with('/') => format!("{SSO}{ruta}"),
+            _ => URL_MFA.to_string(),
+        }
+    }
+
     /// **Los marcadores de DIAGNÓSTICO: los NOMBRES que se buscan en el cuerpo para DESCRIBIR una
     /// página que la clasificación no reconoce** (el aviso del código 7). Nunca valores, y ninguno
     /// decide nada: la decisión es de [`MARCADORES_DEL_MFA`].
@@ -876,6 +1041,17 @@ mod flujo {
         if let Some(metodo) = metodo_de_mfa(html) {
             return Err(Fallo::MfaRequerido { metodo });
         }
+        // La verificación NUEVA (medida el 2026-10-14): la página trae `otp`+`challenge`+`device` en
+        // vez de los tres marcadores clásicos, así que `metodo_de_mfa` no la ve. Va DESPUÉS del MFA
+        // clásico a propósito: primero lo que ya se conocía, y solo entonces lo nuevo. Aquí no se
+        // gasta ni un POST —solo se dice qué pide Garmin y con qué nombres—, y por eso el aviso puede
+        // llevar los NOMBRES de los campos sin volcar el cuerpo.
+        if es_pagina_otp(html) {
+            return Err(Fallo::VerificacionOtpRequerida {
+                campos: nombres_de_campos(html),
+                sin_relleno: campos_sin_relleno(html),
+            });
+        }
         if titulo(html) != "Success" {
             // Lo que se dice es el TÍTULO, los NOMBRES de los marcadores que trae, la RUTA de su
             // formulario y —si el rastreo lo vio— si era una redirección: eso basta para diagnosticar
@@ -1156,6 +1332,18 @@ enum Fallo {
     FaltanVariables(Vec<&'static str>),
     /// Garmin pidió el segundo factor: el flujo lo contempla, pero este instrumento no puede seguir.
     MfaRequerido { metodo: String },
+    /// **La verificación por código de un solo uso, la NUEVA de Garmin** (medida el 2026-10-14): la
+    /// página trae `otp`, `challenge` y `device` en vez de los tres marcadores clásicos. Se entrega
+    /// con la MISMA variable que el MFA (`GARMIN_CODIGO_MFA`), y de ahí que comparta su código (5).
+    ///
+    /// Lleva los NOMBRES de los campos que declara la página —jamás sus valores— porque son el
+    /// contrato del formulario y son lo que dice QUÉ habría que enviar. `sin_relleno` son los que este
+    /// instrumento **no sabe** rellenar: su valor lo genera la página y sacarlo sería volcar el
+    /// cuerpo. Cuando esa lista no está vacía, el aviso lo dice y **no se intenta ningún POST**.
+    VerificacionOtpRequerida {
+        campos: Vec<String>,
+        sin_relleno: Vec<String>,
+    },
     /// La contraseña no vale, o la cuenta está bloqueada.
     CredencialesRechazadas,
     /// Cuenta de menor: Garmin no la deja entrar por web.
@@ -1181,6 +1369,22 @@ impl From<FalloTransporte> for Fallo {
     }
 }
 
+/// **Las cuatro líneas que dicen CÓMO se pone el código de un solo uso**, escritas UNA vez porque son
+/// las mismas para los dos segundos factores: el clásico (`Fallo::MfaRequerido`) y la verificación
+/// nueva por OTP (`Fallo::VerificacionOtpRequerida`). Para el dueño es el mismo acto —poner el código
+/// en `GARMIN_CODIGO_MFA` y repetir el comando—, así que no puede haber dos textos que se separen:
+/// un día dirían cosas distintas y el dueño no sabría a cuál creer.
+///
+/// Lo que dice, y por qué: **la variable** (para que sepa dónde va), **cómo se pone sin que se vea al
+/// teclearla** (`read -s`, que si no el código queda en el historial de la terminal) y **que no se
+/// guarda ni se imprime** (viaja como un `Secreto`, igual que la clave).
+const COMO_SE_PONE_EL_CODIGO: &str = "QUÉ ES: Garmin ha aceptado el usuario y la clave, y ahora pide \
+     un código de un solo uso.\n  \
+     QUÉ HACER: pon el código en la variable GARMIN_CODIGO_MFA y repite el MISMO comando:\n    \
+     read -s -p \"código MFA: \" GARMIN_CODIGO_MFA; export GARMIN_CODIGO_MFA\n  \
+     El código NO se guarda y NO se imprime: viaja como un `Secreto`, igual que la clave, y no \
+     aparece ni en la salida ni en ningún mensaje de error.";
+
 impl Fallo {
     /// Añade **por dónde iba** a un fallo de red. No toca los demás: un error de credenciales o de
     /// forma ya dice lo suyo, y no necesita la URL.
@@ -1195,6 +1399,10 @@ impl Fallo {
         match self {
             Fallo::FaltanVariables(_) => CODIGO_FALTAN_VARIABLES,
             Fallo::MfaRequerido { .. } => CODIGO_MFA,
+            // El mismo código que el MFA **a propósito**: para el dueño es el mismo acto —poner el
+            // código en `GARMIN_CODIGO_MFA` y repetir—, y dos códigos para lo mismo serían dos
+            // instrucciones que dicen lo mismo con dos números distintos.
+            Fallo::VerificacionOtpRequerida { .. } => CODIGO_MFA,
             Fallo::CredencialesRechazadas | Fallo::CuentaRestringida => CODIGO_CREDENCIALES,
             Fallo::SinRed(_) => CODIGO_SIN_RED,
             Fallo::DemasiadasPeticiones(_) => CODIGO_DEMASIADAS_PETICIONES,
@@ -1214,11 +1422,7 @@ impl Fallo {
             ),
             Fallo::MfaRequerido { metodo } => format!(
                 "Garmin pide el segundo factor (MFA{}): con el usuario y la clave NO se llega al ticket.\n  \
-                 QUÉ ES: Garmin ha aceptado el usuario y la clave, y ahora pide un código de un solo uso.\n  \
-                 QUÉ HACER: pon el código en la variable GARMIN_CODIGO_MFA y repite el MISMO comando:\n    \
-                 read -s -p \"código MFA: \" GARMIN_CODIGO_MFA; export GARMIN_CODIGO_MFA\n  \
-                 El código NO se guarda y NO se imprime: viaja como un `Secreto`, igual que la clave, y no \
-                 aparece ni en la salida ni en ningún mensaje de error.\n  \
+                 {COMO_SE_PONE_EL_CODIGO}\n  \
                  Se entrega en un POST a {} (client.py:894-905) con los campos {:?} (client.py:899-904), y \
                  si Garmin pidiera otro código, en {} (client.py:954).",
                 if metodo.is_empty() {
@@ -1229,6 +1433,40 @@ impl Fallo {
                 flujo::URL_MFA,
                 flujo::CAMPOS_DEL_MFA,
                 flujo::URL_MFA_PEDIR_CODIGO
+            ),
+            Fallo::VerificacionOtpRequerida {
+                campos,
+                sin_relleno,
+            } => format!(
+                "Garmin pide la verificación por código de un solo uso —la página NUEVA del segundo \
+                 factor ({})—: con el usuario y la clave NO se llega al ticket.\n  \
+                 {COMO_SE_PONE_EL_CODIGO}\n  \
+                 LA PÁGINA: trae los marcadores {:?} (medidos el 2026-10-14) y declara estos campos \
+                 (solo los NOMBRES): {}.\n  \
+                 EL POST DEL CÓDIGO: va a la ruta que declare el `action` de la página y, si no la \
+                 trae —la medición no la traía, lo monta JavaScript—, a {} (garth-ng \
+                 src/garth/sso/widget_strategy.py:102), con los nombres que declare la página \
+                 (widget_strategy.py:142-147).\n  {}",
+                flujo::MARCADORES_DEL_OTP.join("+"),
+                flujo::MARCADORES_DEL_OTP,
+                if campos.is_empty() {
+                    "ninguno".to_string()
+                } else {
+                    campos.join(", ")
+                },
+                flujo::URL_MFA,
+                if sin_relleno.is_empty() {
+                    "Con el código puesto, ese POST se hace en este paso.".to_string()
+                } else {
+                    format!(
+                        "HUECO DECLARADO: la página declara también {}, y su valor lo genera ELLA \
+                         (medido). Sacarlo de la página sería volcar el cuerpo, que puede traer datos \
+                         de salud, así que NO se manda ningún POST: un POST al que le faltan campos \
+                         quemaría un código de un solo uso. El hueco se declara (código 7) y no se \
+                         rellena con un remedio peor.",
+                        sin_relleno.join(", ")
+                    )
+                }
             ),
             Fallo::CredencialesRechazadas => "Garmin rechazó el usuario o la clave (o la cuenta está \
                  bloqueada). No se muestra lo que se envió: son credenciales."
@@ -2051,12 +2289,23 @@ fn paso_csrf(t: &dyn Transporte) -> Result<String, Fallo> {
 }
 
 /// `client.py:790-881` — la espera contra el WAF, el POST de las credenciales y la clasificación de
-/// lo que conteste.
+/// lo que conteste: **y, si Garmin pide un segundo factor y el dueño dejó el código, se entrega aquí
+/// mismo**.
+///
+/// El código entra como argumento (y no se lee aquí) por un motivo de forma, no de gusto: **el cuerpo
+/// de la respuesta tiene que seguir vivo** para poder derivar de él el POST del OTP —los nombres de
+/// sus campos y la ruta de su formulario—, y ese cuerpo es lo que la clasificación mira y tira. Si
+/// esto devolviera solo el fallo, el paso del OTP tendría que volver a pedir la página: otro POST de
+/// credenciales, contra el anti-abuso y sin necesidad.
+///
+/// El cuerpo **no sale de esta función**: no va en ningún fallo ni en ningún mensaje, se usa aquí y se
+/// suelta.
 fn paso_credenciales(
     t: &dyn Transporte,
     csrf: &str,
     usuario: &Secreto,
     clave: &Secreto,
+    codigo_mfa: Option<&Secreto>,
 ) -> Result<String, Fallo> {
     t.nombra("EL ACCESO: el POST de las credenciales, el paso que responde 500 (client.py:790-881)");
     espera_anti_waf();
@@ -2070,10 +2319,105 @@ fn paso_credenciales(
     exigir_estado(&r, "el acceso (client.py:795-810)")?;
     // Se clasifica CON lo que el rastreo sabe de la respuesta y el cuerpo no dice: si traía
     // `location`. Solo la PRESENCIA de la cabecera; su valor no se copia.
+    let decision = flujo::clasificar_login_con_redireccion(
+        &r.cuerpo,
+        Some(tiene_cabecera(&r.cabeceras, "location")),
+    );
+    match decision {
+        Ok(ticket) => Ok(ticket),
+        // Segundo factor CLÁSICO: si el dueño dejó el código, se entrega y se sigue; si no, se para y
+        // se dice qué hacer (código 5).
+        Err(Fallo::MfaRequerido { metodo }) => match codigo_mfa {
+            Some(codigo) => paso_mfa(t, csrf, codigo),
+            None => Err(Fallo::MfaRequerido { metodo }),
+        },
+        // Verificación NUEVA (OTP), la medida el 2026-10-14: **el POST se deriva de la página**, que
+        // es lo único que dice a dónde va y con qué nombres. La página se queda aquí.
+        Err(otp @ Fallo::VerificacionOtpRequerida { .. }) => match codigo_mfa {
+            Some(codigo) => paso_otp(t, &r.cuerpo, csrf, codigo),
+            None => Err(otp),
+        },
+        Err(otro) => Err(otro),
+    }
+}
+
+/// **El paso de la verificación NUEVA: entregar el código de un solo uso**, con lo que declara la
+/// página del segundo factor.
+///
+/// De dónde sale cada cosa, y por qué (ninguna se adivina):
+/// - **A dónde va** — [`flujo::destino_del_otp`]: la ruta del `action` de la página si la declara, y si
+///   no [`flujo::URL_MFA`], que es el endpoint del segundo factor de las librerías mantenidas
+///   (`garth-ng` `src/garth/sso/widget_strategy.py:102`, `garminconnect/client.py:895`).
+/// - **Con qué nombres** — [`flujo::campos_del_otp`]: los que declara la página, en su orden. El
+///   código va al campo del código que la página nombre (`otp`/`verificationCode`/`mfa-code`), el
+///   `_csrf` se reutiliza (el de la página, y si no el de la sesión) y `embed`/`fromPage` se ponen con
+///   los literales de `garth-ng` `widget_strategy.py:142-147`.
+/// - **Los que NO se saben rellenar** ([`flujo::campos_sin_relleno`], medido: `deviceId` y
+///   `challenge`): **no se manda nada**. Su valor lo genera la página, sacarlo sería volcar el cuerpo,
+///   y un POST al que le faltan campos quemaría el código de un solo uso. Se para con el código 7
+///   diciendo cuáles son.
+/// - **El `Referer`**: el de la página de la que venimos —igual que el acceso, que lo lleva—, con
+///   `mas_cabeceras` para no llevarse por delante el `Content-Type` del formulario (la lección del
+///   500, medida el 2026-10-14).
+fn paso_otp(
+    t: &dyn Transporte,
+    pagina: &str,
+    csrf: &str,
+    codigo: &Secreto,
+) -> Result<String, Fallo> {
+    t.nombra(
+        "LA VERIFICACIÓN OTP: el POST del código de un solo uso (garth-ng sso/widget_strategy.py:126-158)",
+    );
+    // 1. ¿Dónde va el código? Si la página no lo dice, no hay POST: sería inventar el campo.
+    let Some(campo) = flujo::campo_del_codigo(pagina) else {
+        return Err(Fallo::EndpointCambiado {
+            esperaba: format!(
+                "la página del OTP con el campo donde va el código, con el nombre que usa la propia \
+                 página ({:?}; widget_strategy.py:143)",
+                flujo::CAMPOS_DEL_CODIGO
+            ),
+            llego: format!(
+                "la página del OTP sin ninguno de esos campos; declara: {}",
+                resumen_de_nombres(&flujo::nombres_de_campos(pagina))
+            ),
+        });
+    };
+    // 2. ¿Pide algún campo que no sepamos rellenar? Entonces no hay POST, y se dice cuáles.
+    let sin_relleno = flujo::campos_sin_relleno(pagina);
+    if !sin_relleno.is_empty() {
+        return Err(Fallo::EndpointCambiado {
+            esperaba: "un POST del código con los campos que declara la página del OTP".into(),
+            llego: format!(
+                "la página del OTP declara campos que este instrumento NO sabe rellenar sin volcar el \
+                 cuerpo: {}; no se ha intentado ningún POST (un POST al que le faltan campos quemaría \
+                 el código de un solo uso)",
+                sin_relleno.join(", ")
+            ),
+        });
+    }
+    // 3. El POST, con lo que declara la página.
+    let destino = flujo::destino_del_otp(pagina);
+    let cuerpo = flujo::campos_del_otp(pagina, campo, csrf, codigo);
+    let peticion = Peticion::post_form(&destino, &cuerpo)
+        .mas_cabeceras(vec![("Referer".to_string(), flujo::URL_SIGNIN.to_string())]);
+    let r = pedir(t, &peticion)?;
+    exigir_estado(&r, "la verificación del código de un solo uso")?;
+    // Y la respuesta se clasifica con la MISMA función que el acceso: si el código vale, es la página
+    // «Success» con el ticket; si no vale, vuelve a salir el código 5 —que ya dice qué hacer— o el 7
+    // con lo que llegó.
     flujo::clasificar_login_con_redireccion(
         &r.cuerpo,
         Some(tiene_cabecera(&r.cabeceras, "location")),
     )
+}
+
+/// Los nombres, para un aviso: en una línea, o «ninguno» si no hay. **Solo los nombres.**
+fn resumen_de_nombres(nombres: &[String]) -> String {
+    if nombres.is_empty() {
+        "ninguno".to_string()
+    } else {
+        nombres.join(", ")
+    }
 }
 
 /// `client.py:894-905` — **el paso del segundo factor: entregar el código MFA.**
@@ -2366,15 +2710,9 @@ fn medir(
 
     paso_embed(t)?;
     let csrf = paso_csrf(t)?;
-    let ticket = match paso_credenciales(t, &csrf, usuario, clave) {
-        // Garmin aceptó usuario y clave y pide el segundo factor: si el dueño dejó el código, se
-        // entrega y se sigue por donde iba el acceso; si no, se para y se dice qué hacer (código 5).
-        Err(Fallo::MfaRequerido { metodo }) => match codigo_mfa {
-            Some(codigo) => paso_mfa(t, &csrf, codigo)?,
-            None => return Err(Fallo::MfaRequerido { metodo }),
-        },
-        otro => otro?,
-    };
+    // El acceso **y los dos segundos factores** (el clásico y el nuevo por OTP): los entrega el mismo
+    // paso, porque el cuerpo de la respuesta —que es lo que dice qué hacer— vive y muere ahí dentro.
+    let ticket = paso_credenciales(t, &csrf, usuario, clave, codigo_mfa)?;
     let mut sesion = paso_sesion(t, &ticket)?;
     paso_perfil(t, &mut sesion)?;
     let nombre = sesion.display_name.clone().unwrap_or_default();
@@ -4176,33 +4514,151 @@ mod pruebas {
 </body></html>"#;
 
     #[test]
-    fn la_pagina_otp_medida_da_codigo_7_y_nombra_sus_marcadores_y_sus_campos() {
-        // Lo primero: NO es MFA por los tres marcadores de siempre (no los trae) y sin embargo el
-        // título no es «Success»: código 7, el aviso descriptivo.
+    fn la_pagina_otp_medida_da_codigo_5_y_declara_sus_campos_y_su_hueco() {
+        // Lo primero: NO es MFA por los tres marcadores clásicos (no los trae). Y su título no es
+        // «Success»: es la verificación NUEVA, que da **código 5** —el mismo que el MFA, porque para
+        // el dueño es el mismo acto: poner el código en `GARMIN_CODIGO_MFA` y repetir—.
         assert_eq!(flujo::marcadores_de_mfa(HTML_OTP_MEDIDA), Vec::<&str>::new());
         assert_eq!(flujo::metodo_de_mfa(HTML_OTP_MEDIDA), None);
+        assert!(flujo::es_pagina_otp(HTML_OTP_MEDIDA), "la página medida ES la del OTP");
+        assert_eq!(
+            flujo::marcadores_del_otp(HTML_OTP_MEDIDA),
+            flujo::MARCADORES_DEL_OTP.to_vec()
+        );
         let fallo = flujo::clasificar_login(HTML_OTP_MEDIDA).unwrap_err();
-        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
         let m = fallo.mensaje();
-        // Los CINCO marcadores medidos, que es lo que dice qué página es.
-        for marcador in ["otp", "challenge", "device", "Success", "method=\"post\""] {
+        // Los tres marcadores medidos, que son los que deciden, y el aviso los nombra.
+        for marcador in ["otp", "challenge", "device"] {
             assert!(m.contains(marcador), "falta el marcador «{marcador}»: {m}");
         }
+        // El aviso del código es el MISMO texto que el del MFA (una sola redacción, reutilizada).
+        assert!(m.contains("GARMIN_CODIGO_MFA"), "{m}");
+        assert!(m.contains("read -s -p"), "sin `read -s` el código se ve al teclearlo: {m}");
+        assert!(
+            m.contains("NO se guarda") && m.contains("NO se imprime"),
+            "el aviso tiene que decir que el código no se guarda ni se imprime: {m}"
+        );
         // Y —lo nuevo— los NOMBRES de los campos, en el orden de la página y sin repetir: es lo que
         // dice QUÉ habría que enviar en el POST.
         assert_eq!(
             flujo::nombres_de_campos(HTML_OTP_MEDIDA),
             vec!["otp", "_csrf", "deviceId", "challenge"]
         );
-        assert!(
-            m.contains("campos del formulario (solo los nombres, que dicen QUÉ enviar): otp, _csrf, deviceId, challenge"),
-            "tienen que salir los nombres de los campos: {m}"
+        assert!(m.contains("otp, _csrf, deviceId, challenge"), "{m}");
+        // El campo del código es el que la página nombra, y el destino el de las librerías mantenidas
+        // (la página medida NO trae `action`: lo monta JavaScript).
+        assert_eq!(flujo::campo_del_codigo(HTML_OTP_MEDIDA), Some("otp"));
+        assert_eq!(flujo::destino_del_otp(HTML_OTP_MEDIDA), flujo::URL_MFA);
+        // **El hueco, declarado**: `deviceId` y `challenge` no se saben rellenar (su valor lo genera
+        // la página) y por eso NO se manda ningún POST. El aviso lo dice con sus nombres.
+        assert_eq!(
+            flujo::campos_sin_relleno(HTML_OTP_MEDIDA),
+            vec!["deviceId", "challenge"]
         );
+        assert!(m.contains("HUECO DECLARADO"), "{m}");
+        assert!(m.contains("deviceId, challenge"), "{m}");
+        assert!(m.contains("NO se manda ningún POST"), "{m}");
         // Ni un valor, ni de los campos ni del `<option>`: solo nombres.
         assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
         // Y el `input name=` literal NO salta (el `name` no va pegado a `input`): por eso hacía falta
         // leer la etiqueta entera y no la subcadena.
         assert!(!m.contains("input name="), "el marcador literal no debería saltar: {m}");
+    }
+
+    #[test]
+    fn la_pagina_otp_se_reconoce_por_los_tres_marcadores_y_no_por_uno() {
+        // Con el título de la aplicación de autenticación y SOLO `otp`: **no decide**. Decidir con uno
+        // convertiría cualquier página que diga «otp» en un segundo factor inventado.
+        let solo_otp = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp" value="VALOR-QUE-NO-SALE"></form></html>"#;
+        assert!(!flujo::es_pagina_otp(solo_otp));
+        assert_eq!(
+            flujo::clasificar_login(solo_otp).unwrap_err().codigo(),
+            CODIGO_ENDPOINT_CAMBIADO
+        );
+        // Con los tres marcadores pero OTRO título: tampoco. El título descarta, no decide (la página
+        // de acceso se titula igual, medido).
+        let otro_titulo = r#"<html><title>Otra cosa</title><p>otp challenge device</p></html>"#;
+        assert!(!flujo::es_pagina_otp(otro_titulo));
+        // Y con el título y los tres: sí, y **sin mirar mayúsculas** ni en el título ni en los
+        // marcadores (los nombres de atributo del HTML no las distinguen).
+        assert!(flujo::es_pagina_otp(HTML_OTP_MEDIDA));
+        let en_mayusculas = r#"<html><title>GARMIN AUTHENTICATION APPLICATION</title>
+<body>OTP CHALLENGE DEVICE</body></html>"#;
+        assert!(flujo::es_pagina_otp(en_mayusculas));
+        assert_eq!(
+            flujo::marcadores_del_otp(en_mayusculas),
+            flujo::MARCADORES_DEL_OTP.to_vec()
+        );
+    }
+
+    #[test]
+    fn el_csrf_del_otp_es_el_de_la_pagina_y_si_no_se_puede_leer_el_de_la_sesion() {
+        let codigo = Secreto::nueva("CODIGO-DE-PRUEBA-81".into());
+        let valor = |campos: &[(String, Secreto)], nombre: &str| {
+            campos
+                .iter()
+                .find(|(n, _)| n == nombre)
+                .map(|(_, v)| v.expuesto().to_string())
+        };
+
+        // (a) La página trae su propio `_csrf`: **manda el de la página** (widget_strategy.py:101).
+        let con_csrf = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp"><input type="hidden" name="_csrf" value="CSRF-DE-LA-PAGINA"></form>
+<p>otp challenge device</p></html>"#;
+        let campos = flujo::campos_del_otp(con_csrf, "otp", "CSRF-DE-LA-SESION", &codigo);
+        assert_eq!(
+            campos.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            vec!["otp", "_csrf"]
+        );
+        assert_eq!(valor(&campos, "otp").as_deref(), Some("CODIGO-DE-PRUEBA-81"));
+        assert_eq!(valor(&campos, "_csrf").as_deref(), Some("CSRF-DE-LA-PAGINA"));
+
+        // (b) La página NO declara `_csrf`: se manda el de la sesión, que es el del acceso. El campo
+        // no puede faltar (las librerías lo mandan siempre, `client.py:899-904`).
+        let sin_csrf = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp"></form><p>otp challenge device</p></html>"#;
+        let campos = flujo::campos_del_otp(sin_csrf, "otp", "CSRF-DE-LA-SESION", &codigo);
+        assert_eq!(valor(&campos, "_csrf").as_deref(), Some("CSRF-DE-LA-SESION"));
+
+        // (c) La página declara `_csrf` pero su `value` no se puede leer (vacío): también la sesión.
+        let csrf_ilegible = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp"><input type="hidden" name="_csrf" value=""></form>
+<p>otp challenge device</p></html>"#;
+        let campos = flujo::campos_del_otp(csrf_ilegible, "otp", "CSRF-DE-LA-SESION", &codigo);
+        assert_eq!(valor(&campos, "_csrf").as_deref(), Some("CSRF-DE-LA-SESION"));
+
+        // (d) `embed` y `fromPage` solo si la página los declara, y con los literales de la librería
+        // (`widget_strategy.py:142-147`).
+        let con_los_de_la_libreria = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="mfa-code"><input name="embed"><input name="fromPage">
+<input type="hidden" name="_csrf" value="CSRF-DE-LA-PAGINA"></form>
+<p>otp challenge device</p></html>"#;
+        let campos = flujo::campos_del_otp(
+            con_los_de_la_libreria,
+            "mfa-code",
+            "CSRF-DE-LA-SESION",
+            &codigo,
+        );
+        assert_eq!(
+            campos.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            vec!["mfa-code", "embed", "fromPage", "_csrf"]
+        );
+        assert_eq!(valor(&campos, "embed").as_deref(), Some("true"));
+        assert_eq!(
+            valor(&campos, "fromPage").as_deref(),
+            Some("setupEnterMfaCode")
+        );
+        // Y **ningún nombre se inventa**: en una página con el código y nada más, el cuerpo solo lleva
+        // el código y el `_csrf`.
+        let minima = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="verificationCode"></form><p>otp challenge device</p></html>"#;
+        let campos = flujo::campos_del_otp(minima, "verificationCode", "CSRF-DE-LA-SESION", &codigo);
+        assert_eq!(
+            campos.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            vec!["verificationCode", "_csrf"]
+        );
     }
 
     #[test]
@@ -4266,7 +4722,9 @@ mod pruebas {
         // Y cuando no lo trae, no se dice nada de un ticket: no se afirma lo que no hay. (La palabra
         // «ticket» sí sale en el «Se esperaba», que es la frase fija del aviso: lo que no puede salir
         // es la frase del hallazgo.)
-        let sin = flujo::clasificar_login(HTML_OTP_MEDIDA).unwrap_err().mensaje();
+        let sin = flujo::clasificar_login("<html><title>Otra página</title></html>")
+            .unwrap_err()
+            .mensaje();
         assert!(!sin.contains("SÍ trae un ticket"), "se inventó un ticket: {sin}");
     }
 
@@ -4456,6 +4914,253 @@ mod pruebas {
         }
         .mensaje();
         assert!(!aviso.contains(CODIGO_MFA_FALSO), "{aviso}");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // LA VERIFICACIÓN NUEVA (OTP): el flujo entero, sin red
+    //
+    // La página OTP que se usa aquí es una **reconstrucción fiel en los nombres medidos**: el título y
+    // los tres marcadores son los de la medición del 2026-10-14, y los campos son los de la librería
+    // mantenida (`mfa-code`, `embed`, `_csrf`, `fromPage`: `widget_strategy.py:142-147`). Lo que se
+    // prueba es el flujo —a dónde va el POST, con qué nombres y qué se hace con la respuesta—, no la
+    // página de Garmin, que solo se mide contra Garmin.
+    // -----------------------------------------------------------------------------------------
+
+    /// Una página OTP con **los campos de la librería mantenida**, en su orden, y sin `action` (como
+    /// la medida): el destino tiene que salir del endpoint citado, no de la página.
+    #[cfg(test)]
+    const HTML_OTP_CON_LOS_CAMPOS_DE_LA_LIBRERIA: &str =
+        r#"<html><head><title>GARMIN Authentication Application</title></head>
+<body>
+<form id="otp-form" method="post">
+  <input id="code" name="mfa-code" type="text" autocomplete="one-time-code" value="VALOR-QUE-NO-SALE">
+  <input type="hidden" name="embed" value="VALOR-QUE-NO-SALE">
+  <input type="hidden" name="_csrf" value="CSRF-DE-LA-PAGINA-OTP">
+  <input type="hidden" name="fromPage" value="VALOR-QUE-NO-SALE">
+</form>
+<p>We sent a code to your device (otp / challenge / device).</p>
+</body></html>"#;
+
+    /// El flujo que se topa con la verificación OTP: widget, acceso, la página OTP y —el paso nuevo—
+    /// el POST del código, que contesta con el ticket. Después, la API como siempre.
+    #[cfg(test)]
+    fn con_otp(pagina: &str) -> TransporteFalso {
+        rutas_de_la_api(
+            TransporteFalso::new()
+                .get_con_cookie(
+                    flujo::URL_EMBED,
+                    200,
+                    "<html><title>widget</title></html>",
+                    "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+                )
+                .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+                // El acceso: Garmin acepta las credenciales y pide la verificación NUEVA.
+                .post(flujo::URL_SIGNIN, 200, pagina, Vec::new())
+                // El código: vale, y llega el ticket.
+                .post(flujo::URL_MFA, 200, HTML_EXITO, Vec::new())
+                .post(
+                    flujo::URL_TOKEN_DI,
+                    200,
+                    r#"{"access_token":"TOKEN-DI-FALSO","expires_in":3600}"#,
+                    Vec::new(),
+                ),
+        )
+    }
+
+    #[test]
+    fn sin_codigo_la_pagina_otp_para_con_codigo_5_y_no_pide_nada_mas() {
+        // El paso que importa: la página OTP se DETECTA (código 5, con la instrucción del código) y
+        // **no se intenta ningún POST**: sin código no hay nada que entregar.
+        let t = con_otp(HTML_OTP_CON_LOS_CAMPOS_DE_LA_LIBRERIA);
+        let fallo = medir_sin_mfa(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
+        let m = fallo.mensaje();
+        assert!(m.contains("GARMIN_CODIGO_MFA"), "{m}");
+        assert!(m.contains("verificación por código de un solo uso"), "{m}");
+        // Y el paso de red NO se dio: ninguna petición al endpoint del código.
+        assert_eq!(t.veces_pedido("verifyMFA"), 0, "sin código no hay POST");
+        // El flujo hizo los deberes hasta ahí, y ni uno más: widget + acceso + POST del acceso = 3.
+        assert_eq!(t.pedidas().len(), 3, "pasos de red");
+    }
+
+    #[test]
+    fn con_codigo_el_flujo_entero_pasa_la_verificacion_otp_y_llega_al_ticket() {
+        let t = con_otp(HTML_OTP_CON_LOS_CAMPOS_DE_LA_LIBRERIA);
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let resumen = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .expect("con el código puesto el flujo tiene que llegar al final");
+
+        // Llegó de verdad: el recuento de la API está (el ticket se cambió y la API contestó).
+        assert!(resumen.contains("actividades"), "{resumen}");
+        // El POST del código se dio UNA vez, al endpoint citado de las librerías mantenidas.
+        assert_eq!(t.veces_pedido("verifyMFA"), 1);
+        let del_codigo = t
+            .pedidas()
+            .into_iter()
+            .find(|p| p.url == flujo::URL_MFA)
+            .expect("el POST de la verificación OTP se hizo");
+        // **Los NOMBRES de los campos: exactamente los de garth** (`widget_strategy.py:142-147`), en
+        // el orden de la página y sin inventar ni uno.
+        assert_eq!(
+            del_codigo.nombres_de_lo_que_envia(),
+            vec!["mfa-code", "embed", "_csrf", "fromPage"]
+        );
+        // El `embed` y el `fromPage` con los literales de la librería (no la cadena vacía).
+        let cuerpo = del_codigo.cuerpo.as_ref().unwrap().expuesto();
+        assert!(cuerpo.contains("embed=true"), "{cuerpo}");
+        assert!(cuerpo.contains("fromPage=setupEnterMfaCode"), "{cuerpo}");
+        // Y el `_csrf` es **el de la página del OTP**, no el del acceso (`widget_strategy.py:101`).
+        assert!(cuerpo.contains("CSRF-DE-LA-PAGINA-OTP"), "{cuerpo}");
+        assert!(!cuerpo.contains("CSRF-DE-PRUEBA"), "el `_csrf` del acceso: {cuerpo}");
+        // El `Content-Type` del formulario sobrevive y el `Referer` se AÑADE (la lección del 500).
+        assert!(del_codigo
+            .cabeceras
+            .iter()
+            .any(|(k, v)| k == "Content-Type" && v == "application/x-www-form-urlencoded"));
+        assert!(del_codigo
+            .cabeceras
+            .iter()
+            .any(|(k, v)| k == "Referer" && v == flujo::URL_SIGNIN));
+        // El número de pasos: **29**, que son los 28 del flujo normal más el POST del código (el
+        // mismo que añade el flujo con MFA). El POST del acceso no se duplica: el cuerpo de su
+        // respuesta vive y muere dentro del paso, que es justo por lo que el paso del OTP se hace ahí.
+        assert_eq!(t.veces_pedido(flujo::URL_SIGNIN), 2, "un GET y UN POST del acceso");
+        assert_eq!(t.pedidas().len(), 29, "pasos de red");
+    }
+
+    #[test]
+    fn la_pagina_medida_del_dueno_para_con_codigo_7_y_no_manda_ningun_post() {
+        // EL CASO REAL, medido el 2026-10-14: la página del dueño trae `otp`, `_csrf`, `deviceId` y
+        // `challenge`, y `deviceId`/`challenge` los genera la página. **No se manda nada**: un POST al
+        // que le faltan campos quemaría un código de un solo uso. Se para con el código 7 y se dice
+        // cuáles faltan.
+        let t = con_otp(HTML_OTP_MEDIDA);
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let fallo = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        for nombre in ["deviceId", "challenge"] {
+            assert!(m.contains(nombre), "falta el nombre «{nombre}»: {m}");
+        }
+        assert!(m.contains("no se ha intentado ningún POST"), "{m}");
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
+        // Y de verdad no se intentó: ni una petición al endpoint del código, y los 3 pasos de antes.
+        assert_eq!(t.veces_pedido("verifyMFA"), 0, "no se puede mandar el POST a ciegas");
+        assert_eq!(t.pedidas().len(), 3, "pasos de red");
+    }
+
+    #[test]
+    fn el_destino_del_codigo_es_la_ruta_de_la_pagina_y_si_no_la_hay_el_de_la_libreria() {
+        // (a) La página declara su `action`: manda la página (el destino del navegador de Garmin).
+        let con_action = r#"<html><title>GARMIN Authentication Application</title>
+<form action="/sso/mfa/challenge/enterCode" method="post"><input name="otp"></form>
+<p>otp challenge device</p></html>"#;
+        assert_eq!(
+            flujo::destino_del_otp(con_action),
+            "https://sso.garmin.com/sso/mfa/challenge/enterCode"
+        );
+        // (b) Sin `action` (la medición): el endpoint citado de las librerías mantenidas.
+        let sin_action = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp"></form><p>otp challenge device</p></html>"#;
+        assert_eq!(flujo::destino_del_otp(sin_action), flujo::URL_MFA);
+        assert_eq!(flujo::URL_MFA, "https://sso.garmin.com/sso/verifyMFA/loginEnterMfaCode");
+        // (c) Un `action` con consulta (donde van los tokens) no se copia: se cae la consulta.
+        let con_consulta = r#"<html><title>GARMIN Authentication Application</title>
+<form action="/sso/mfa/enterCode?ticket=ST-VALOR-QUE-NO-SALE" method="post"><input name="otp"></form>
+<p>otp challenge device</p></html>"#;
+        let destino = flujo::destino_del_otp(con_consulta);
+        assert_eq!(destino, "https://sso.garmin.com/sso/mfa/enterCode");
+        assert!(!destino.contains("ST-VALOR-QUE-NO-SALE"), "{destino}");
+    }
+
+    #[test]
+    fn el_codigo_del_otp_no_aparece_en_ningun_mensaje_ni_en_el_rastro() {
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+
+        // (a) El flujo entero por OTP: ni el resumen ni el rastro pueden traerlo.
+        let t = con_otp(HTML_OTP_CON_LOS_CAMPOS_DE_LA_LIBRERIA);
+        let rastro = Rastro::recogiendo(&t);
+        let resumen = medir(
+            &rastro,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .expect("el flujo por OTP llega al final");
+        let dicho = rastro.texto();
+        assert!(!resumen.contains(CODIGO_MFA_FALSO), "salió en el resumen");
+        assert!(!dicho.contains(CODIGO_MFA_FALSO), "salió en el rastro: {dicho}");
+        // El rastro SÍ dice que el paso se dio, con los NOMBRES de lo que envió y su destino.
+        assert!(dicho.contains("LA VERIFICACIÓN OTP"), "{dicho}");
+        assert!(dicho.contains("mfa-code"), "{dicho}");
+        assert!(dicho.contains(flujo::URL_MFA), "{dicho}");
+        // El código sí va en el cuerpo del POST —es su sitio— pero no por el `Debug` de la petición.
+        let del_codigo = t
+            .pedidas()
+            .into_iter()
+            .find(|p| p.url == flujo::URL_MFA)
+            .expect("el POST del código se hizo");
+        assert!(del_codigo
+            .cuerpo
+            .as_ref()
+            .unwrap()
+            .expuesto()
+            .contains(CODIGO_MFA_FALSO));
+        assert!(!format!("{del_codigo:?}").contains(CODIGO_MFA_FALSO));
+        for p in t.pedidas() {
+            assert!(
+                !format!("{p:?}").contains(CODIGO_MFA_FALSO),
+                "salió por el Debug de una petición"
+            );
+        }
+
+        // (b) El caso REAL (el hueco): el mensaje del código 7 tampoco puede traerlo.
+        let t2 = con_otp(HTML_OTP_MEDIDA);
+        let fallo = medir(
+            &t2,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .unwrap_err();
+        assert!(!fallo.mensaje().contains(CODIGO_MFA_FALSO), "{}", fallo.mensaje());
+
+        // (c) Y el aviso del código 5 del OTP, que es el que más se va a leer.
+        let aviso = Fallo::VerificacionOtpRequerida {
+            campos: vec!["otp".into(), "_csrf".into(), "deviceId".into(), "challenge".into()],
+            sin_relleno: vec!["deviceId".into(), "challenge".into()],
+        }
+        .mensaje();
+        assert!(!aviso.contains(CODIGO_MFA_FALSO), "{aviso}");
+        // El aviso del OTP y el del MFA comparten las líneas del código: una sola redacción.
+        let del_mfa = Fallo::MfaRequerido {
+            metodo: "email".into(),
+        }
+        .mensaje();
+        for linea in [
+            "GARMIN_CODIGO_MFA",
+            "read -s -p",
+            "NO se guarda y NO se imprime",
+        ] {
+            assert!(aviso.contains(linea), "falta «{linea}» en el aviso del OTP: {aviso}");
+            assert!(del_mfa.contains(linea), "falta «{linea}» en el aviso del MFA: {del_mfa}");
+        }
     }
 
     #[test]

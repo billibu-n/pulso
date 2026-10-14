@@ -128,6 +128,34 @@ pulso en reposo.** Los días que bajan a 67-71 son sus días suaves, no su repos
 despierto**, y coincide con lo que da la báscula de Huawei. **El 48 es el de Garmin, dormido.** Los dos
 son ciertos y **no son el mismo dato**.
 
+### VERIFICADO DESPUÉS: y hay un CUARTO valor, que es el que más va a aparecer
+
+La ronda del motor de avisos encontró un campo que este documento no tenía, y **lo comprobé yo**:
+
+```
+`resting_heart_rate` .......... 1.577 apariciones en TimeInZone + 102 en UserProfile
+  valor ........................ SIEMPRE 52
+  ¿en el mensaje `Session`? .... 0 de 102 ficheros
+```
+
+**Y ese «0 de 102» es la clave**: **no es una medida de cada sesión, es un valor de PERFIL** que el reloj
+**escribe otra vez en cada vuelta**. Un número repetido 1.679 veces **no es una serie** — y sin serie
+**no hay «subida del 10 %» que medir**. La regla del cliente sigue sin poder aplicarse, pero **por el
+motivo correcto**: no es que el dato falte, es que **está pero no varía**.
+
+**Y ahora son CUATRO valores con el mismo nombre**, que es exactamente el problema de AU-88:
+
+| valor | de dónde | qué es |
+|---|---|---|
+| **52** | **el perfil de Garmin, escrito en cada vuelta** | el que el reloj va a enseñar |
+| **48** | medido en este proyecto (sueño, Garmin) | el más bajo de todos |
+| **71** | medición suelta de Huawei, despierto | su pulso más bajo despierto |
+| *(90 de mediana)* | **el mínimo durante el entrenamiento** | lo que se ve entrenando |
+
+**Ninguno se va a usar como umbral**, y esa es la decisión: los cuatro se **enseñan con su nombre y su
+origen**, y la comparación es **cada día consigo mismo**. **Un dato que no varía no puede avisar de un
+cambio** — y decirlo es más útil que inventar un aviso que salta por azar.
+
 ### Los TRES datos, separados con nombres distintos
 
 | nombre | qué es | valor | de dónde | ¿sirve? |

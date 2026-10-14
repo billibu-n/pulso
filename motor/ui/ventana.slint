@@ -279,7 +279,15 @@ component Contenido inherits VerticalLayout {
                     wrap: word-wrap;
                 }
                 Text {
-                    text: root.vacio; font-size: 13px;
+                    // 12 Y NO 13, Y LO MANDA LA ESPECIFICACION (§3.8: «el recuento: 12 px (era 13: se
+                    // corrige a label)»). Era la incoherencia que quedaba abierta, y estaba A LA VISTA:
+                    // **medido el 2026-10-14 con los datos reales**, a 13 px este texto («102 sesiones ·
+                    // 549842 lecturas · 1259082 intervalos de HRV») parte en DOS lineas de 18 px, y la
+                    // tarjeta tiene **52 de alto FIJO** (§3.8), asi que la segunda linea se salia por
+                    // debajo del borde: en la captura se veia «HRV» fuera de la tarjeta. A 12 px cabe en
+                    // UNA linea y el texto entra dentro de los 52. Lo vigila
+                    // `el_recuento_del_periodo_cabe_en_el_alto_52_de_la_tarjeta`.
+                    text: root.vacio; font-size: 12px;
                     color: root.oscuro ? Oscuro.muted : Claro.muted;
                     // Y ESTA LINEA TIENE QUE PODER PARTIRSE, y no es un adorno: es lo que hace que el
                     // margen de 16 sea POSIBLE. Medido el 2026-10-14: sin `wrap`, este texto (que es el
@@ -365,41 +373,55 @@ component Datos inherits VerticalLayout {
 
     spacing: 10px;
 
-    Text {
-        text: "Sus datos";
-        font-size: 15px; font-weight: 700;
-        color: root.oscuro ? Oscuro.fg : Claro.fg;
+    // CADA FILA CON SU `Bloque`, COMO EN EL RESUMEN, Y AQUI HUBO UN DEFECTO DE VERDAD (2026-10-14):
+    // esta seccion se colocaba entera como hija del armazon, **sin envoltorio**, y como el margen
+    // lateral lo entrega `Bloque` -- el armazon NO lo pone, porque dentro del `ScrollView` un relleno
+    // hace que el `ScrollView` pinte su barra horizontal --, la seccion no tenia margen NINGUNO:
+    // **medido, sus textos empezaban en x = 0 y su columna derecha acababa en x = 411**, o sea texto
+    // pegado a los DOS bordes de la pantalla. No se habia visto porque solo se medía el PRIMER bloque
+    // del Resumen. Lo vigilan `todos_los_bloques_del_contenido_llevan_el_margen_de_16` (AU-95:
+    // portero global, no lista) y `ningun_bloque_del_contenido_se_salta_el_envoltorio_bloque`.
+    Bloque {
+        Text {
+            text: "Sus datos";
+            font-size: 15px; font-weight: 700;
+            color: root.oscuro ? Oscuro.fg : Claro.fg;
+        }
     }
     // UNA linea, y dice lo unico que hay que saber antes de escribir: que dejarlo vacio es una
     // respuesta valida y significa «no lo sé».
-    Text {
-        text: "Lo que ningún aparato puede saber. Un campo vacío es «no lo sé», no un cero.";
-        font-size: 11px;
-        wrap: word-wrap;
-        color: root.oscuro ? Oscuro.muted : Claro.muted;
+    Bloque {
+        Text {
+            text: "Lo que ningún aparato puede saber. Un campo vacío es «no lo sé», no un cero.";
+            font-size: 11px;
+            wrap: word-wrap;
+            color: root.oscuro ? Oscuro.muted : Claro.muted;
+        }
     }
 
     // LOS CAMPOS, en dos columnas: a la izquierda los del corazon y el esfuerzo, a la derecha los de
     // la bascula. Es la agrupacion que el cliente ya usa al hablar de sus datos, y ademas hace que
     // los diez quepan sin desplazar la pantalla.
-    HorizontalLayout {
-        spacing: 10px;
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 8px;
-            Campo { etiqueta: "Edad"; identificador: "datos-edad"; pista: "años"; texto <=> root.campos.edad; oscuro: root.oscuro; }
-            Campo { etiqueta: "Pulso en reposo"; identificador: "datos-pulso_reposo"; pista: "ppm, durmiendo"; texto <=> root.campos.pulso_reposo; oscuro: root.oscuro; }
-            Campo { etiqueta: "Pulso máximo"; identificador: "datos-pulso_maximo_medido"; pista: "ppm, medido"; texto <=> root.campos.pulso_maximo_medido; oscuro: root.oscuro; }
-            Campo { etiqueta: "Umbral de lactato"; identificador: "datos-umbral_lactato"; pista: "ppm, de una prueba"; texto <=> root.campos.umbral_lactato; oscuro: root.oscuro; }
-            Campo { etiqueta: "VO₂ máximo"; identificador: "datos-vo2_maximo"; pista: "ml/kg/min"; texto <=> root.campos.vo2_maximo; oscuro: root.oscuro; }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 8px;
-            Campo { etiqueta: "Peso"; identificador: "datos-peso_kg"; pista: "kg"; texto <=> root.campos.peso_kg; oscuro: root.oscuro; }
-            Campo { etiqueta: "Altura"; identificador: "datos-altura_cm"; pista: "cm"; texto <=> root.campos.altura_cm; oscuro: root.oscuro; }
-            Campo { etiqueta: "Grasa corporal"; identificador: "datos-grasa_corporal_pct"; pista: "%"; texto <=> root.campos.grasa_corporal_pct; oscuro: root.oscuro; }
-            Campo { etiqueta: "Masa muscular"; identificador: "datos-masa_muscular_kg"; pista: "kg"; texto <=> root.campos.masa_muscular_kg; oscuro: root.oscuro; }
+    Bloque {
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 8px;
+                Campo { etiqueta: "Edad"; identificador: "datos-edad"; pista: "años"; texto <=> root.campos.edad; oscuro: root.oscuro; }
+                Campo { etiqueta: "Pulso en reposo"; identificador: "datos-pulso_reposo"; pista: "ppm, durmiendo"; texto <=> root.campos.pulso_reposo; oscuro: root.oscuro; }
+                Campo { etiqueta: "Pulso máximo"; identificador: "datos-pulso_maximo_medido"; pista: "ppm, medido"; texto <=> root.campos.pulso_maximo_medido; oscuro: root.oscuro; }
+                Campo { etiqueta: "Umbral de lactato"; identificador: "datos-umbral_lactato"; pista: "ppm, de una prueba"; texto <=> root.campos.umbral_lactato; oscuro: root.oscuro; }
+                Campo { etiqueta: "VO₂ máximo"; identificador: "datos-vo2_maximo"; pista: "ml/kg/min"; texto <=> root.campos.vo2_maximo; oscuro: root.oscuro; }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 8px;
+                Campo { etiqueta: "Peso"; identificador: "datos-peso_kg"; pista: "kg"; texto <=> root.campos.peso_kg; oscuro: root.oscuro; }
+                Campo { etiqueta: "Altura"; identificador: "datos-altura_cm"; pista: "cm"; texto <=> root.campos.altura_cm; oscuro: root.oscuro; }
+                Campo { etiqueta: "Grasa corporal"; identificador: "datos-grasa_corporal_pct"; pista: "%"; texto <=> root.campos.grasa_corporal_pct; oscuro: root.oscuro; }
+                Campo { etiqueta: "Masa muscular"; identificador: "datos-masa_muscular_kg"; pista: "kg"; texto <=> root.campos.masa_muscular_kg; oscuro: root.oscuro; }
+            }
         }
     }
 
@@ -415,34 +437,38 @@ component Datos inherits VerticalLayout {
     //
     // El `ComboBox` si deja: se le da el `model` y se lee y escribe `current-index`. Y para TRES
     // opciones excluyentes es ademas lo que la norma pide: **una accion, una forma**.
-    ComboBox {
-        accessible-id: "datos-sexo";
-        model: ["No lo sé", "Femenino", "Masculino"];
-        current-index: root.campos.sexo;
-        // El callback entrega el TEXTO, y nuestro campo es un indice: se traduce aqui, que es donde
-        // esta la lista. Traducir en Rust obligaria a que Rust conociera los rotulos de la pantalla.
-        selected(t) => {
-            root.campos.sexo = t == "Femenino" ? 1 : (t == "Masculino" ? 2 : 0);
+    Bloque {
+        ComboBox {
+            accessible-id: "datos-sexo";
+            model: ["No lo sé", "Femenino", "Masculino"];
+            current-index: root.campos.sexo;
+            // El callback entrega el TEXTO, y nuestro campo es un indice: se traduce aqui, que es donde
+            // esta la lista. Traducir en Rust obligaria a que Rust conociera los rotulos de la pantalla.
+            selected(t) => {
+                root.campos.sexo = t == "Femenino" ? 1 : (t == "Masculino" ? 2 : 0);
+            }
         }
     }
 
     // GUARDAR. El boton va dentro de un marco nuestro por lo mismo que los campos, y esta medido: en
     // el tema negro el borde de serie del boton da **1,14:1** y **no se ve** -- un boton sin contorno,
     // sobre negro, parece un rotulo.
-    Rectangle {
-        border-width: 2px;
-        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-        border-radius: 8px;
-        height: self.preferred-height;
-        VerticalLayout {
-            // El hueco entre el borde y el boton lo pone el `padding`, no una cuenta.
-            padding: 2px;
-            Button {
-                accessible-id: "datos-guardar";
-                height: max(48px, self.preferred-height);
-                text: "Guardar mis datos";
-                primary: true;
-                clicked => { root.guardar(); }
+    Bloque {
+        Rectangle {
+            border-width: 2px;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            border-radius: 8px;
+            height: self.preferred-height;
+            VerticalLayout {
+                // El hueco entre el borde y el boton lo pone el `padding`, no una cuenta.
+                padding: 2px;
+                Button {
+                    accessible-id: "datos-guardar";
+                    height: max(48px, self.preferred-height);
+                    text: "Guardar mis datos";
+                    primary: true;
+                    clicked => { root.guardar(); }
+                }
             }
         }
     }
@@ -450,51 +476,59 @@ component Datos inherits VerticalLayout {
     // LO QUE PASO AL GUARDAR, en una linea: o se guardo, o se dice que campo esta mal. **Un numero mal
     // escrito no se traga en silencio**: guardar un cero donde el usuario no escribio nada seria un
     // dato falso con buena cara, que es justo lo que este proyecto no hace.
-    Text {
-        accessible-id: "datos-mensaje";
-        text: root.mensaje;
-        font-size: 12px;
-        wrap: word-wrap;
-        color: root.error
-            ? (root.oscuro ? Oscuro.aviso : Claro.aviso)
-            : (root.oscuro ? Oscuro.ok : Claro.ok);
+    Bloque {
+        Text {
+            accessible-id: "datos-mensaje";
+            text: root.mensaje;
+            font-size: 12px;
+            wrap: word-wrap;
+            color: root.error
+                ? (root.oscuro ? Oscuro.aviso : Claro.aviso)
+                : (root.oscuro ? Oscuro.ok : Claro.ok);
+        }
     }
 
     // DONDE VIVEN SUS DATOS, y no es un detalle: el dueño decidio que el fichero viaje JUNTO AL
     // PROGRAMA, y si no se pudo escribir ahi hay que decirlo, porque el usuario tiene derecho a saber
     // donde estan sus datos.
-    Text {
-        accessible-id: "datos-ruta";
-        text: root.ruta;
-        font-size: 11px;
-        wrap: word-wrap;
-        color: root.oscuro ? Oscuro.muted : Claro.muted;
+    Bloque {
+        Text {
+            accessible-id: "datos-ruta";
+            text: root.ruta;
+            font-size: 11px;
+            wrap: word-wrap;
+            color: root.oscuro ? Oscuro.muted : Claro.muted;
+        }
     }
 
     // BUSCAR SUS FICHEROS. Es EL ATAJO QUE MAS VALE: sin cuenta, ni permiso, ni internet, porque sus
     // datos ya estan en su equipo. Abre la capa del selector, que se dibuja sobre la ventana entera.
-    Rectangle {
-        border-width: 2px;
-        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-        border-radius: 8px;
-        height: self.preferred-height;
-        VerticalLayout {
-            padding: 2px;
-            Button {
-                accessible-id: "datos-buscar";
-                height: max(48px, self.preferred-height);
-                text: "Buscar mis ficheros";
-                clicked => { root.abrir-selector(); }
+    Bloque {
+        Rectangle {
+            border-width: 2px;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            border-radius: 8px;
+            height: self.preferred-height;
+            VerticalLayout {
+                padding: 2px;
+                Button {
+                    accessible-id: "datos-buscar";
+                    height: max(48px, self.preferred-height);
+                    text: "Buscar mis ficheros";
+                    clicked => { root.abrir-selector(); }
+                }
             }
         }
     }
 
     // EL TEMA. Manda SIEMPRE el nuestro, nunca el del sistema (ver `Palette` en la raiz), y este es
     // el mando: cambiar de tema es cambiar UNA propiedad.
-    Switch {
-        accessible-id: "datos-tema";
-        checked <=> root.oscuro;
-        text: "Tema oscuro";
+    Bloque {
+        Switch {
+            accessible-id: "datos-tema";
+            checked <=> root.oscuro;
+            text: "Tema oscuro";
+        }
     }
 }
 
@@ -568,9 +602,20 @@ export component Ventana inherits Window {
     // la aplicacion**, y en el telefono no existe. Enseñarla en el escritorio hace que la ventana
     // parezca un programa a medio hacer -- y ademas come 30 px de alto.
     no-frame: true;
+    // EL TAMANO DE LA VENTANA ES UNA PROPIEDAD, NO UN LITERAL (2026-10-14), y no es para «poder
+    // redimensionar»: es para poder **MEDIR EL ARMAZON DE ESCRITORIO** (AU-63). Medido el
+    // 2026-10-14: `Window::set_size` (desde Rust) **no cambia la geometria** -- la ventana dice
+    // 1280 x 800 y la raiz sigue midiendo 411, porque manda este binding--, asi que con el tamano
+    // clavado el armazon de escritorio **no se podia medir de ninguna manera**: `es_movil` era
+    // cierto siempre y la rama del riel no llegaba a existir en el arbol. Con la propiedad, la
+    // prueba pone 1280 x 800 y mide **la misma rama que usa la aplicacion**.
+    // EL VALOR POR DEFECTO ES EL CONTRATO (doc:43, AU-93): `cargo run` sigue abriendo el telefono
+    // de 411 x 880, y por eso la ventana sigue siendo de tamano FIJO.
+    in-out property <length> ancho_ventana: Medidas.ancho;
+    in-out property <length> alto_ventana: Medidas.alto;
     // Las medidas vienen del armazon (AU-67: un valor, un sitio).
-    width: Medidas.ancho;
-    height: Medidas.alto;
+    width: root.ancho_ventana;
+    height: root.alto_ventana;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
 
     // La unica decision de reparto: ¿cabe el riel?
@@ -626,6 +671,10 @@ export component Ventana inherits Window {
 
     if !root.es_movil : ArmazonEscritorio {
         oscuro: root.oscuro;
+        // EL TAMANO DE LA VENTANA, que lo sabe la ventana: el armazon de escritorio OCUPA la ventana
+        // (medido: antes medía 411 x 880 y salia centrado dentro de una ventana de 1280).
+        ancho_ventana: root.ancho_ventana;
+        alto_ventana: root.alto_ventana;
         // Lo mismo en escritorio: el riel escribe la seccion en la que estas (doc:145).
         titulo: root.las_secciones[root.seccion_activa].nombre;
         secciones: root.las_secciones;

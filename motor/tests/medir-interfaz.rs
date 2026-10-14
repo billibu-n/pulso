@@ -22,6 +22,14 @@ use i_slint_backend_testing::ElementQuery;
 
 fn ventana_de_prueba() -> Ventana {
     i_slint_backend_testing::init_no_event_loop();
+    otra_ventana()
+}
+
+/// La MISMA ventana con datos, sin inicializar la plataforma. Existe porque hay quien necesita
+/// **varias ventanas en la misma prueba** -- las secciones del contenido se miden una a una -- y
+/// `init_no_event_loop` solo se puede llamar **una vez por hilo**: la segunda vez **panica**, y lo dice
+/// literal («platform already initialized», medido el 2026-10-14).
+fn otra_ventana() -> Ventana {
     let v = Ventana::new().expect("la ventana tiene que construirse");
     v.set_cifras(
         vec!["169±3".into(), "183".into(), "0,98".into(), "+9,7".into()]
@@ -47,6 +55,9 @@ fn ventana_de_prueba() -> Ventana {
     v.set_precision("precision alta".into());
     v.set_aviso("deriva +9,7 %".into());
     v.set_vacio("102 sesiones".into());
+    // EL PERIODO, que en la pantalla real esta: es la linea que da sentido a la tarjeta de 52 (§3.8) y
+    // la que hace que el bloque se pueda NOMBRAR en un fallo (lleva `accessible-id: "periodo"`).
+    v.set_periodo("Análisis del 2026-05-02 al 2026-10-11".into());
     // La ventana de prueba representa el estado CON datos. Su contrario se prueba aparte.
     v.set_puede(true);
     v
@@ -91,6 +102,9 @@ mod doc {
     pub const HUECO: f64 = 14.0;
     /// doc:182 · alto del contenido: 880 - 64 - 80 = 736, declarado como MINIMO (AU-93).
     pub const ALTO_CONTENIDO: f64 = 736.0;
+    /// doc:130 · el riel del armazon de ESCRITORIO: 176. Y el corte que elige armazon: 900.
+    pub const RIEL: f64 = 176.0;
+    pub const CORTE: f64 = 900.0;
     /// doc:161 · el reparto del contrato: 411 / 4 = **102,75** por hueco. Es el numero que manda el
     /// contrato; con el aire que el propio contrato pide (doc:169), cada hueco queda en 97,75 (ver
     /// `HUECO_NAV_REAL`), y las dos cifras se comprueban.
@@ -727,6 +741,500 @@ fn el_primer_bloque_del_contenido_empieza_con_el_margen_de_16() {
     }
 }
 
+// ==================================================================================================
+// AU-95 · EL PORTERO DE MARGENES ES GLOBAL, NO UNA LISTA (2026-10-14)
+// ==================================================================================================
+//
+// POR QUE ESTAS PRUEBAS EXISTEN, y es la leccion que dejo la de arriba: `el_primer_bloque_...` mide
+// **UN** bloque -- la tarjeta del periodo, que ademas es la que todo el mundo mira -- y de los otros
+// **SUPONE** que llevan el margen porque los envuelve el mismo componente. Suponer no es medir
+// (AU-63), y la suposicion se paga: medido el 2026-10-14, la seccion **«Datos»** no usa el envoltorio
+// `Bloque` -- se coloca entera como hija del armazon --, asi que su texto empieza en **x = 0** y su
+// columna derecha acaba en **x = 411**: **toca los dos bordes de la pantalla**. La prueba de un solo
+// bloque no lo podia ver.
+//
+// LA REGLA, y es AU-95: el margen del contenido es un **PORTERO GLOBAL**. No se enumeran bloques -- una
+// lista se queda corta el dia que alguien añade un bloque y nadie se acuerda de actualizarla --: se
+// recorre **TODO el arbol visible** del contenido, de forma **recursiva**, y se le exige a **cada**
+// elemento que caiga dentro del margen: **x >= 16** y **x + ancho <= 395** (411 - 16). Asi cualquier
+// bloque nuevo **nace vigilado**.
+
+/// El ANDAMIAJE: lo que sostiene a los bloques y por eso si llega a los bordes del contenido.
+///
+/// **Y ESTO NO ES UNA LISTA DE BLOQUES** (AU-95): son los CONTENEDORES y el AIRE, cada uno con su
+/// motivo, y se reconocen **por su forma** (medir el ancho ENTERO del contenido) **y por su tipo**
+/// (contenedor). Un bloque de verdad no cae aqui: el dia que alguien escriba una fila sin `Bloque`,
+/// su tipo no es el de un contenedor y **salta el portero** (es exactamente lo que pasaba en «Datos»).
+///
+/// Se exigen LAS DOS COSAS a la vez, y no es un detalle: el ancho entero solo no basta, porque **un
+/// texto a sangre completa tambien mide el ancho entero** -- y ese es justo el defecto que hay que
+/// cazar. Y el tipo solo tampoco basta: un `VerticalLayout` de dentro de un bloque es un contenedor,
+/// pero **no** mide el ancho del contenido y por eso **si** pasa por el portero.
+fn es_andamiaje(e: &i_slint_backend_testing::ElementHandle, cx: f64, cancho: f64) -> bool {
+    let p = e.absolute_position();
+    let t = e.size();
+    let (x, w, h) = (f64::from(p.x), f64::from(t.width), f64::from(t.height));
+    let tipo = e.type_name().map(|s| s.to_string()).unwrap_or_default();
+    let a_sangre_completa = (x - cx).abs() < 0.5 && (w - cancho).abs() < 0.5;
+    // 1. El CONTENEDOR: el `ScrollView` (movil), su `Flickable`, el layout que lleva el aire y los
+    //    bloques, y la raiz de la seccion (`Contenido`, `Datos`). Su caja es la del contenido entero.
+    let contenedor = matches!(
+        tipo.as_str(),
+        "" | "ScrollView" | "Flickable" | "VerticalLayout" | "HorizontalLayout" | "Contenido" | "Datos"
+    );
+    // 2. El ENVOLTORIO `Bloque`: mide el ancho entero A PROPOSITO, porque **sus dos huecos de 16 son
+    //    HIJOS suyos** -- asi el `ScrollView` no ve un contenido de 443 donde caben 411, que es lo que
+    //    le hace pintar la barra horizontal. Lo que se mide del bloque es lo que lleva DENTRO, y eso
+    //    pasa por el portero como cualquier otra cosa.
+    let envoltorio = tipo == "Bloque";
+    // 3. El AIRE de arriba y de abajo del contenido: es del armazon (dos `Rectangle` de exactamente
+    //    `Medidas.margen` de alto, del ancho del contenido) y va en los EXTREMOS, no en los lados.
+    let aire = tipo == "Rectangle" && (h - doc::MARGEN).abs() < 0.5 && a_sangre_completa;
+    // 4. El HUECO lateral de un bloque, que ES el margen: mide `Medidas.margen` de ancho y esta pegado
+    //    al borde del contenido (el de la izquierda empieza en el, el de la derecha acaba en el).
+    //    Medido el 2026-10-14: sin esta linea, el portero acusaba a los **12** huecos derechos de los
+    //    seis bloques del Resumen -- o sea, acusaba al propio margen de no tener margen. Un elemento
+    //    de exactamente 16 pegado al borde es el margen, y no hay otra cosa que pueda serlo.
+    let hueco = tipo == "Rectangle"
+        && (w - doc::MARGEN).abs() < 0.5
+        && ((x - cx).abs() < 0.5 || (x + w - (cx + cancho)).abs() < 0.5);
+    (a_sangre_completa && (contenedor || envoltorio || aire)) || hueco
+}
+
+/// Un elemento del contenido, con lo que hace falta para nombrarlo en un fallo.
+fn como_se_llama(e: &i_slint_backend_testing::ElementHandle) -> String {
+    match (e.type_name().map(|s| s.to_string()), e.accessible_id().map(|s| s.to_string())) {
+        (Some(t), Some(a)) if !a.is_empty() => format!("{t} «{a}»"),
+        (Some(t), _) => t,
+        _ => "(sin tipo)".to_string(),
+    }
+}
+
+/// El PORTERO (AU-95): recorre el arbol visible del contenido y devuelve, en texto, cada elemento que
+/// se sale del margen. Se devuelve la lista **entera** -- no se corta en el primero -- porque lo que
+/// hay que saber es **cuantos** y **cuales**.
+fn porteria_del_contenido(v: &Ventana, etiqueta: &str) -> (usize, Vec<String>) {
+    let todos = ElementQuery::from_root(v).find_all();
+    let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir y poder medirse");
+    let c = cont.absolute_position();
+    let t = cont.size();
+    let (cx, cy, cancho, calto) = (f64::from(c.x), f64::from(c.y), f64::from(t.width), f64::from(t.height));
+    let mut medidos = 0usize;
+    let mut faltas: Vec<String> = Vec::new();
+    for e in cont.query_descendants().find_all() {
+        let p = e.absolute_position();
+        let s = e.size();
+        let (x, y, w, h) = (f64::from(p.x), f64::from(p.y), f64::from(s.width), f64::from(s.height));
+        // Sin caja no hay nada que medir (los elementos que el backend devuelve con 0 x 0 son
+        // envoltorios sin geometria propia).
+        if w <= 0.0 || h <= 0.0 {
+            continue;
+        }
+        // Solo lo que se ve DENTRO del contenido: lo que el desplazamiento deja fuera no se mide.
+        if y + h <= cy + 0.5 || y >= cy + calto - 0.5 {
+            continue;
+        }
+        if es_andamiaje(&e, cx, cancho) {
+            continue;
+        }
+        medidos += 1;
+        let izq = x - cx;
+        let der = (cx + cancho) - (x + w);
+        if izq < doc::MARGEN - 0.5 || der < doc::MARGEN - 0.5 {
+            faltas.push(format!(
+                "{} mide {w:.1}x{h:.1} en ({x:.1},{y:.1}): deja {izq:.1} a la izquierda y {der:.1} a la \
+                 derecha",
+                como_se_llama(&e)
+            ));
+        }
+    }
+    println!("  {etiqueta}: {medidos} elementos medidos (el andamiaje no cuenta), {} fuera del margen", faltas.len());
+    (medidos, faltas)
+}
+
+/// EL PORTERO, aplicado a TODAS las secciones del contenido del movil (411 x 880).
+fn portero_en_todas_las_secciones(secciones: &[(i32, &str)]) -> Vec<String> {
+    i_slint_backend_testing::init_no_event_loop();
+    let mut faltas: Vec<String> = Vec::new();
+    for (cual, nombre) in secciones {
+        let v = otra_ventana();
+        v.set_seccion_activa(*cual);
+        let (medidos, suyas) = porteria_del_contenido(&v, &format!("seccion «{nombre}»"));
+        assert!(medidos > 0, "la seccion «{nombre}» no enseña nada que medir: la prueba no estaria midiendo");
+        for f in suyas {
+            faltas.push(format!("seccion «{nombre}»: {f}"));
+        }
+    }
+    faltas
+}
+
+#[test]
+fn todos_los_bloques_del_contenido_llevan_el_margen_de_16() {
+    // AU-95: portero global, no lista. TODO elemento visible del contenido -- de cualquier seccion --
+    // tiene que caer dentro de [16, 395]. Un bloque nuevo no hay que apuntarlo en ningun sitio.
+    let faltas = portero_en_todas_las_secciones(&[(0, "Resumen"), (1, "Zonas"), (2, "Sesiones"), (3, "Datos")]);
+    assert!(
+        faltas.is_empty(),
+        "hay {} elementos del contenido fuera del margen de 16 (doc:180) y x + ancho <= 395 \
+         (411 - 16):\n  - {}",
+        faltas.len(),
+        faltas.join("\n  - ")
+    );
+    println!("  el portero (AU-95) no encuentra nada fuera del margen en las secciones del movil");
+}
+
+#[test]
+fn ningun_bloque_del_contenido_se_salta_el_envoltorio_bloque() {
+    // POR CONSTRUCCION (AU-95): el margen lo entrega el componente `Bloque` (sus dos huecos de 16), asi
+    // que **todo bloque del contenido tiene que pasar por el**. Se comprueba de dos maneras, y ninguna
+    // es una lista de bloques:
+    //   1. **nada a sangre completa fuera del andamiaje**: un hijo del contenido que se salte el
+    //      `Bloque` mide el ancho ENTERO del contenido (no hay nada que lo encoja), y eso es lo que se
+    //      caza aqui, sea texto, campo o lo que sea;
+    //   2. **el envoltorio lleva sus dos huecos**: a cada `Bloque` se le buscan los dos elementos de
+    //      `Medidas.margen` de ancho pegados a su borde izquierdo y a su borde derecho. Sin ellos el
+    //      bloque no lleva el margen, aunque su contenido quede dentro por casualidad.
+    i_slint_backend_testing::init_no_event_loop();
+    for (cual, nombre) in [(0, "Resumen"), (1, "Zonas"), (2, "Sesiones"), (3, "Datos")] {
+        let v = otra_ventana();
+        v.set_seccion_activa(cual);
+        let todos = ElementQuery::from_root(&v).find_all();
+        let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
+        let c = cont.absolute_position();
+        let t = cont.size();
+        let (cx, cancho) = (f64::from(c.x), f64::from(t.width));
+        let dentro = cont.query_descendants().find_all();
+
+        // --- 1 · nada a sangre completa que no sea andamiaje ---
+        let mut saltan: Vec<String> = Vec::new();
+        for e in dentro.iter() {
+            let p = e.absolute_position();
+            let s = e.size();
+            if f64::from(s.width) <= 0.0 || f64::from(s.height) <= 0.0 {
+                continue;
+            }
+            let a_sangre_completa = (f64::from(p.x) - cx).abs() < 0.5
+                && (f64::from(s.width) - cancho).abs() < 0.5;
+            if a_sangre_completa && !es_andamiaje(e, cx, cancho) {
+                saltan.push(como_se_llama(e));
+            }
+        }
+        assert!(
+            saltan.is_empty(),
+            "en la seccion «{nombre}» hay {} elementos que miden el ancho ENTERO del contenido y no son \
+             andamiaje: se estan saltando el envoltorio `Bloque` (AU-95: el margen, por construccion): {}",
+            saltan.len(),
+            saltan.join(", ")
+        );
+
+        // --- 2 · cada `Bloque` con sus dos huecos, pegados a sus bordes ---
+        let bloques: Vec<&i_slint_backend_testing::ElementHandle> = dentro
+            .iter()
+            .filter(|e| e.type_name().map(|s| s.to_string()).as_deref() == Some("Bloque"))
+            .collect();
+        assert!(
+            !bloques.is_empty(),
+            "la seccion «{nombre}» no tiene ni un bloque envuelto en `Bloque`: el margen no lo puede \
+             entregar nadie"
+        );
+        for b in bloques.iter() {
+            let bp = b.absolute_position();
+            let bt = b.size();
+            let (bx, by, bw, bh) = (f64::from(bp.x), f64::from(bp.y), f64::from(bt.width), f64::from(bt.height));
+            let mut izq = false;
+            let mut der = false;
+            for h in b.query_descendants().find_all() {
+                let hp = h.absolute_position();
+                let ht = h.size();
+                let (hx, hy, hw, hh) = (f64::from(hp.x), f64::from(hp.y), f64::from(ht.width), f64::from(ht.height));
+                // Un hueco: mide `Medidas.margen` de ancho y todo el alto del bloque, y esta pegado.
+                if (hw - doc::MARGEN).abs() > 0.5 || (hh - bh).abs() > 0.5 || (hy - by).abs() > 0.5 {
+                    continue;
+                }
+                if (hx - bx).abs() < 0.5 {
+                    izq = true;
+                }
+                if (hx + hw - (bx + bw)).abs() < 0.5 {
+                    der = true;
+                }
+            }
+            let dentro_de = |tipo: &str| {
+                b.query_descendants().find_all().iter().any(|e| {
+                    e.type_name().map(|s| s.to_string()).as_deref() == Some(tipo)
+                })
+            };
+            // El nombre del bloque, para que el fallo diga CUAL: se saca de lo que lleva dentro.
+            let nombre_bloque = if b
+                .query_descendants()
+                .find_all()
+                .iter()
+                .any(|e| e.accessible_id().map(|s| s.to_string()).as_deref() == Some("periodo"))
+            {
+                "el periodo y el recuento".to_string()
+            } else if dentro_de("Zona") {
+                "el grafico de zonas".to_string()
+            } else if dentro_de("Cifra") {
+                "una fila de cifras".to_string()
+            } else if dentro_de("Aviso") {
+                "un aviso".to_string()
+            } else {
+                "(bloque sin nombre conocido)".to_string()
+            };
+            println!(
+                "  seccion «{nombre}» · {nombre_bloque}: {bw:.1}x{bh:.1} en ({bx:.1},{by:.1}), hueco izq \
+                 {izq}, hueco der {der}"
+            );
+            assert!(
+                izq && der,
+                "el bloque «{nombre_bloque}» de la seccion «{nombre}» no lleva sus DOS huecos de \
+                 {:.0} pegados a sus bordes (izquierda: {izq}, derecha: {der}): la caja mide {bw:.1} en \
+                 ({bx:.1},{by:.1})",
+                doc::MARGEN
+            );
+        }
+    }
+}
+
+// ==================================================================================================
+// EL ARMAZON DE ESCRITORIO: LA RAMA QUE NO SE MEDIA (2026-10-14)
+// ==================================================================================================
+//
+// POR QUE HAY QUE MEDIRLO, y esto es lo que se encontro al hacerlo: la ventana de `cargo run` mide
+// **411 x 880** (`motor/src/bin/pulso.rs` solo hace `Ventana::new()` y `run()`: el tamano lo pone el
+// binding de la raiz), asi que `es_movil` es cierto **siempre** y el armazon de escritorio (riel de
+// 176 + contenido) **no llega a existir** en el uso normal. Y medido el 2026-10-14, tampoco estaba
+// listo para existir: con una ventana de 1280 x 800, el armazon medía **411 x 880 y salia CENTRADO**
+// (x = 434,5), o sea que el contenido tenia **235** de ancho en una ventana de 1280.
+//
+// ASI QUE ESTA PRUEBA MIDE **LA RAMA DE VERDAD**, no una copia: pone el tamano en la ventana (por la
+// propiedad `ancho_ventana`/`alto_ventana`) y comprueba la geometria del armazon de escritorio.
+// AQUI NO SE COPIA NADA: si el dia de mañana la aplicacion abre en escritorio, esta es la prueba que
+// dice si esta bien.
+
+#[test]
+fn el_armazon_de_escritorio_ocupa_la_ventana_y_sus_bloques_llevan_el_margen() {
+    // La ventana ancha del encargo: 1280 x 800. Y las dos secciones, porque las dos se dibujan aqui.
+    //
+    // Y SE COMPRUEBA QUE SIGUE SIENDO ESCRITORIO, que no es un adorno: si alguien moviera el corte por
+    // encima de 1280, esta prueba mediria EL ARMAZON DE MOVIL creyendo medir el de escritorio -- el
+    // falso OK clasico. Con esta linea, salta.
+    const ANCHO_ESCRITORIO: f64 = 1280.0;
+    assert!(
+        ANCHO_ESCRITORIO >= doc::CORTE,
+        "la ventana de esta prueba ({ANCHO_ESCRITORIO}) tiene que pasar el corte de {:.0} (doc:130): \
+         por debajo se dibuja el armazon de movil",
+        doc::CORTE
+    );
+    i_slint_backend_testing::init_no_event_loop();
+    for (cual, nombre) in [(0, "Resumen"), (1, "Zonas"), (2, "Sesiones"), (3, "Datos")] {
+        let v = otra_ventana();
+        v.set_ancho_ventana(ANCHO_ESCRITORIO as f32);
+        v.set_alto_ventana(800.0);
+        v.set_seccion_activa(cual);
+        let todos = ElementQuery::from_root(&v).find_all();
+
+        // 1 · ES EL ARMAZON DE ESCRITORIO, no el de movil: la rama se elige por el ANCHO (doc:130).
+        let tipos: Vec<String> = todos.iter().filter_map(|e| e.type_name().map(|s| s.to_string())).collect();
+        assert!(
+            tipos.iter().any(|t| t == "ArmazonEscritorio"),
+            "con {ANCHO_ESCRITORIO} de ancho (>= el corte de {:.0}) tiene que dibujarse el armazon de \
+             escritorio (es_movil = ancho < corte)",
+            doc::CORTE
+        );
+        assert!(
+            !tipos.iter().any(|t| t == "ArmazonMovil"),
+            "con 1280 de ancho NO puede dibujarse el armazon de movil: la barra de abajo y el \
+             `ScrollView` son del telefono"
+        );
+
+        // 2 · EL ARMAZON OCUPA LA VENTANA ENTERA. Medido antes de arreglarlo: medía 411 x 880 y salia
+        // centrado (x = 434,5) dentro de la ventana de 1280, con el contenido en 235 de ancho.
+        let cont = buscar(&todos, "contenido")
+            .expect("el contenido del armazon de escritorio tiene que poder medirse (AU-63)");
+        let cp = cont.absolute_position();
+        let ct = cont.size();
+        let (cx, cy, cancho, calto) = (f64::from(cp.x), f64::from(cp.y), f64::from(ct.width), f64::from(ct.height));
+        println!("  escritorio 1280x800 · contenido: ({cx:.1},{cy:.1}) {cancho:.1}x{alto:.1}", alto = calto);
+        assert!(
+            (cancho - (ANCHO_ESCRITORIO - doc::RIEL)).abs() < 1.0,
+            "en una ventana de {ANCHO_ESCRITORIO} el contenido tiene que medir {ANCHO_ESCRITORIO} - {} \
+             = {}, y mide {cancho:.1} (el armazon de escritorio NO puede quedarse clavado en los 411 \
+             del telefono)",
+            doc::RIEL,
+            ANCHO_ESCRITORIO - doc::RIEL
+        );
+        assert!(
+            (cx - doc::RIEL).abs() < 1.0,
+            "el contenido empieza donde acaba el riel ({}), y empieza en {cx:.1}",
+            doc::RIEL
+        );
+        assert!(
+            (cx + cancho - ANCHO_ESCRITORIO).abs() < 1.0,
+            "el contenido tiene que llegar al borde derecho de la ventana ({ANCHO_ESCRITORIO}), y acaba \
+             en {:.1}",
+            cx + cancho
+        );
+        assert!(
+            (cy - 0.0).abs() < 0.5 && (calto - 800.0).abs() < 1.0,
+            "el contenido tiene que ocupar el alto de la ventana (0..800), y mide ({cy:.1}..{:.1})",
+            cy + calto
+        );
+
+        // 3 · EL PORTERO (AU-95) TAMBIEN AQUI: en escritorio el margen de 16 lo sigue llevando cada
+        // bloque, no el armazon (el armazon solo pone el aire de arriba y de abajo).
+        let (medidos, faltas) = porteria_del_contenido(&v, &format!("escritorio · seccion «{nombre}»"));
+        assert!(medidos > 0, "la seccion «{nombre}» no enseña nada que medir en escritorio");
+        assert!(
+            faltas.is_empty(),
+            "en escritorio (1280x800), seccion «{nombre}», hay {} elementos fuera del margen de 16:\n  - {}",
+            faltas.len(),
+            faltas.join("\n  - ")
+        );
+
+        // 4 · EL PRIMER BLOQUE EMPIEZA A 16 DEL BORDE DEL CONTENIDO (doc:180), y nada se pasa del
+        // borde derecho. Se mide sobre lo primero que dibuja el contenido, que es la primera fila.
+        let mut bloques: Vec<i_slint_backend_testing::ElementHandle> = cont
+            .query_descendants()
+            .find_all()
+            .into_iter()
+            .filter(|e| e.type_name().map(|s| s.to_string()).as_deref() == Some("Bloque"))
+            .collect();
+        assert!(!bloques.is_empty(), "el contenido del escritorio tiene que estar hecho de bloques");
+        bloques.sort_by(|a, b| a.absolute_position().y.partial_cmp(&b.absolute_position().y).unwrap());
+        let primero = &bloques[0];
+        let pp = primero.absolute_position();
+        let pt = primero.size();
+        let (px, pw) = (f64::from(pp.x), f64::from(pt.width));
+        // La caja del envoltorio mide el ancho del contenido; lo que tiene que estar a 16 es lo que
+        // lleva DENTRO, que es el hijo que queda entre los dos huecos.
+        let dentro_de_la_caja = primero
+            .query_descendants()
+            .find_all()
+            .into_iter()
+            .find(|e| {
+                let s = e.size();
+                (f64::from(s.width) - (pw - 2.0 * doc::MARGEN)).abs() < 1.0
+                    && f64::from(s.height) > 0.0
+            })
+            .expect("el bloque tiene que tener dentro la caja que queda entre sus dos huecos");
+        let ip = dentro_de_la_caja.absolute_position();
+        let it = dentro_de_la_caja.size();
+        let (ix, iw) = (f64::from(ip.x), f64::from(it.width));
+        println!(
+            "  escritorio · primer bloque: izq {:.1} · der {:.1} (contrato: {:.0})",
+            ix - cx,
+            (cx + cancho) - (ix + iw),
+            doc::MARGEN
+        );
+        assert!(
+            (ix - cx - doc::MARGEN).abs() < 1.0,
+            "el primer bloque del contenido tiene que empezar en x = 16 del contenido (doc:180), y \
+             empieza en {:.1} (absoluto {ix:.1}, envoltorio en {px:.1})",
+            ix - cx
+        );
+        assert!(
+            (cx + cancho) - (ix + iw) >= doc::MARGEN - 1.0,
+            "el primer bloque no puede llegar al borde derecho del contenido: le quedan {:.1}",
+            (cx + cancho) - (ix + iw)
+        );
+    }
+}
+
+// ==================================================================================================
+// §3.8 · EL RECUENTO DENTRO DE LOS 52 DE LA TARJETA (2026-10-14)
+// ==================================================================================================
+//
+// LA INCOHERENCIA QUE QUEDABA ABIERTA, y estaba A LA VISTA en `datos/capturas/fase1.png`: el recuento
+// del periodo iba a **13 px**, partia en DOS lineas y **la segunda se salia** por debajo del borde de
+// la tarjeta, que tiene **52 de alto FIJO** (§3.8: el alto es fijo para que la linea del periodo no
+// absorba el hueco sobrante del reparto). En la captura se lee «HRV» fuera de la tarjeta.
+//
+// LO QUE MANDA LA ESPECIFICACION, literal (§3.8, tabla): «el recuento · **12 px** (era 13: se corrige
+// a label)». Asi que el arreglo es el que ya estaba escrito: 12 px, y el alto 52 NO se toca.
+//
+// Y SE MIDE CON LOS DATOS REALES, no con una cadena corta: con «102 sesiones» el texto cabe hasta a
+// 13 px, y por eso nadie lo veia. El recuento de verdad -- el de la captura -- es
+// «102 sesiones · 549842 lecturas · 1259082 intervalos de HRV».
+#[test]
+fn el_recuento_del_periodo_cabe_en_el_alto_52_de_la_tarjeta() {
+    i_slint_backend_testing::init_no_event_loop();
+    let v = otra_ventana();
+    v.set_periodo("Análisis del 2026-05-02 al 2026-10-11".into());
+    v.set_vacio("102 sesiones · 549842 lecturas · 1259082 intervalos de HRV".into());
+    let todos = ElementQuery::from_root(&v).find_all();
+    let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
+    let c_pos = cont.absolute_position();
+
+    // LA TARJETA SE LOCALIZA POR SU ALTO 52 Y SU ANCHO (411 - 2·16 = 379), que son los dos numeros del
+    // contrato (§3.8 y doc:180). Es la misma caja que mide la prueba del primer bloque.
+    let ancho_de_la_tarjeta = doc::ANCHO - 2.0 * doc::MARGEN;
+    let candidatas: Vec<&i_slint_backend_testing::ElementHandle> = todos
+        .iter()
+        .filter(|e| {
+            let t = e.size();
+            (f64::from(t.height) - 52.0).abs() < 0.5
+                && (f64::from(t.width) - ancho_de_la_tarjeta).abs() < 1.0
+                && f64::from(e.absolute_position().y) >= f64::from(c_pos.y) - 0.5
+        })
+        .collect();
+    let tarjeta = *candidatas
+        .first()
+        .expect("tiene que haber una tarjeta de 379 x 52 en el contenido: es la del periodo (§3.8)");
+    let t_pos = tarjeta.absolute_position();
+    let t_tam = tarjeta.size();
+    let (tx, ty, tw, th) = (
+        f64::from(t_pos.x),
+        f64::from(t_pos.y),
+        f64::from(t_tam.width),
+        f64::from(t_tam.height),
+    );
+    println!("  la tarjeta del periodo: ({tx:.1},{ty:.1}) {tw:.1}x{th:.1} (contrato: 379 x 52)");
+
+    // LOS TEXTOS DE DENTRO, y el que importa es el recuento (el otro, el del periodo, lleva su nombre
+    // de accesibilidad). Se miden LOS DOS: si uno se sale de los 52, la tarjeta lo esta recortando.
+    let textos: Vec<i_slint_backend_testing::ElementHandle> = tarjeta
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .filter(|e| e.type_name().map(|s| s.to_string()).as_deref() == Some("Text"))
+        .collect();
+    assert_eq!(
+        textos.len(),
+        2,
+        "la tarjeta del periodo tiene que llevar DOS textos (el periodo y el recuento), y lleva {}",
+        textos.len()
+    );
+    let mut alto_del_recuento = 0.0f64;
+    for t in textos.iter() {
+        let p = t.absolute_position();
+        let s = t.size();
+        let (x, y, w, h) = (f64::from(p.x), f64::from(p.y), f64::from(s.width), f64::from(s.height));
+        let es_el_periodo = t.accessible_id().map(|s| s.to_string()).as_deref() == Some("periodo");
+        println!(
+            "  {}: ({x:.1},{y:.1}) {w:.1}x{h:.1}",
+            if es_el_periodo { "el periodo" } else { "el recuento" }
+        );
+        assert!(
+            y >= ty - 0.5 && y + h <= ty + th + 0.5,
+            "{} se sale de la tarjeta (§3.8: alto 52 FIJO): la tarjeta va de {ty:.1} a {:.1} y el texto \
+             de {y:.1} a {:.1}",
+            if es_el_periodo { "el periodo" } else { "el recuento" },
+            ty + th,
+            y + h
+        );
+        if !es_el_periodo {
+            alto_del_recuento = h;
+        }
+    }
+    // Y EL RECUENTO, EN UNA LINEA: a 12 px una linea mide 17 de caja (medido). Dos lineas serian 36 --
+    // que es lo que medía a 13 px, y por eso la segunda se salia.
+    assert!(
+        alto_del_recuento <= 18.5,
+        "el recuento tiene que caber en UNA linea (§3.8: 12 px, label). Mide {alto_del_recuento:.1} de \
+         alto: mas de 18 son DOS lineas (a 13 px medía 36, y la segunda se salia de los 52)"
+    );
+}
+
 #[test]
 fn el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza() {
     // ESTA ES UNA DECISION DE LA FASE 1, Y AQUI SE VIGILA PARA QUE NO SE DESHAGA SIN QUERER.
@@ -1062,6 +1570,10 @@ fn el_periodo_en_pantalla_cuando_lo_hay_y_sin_hueco_cuando_no() {
     let v = ventana_de_prueba();
 
     // 1) SIN periodo no existe el elemento: no se dibuja un hueco vacio (AU-07).
+    // Se VACIA a proposito: `ventana_de_prueba` representa la pantalla CON datos -- y con fechas, que es
+    // como se ve de verdad (la tarjeta del periodo es la del §3.8) --, asi que el caso «sin fechas» se
+    // pide aqui en vez de suponerlo (2026-10-14).
+    v.set_periodo("".into());
     let sin = ElementQuery::from_root(&v).find_all();
     assert!(
         !sin.iter().any(|e| e.accessible_id().map(|s| s.to_string()) == Some("periodo".into())),

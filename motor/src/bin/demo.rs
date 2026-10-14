@@ -26,6 +26,7 @@ fn sesion_de_cuarenta_minutos() -> Sesion {
                 segundo,
                 pulso: hay(pulso),
                 potencia_w: hay(200),
+                cadencia_rpm: motor::Dato::Falta, distancia_m: motor::Dato::Falta, temperatura_c: motor::Dato::Falta,
             });
             segundo += 10;
         }

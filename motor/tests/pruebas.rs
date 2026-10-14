@@ -40,7 +40,7 @@ fn sesion_30_min(pulso: u16) -> Sesion {
         .map(|i| Muestra {
             segundo: i * 10,
             pulso: Dato::Hay(pulso),
-            potencia_w: Dato::Hay(200),
+            potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta,
         })
         .collect();
     Sesion::con_duracion(muestras, 1800)
@@ -135,8 +135,8 @@ fn sin_pulso_de_reposo_no_hay_reserva_ni_zonas() {
 #[test]
 fn una_sesion_sin_pulsos_no_da_carga_y_lo_dice() {
     let s = Sesion::con_duracion(vec![
-            Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
-            Muestra { segundo: 10, pulso: Dato::Falta, potencia_w: Dato::Hay(210) },
+            Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
+            Muestra { segundo: 10, pulso: Dato::Falta, potencia_w: Dato::Hay(210), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
         ], 600);
     let r = formulas::trimp(&s, &ana());
     assert_eq!(r.valor, None, "sin un solo pulso, la carga no se puede afirmar");
@@ -151,7 +151,7 @@ fn si_falta_el_pulso_en_MAS_de_la_mitad_la_carga_no_se_da() {
         muestras.push(Muestra {
             segundo: i * 10,
             pulso: if i % 3 == 0 { Dato::Hay(150) } else { Dato::Falta },
-            potencia_w: Dato::Hay(200),
+            potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta,
         });
     }
     let s = Sesion::con_duracion(muestras, 1800);
@@ -174,7 +174,7 @@ fn si_falta_el_pulso_en_POCO_la_carga_se_da_PERO_con_reserva() {
         muestras.push(Muestra {
             segundo: i * 10,
             pulso: if i % 4 == 0 { Dato::Falta } else { Dato::Hay(150) },
-            potencia_w: Dato::Hay(200),
+            potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta,
         });
     }
     let s = Sesion::con_duracion(muestras, 1800);
@@ -189,9 +189,9 @@ fn la_duracion_no_se_acorta_si_la_primera_muestra_no_trae_pulso() {
     // Sin duracion declarada, la duracion se deduce de las muestras: y tiene que salir de la
     // PRIMERA y la ULTIMA, aunque la primera no traiga pulso.
     let s = Sesion::nueva(vec![
-        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
-        Muestra { segundo: 600, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
-        Muestra { segundo: 1200, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200) },
+        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
+        Muestra { segundo: 600, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
+        Muestra { segundo: 1200, pulso: Dato::Hay(150), potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
     ]);
     assert_eq!(
         s.duracion(),
@@ -286,7 +286,7 @@ use motor::esfuerzo::{self, NivelSalto};
 fn sesion_de(minutos: u32, pulso: u16) -> Sesion {
     let n = (minutos * 60) / 10;
     let muestras = (0..n)
-        .map(|i| Muestra { segundo: i * 10, pulso: Dato::Hay(pulso), potencia_w: Dato::Hay(200) })
+        .map(|i| Muestra { segundo: i * 10, pulso: Dato::Hay(pulso), potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta })
         .collect();
     Sesion::con_duracion(muestras, minutos * 60)
 }
@@ -823,6 +823,7 @@ fn sesion_dos_escalones(pulso1: u16, pulso2: u16, pot1: u16, pot2: u16) -> Sesio
             segundo: (i * 10) as u32,
             pulso: Dato::Hay(p),
             potencia_w: Dato::Hay(w),
+            cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta,
         });
     }
     Sesion::con_duracion(muestras, (n * 10) as u32)
@@ -886,8 +887,8 @@ fn sin_pulso_ni_potencia_la_deriva_da_CERO_con_margen_cero_y_no_falla() {
     // La regla del rediseno: nunca se falla. Si no hay datos, el resultado es cero Y SE SABE que no
     // vale nada, porque el margen tambien es cero. No es un cero que enganie.
     let s = Sesion::nueva(vec![
-        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200) },
-        Muestra { segundo: 10, pulso: Dato::Hay(140), potencia_w: Dato::Falta },
+        Muestra { segundo: 0, pulso: Dato::Falta, potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
+        Muestra { segundo: 10, pulso: Dato::Hay(140), potencia_w: Dato::Falta, cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta },
     ]);
     let d = patron::deriva(&s);
     assert_eq!(d.porcentaje(), 0.0);
@@ -1051,7 +1052,7 @@ fn el_lector_saca_muestras_y_la_duracion_del_fichero() {
 fn lo_que_no_se_usa_NO_se_guarda_y_eso_esta_dicho() {
     // El motor no usa la cadencia ni la distancia todavia. Guardarlas daria a entender que si se
     // usan. Se comprueba que el modelo de la muestra solo lleva lo que se usa.
-    let m = Muestra { segundo: 0, pulso: Dato::Hay(140), potencia_w: Dato::Hay(200) };
+    let m = Muestra { segundo: 0, pulso: Dato::Hay(140), potencia_w: Dato::Hay(200), cadencia_rpm: Dato::Falta, distancia_m: Dato::Falta, temperatura_c: Dato::Falta };
     assert_eq!(m.pulso, Dato::Hay(140));
     assert_eq!(m.potencia_w, Dato::Hay(200));
     // Y si un dia se anade la cadencia, esta prueba es la que obliga a decirlo.
@@ -1624,4 +1625,1631 @@ fn la_frecuencia_maxima_que_MANDA_es_la_que_declara_la_persona() {
     );
     // No hay ni una cosa ni la otra: falta, y el motor ya sabe decirlo.
     assert_eq!(motor::analisis::maxima_que_manda(&Dato::Falta, None), Dato::Falta);
+}
+
+// ================================================================================
+// BIOMECÁNICA Y CARGA: lo que el fichero declara y el motor ignoraba (2026-10-13)
+// ================================================================================
+//
+// POR QUÉ ESTAS PRUEBAS ESTÁN AQUÍ Y NO EN UNA HOJA APARTE: cada una nació de un error concreto que
+// ya se cometió con estos campos, y su sitio es al lado de las demás pruebas del lector, que es donde
+// alguien mirará el día que toque `fit.rs`. Las cuatro primeras cubren el modelo y el lector; **la
+// quinta deja escrito el error que ya se cometió una vez**, que es la que más importa.
+
+#[test]
+fn la_cadencia_de_la_muestra_se_GUARDA_y_cuadra_con_la_media_del_fichero() {
+    // La regla que se rompió: `Record.cadence` **se leía y se tiraba**. Medido sobre sus ficheros son
+    // 421.449 muestras en 83 de 102: no era un campo raro, era el 90 % de sus sesiones.
+    //
+    // Y se comprueba CONTRA EL FICHERO, no contra nosotros mismos: la media de las muestras tiene que
+    // cuadrar con la que el propio FIT declara. Un dato guardado mal cuadra consigo mismo; contra el
+    // fichero, no.
+    //
+    // Se buscan ficheros CON cadencia en vez de coger el primero, y no es comodidad: medido, hay
+    // ficheros de estos con el campo `cadence` en **todo cero** —el potenciómetro no la mandó ese
+    // día— y ahí la media de las muestras no puede cuadrar con nada. Saltárselos es lo que hace que
+    // esta prueba compruebe el lector y no el estado de un sensor una tarde concreta.
+    let carpeta = carpeta_fit();
+    if !carpeta.exists() {
+        eprintln!("(sin ficheros FIT en esta maquina: la prueba se salta)");
+        return;
+    }
+    let (bien, _) = fit::leer_carpeta_hasta(&carpeta, 20);
+    let mut comparadas = 0;
+    let mut cuadran = 0;
+    for (nombre, l) in &bien {
+        let cadencias = l.sesion.cadencias();
+        let declarada = match l.declarado.cadencia_media.valor() {
+            Some(d) if !cadencias.is_empty() => d,
+            _ => continue,
+        };
+        comparadas += 1;
+        let media = cadencias.iter().map(|c| f64::from(*c)).sum::<f64>() / cadencias.len() as f64;
+        // La declarada viene redondeada a rpm enteras: el margen es de una rpm y algo mas.
+        if (media - declarada).abs() <= 2.0 {
+            cuadran += 1;
+        } else {
+            eprintln!("  {nombre}: muestras {media:.1} rpm contra declarada {declarada:.0} rpm");
+        }
+    }
+    assert!(comparadas > 0, "tiene que haber ficheros con cadencia y con su media declarada");
+    assert!(
+        cuadran * 10 >= comparadas * 8,
+        "la cadencia de las muestras tiene que cuadrar con la que declara el fichero en al menos el \
+         80 % de las sesiones: {cuadran} de {comparadas} (el motor salta los ceros, como el aparato)"
+    );
+}
+
+#[test]
+fn una_muestra_SIN_cadencia_queda_en_FALTA_y_no_en_CERO() {
+    // ESTA ES LA REGLA CENTRAL DEL PROYECTO, aplicada al campo nuevo: **un cero es un dato falso**.
+    // «No sé la cadencia de este segundo» no es «iba a 0 rpm», y la diferencia se nota justo donde
+    // hace daño: en la media. Un cero por cada hueco hunde la media sin que nadie lo vea.
+    let con_cadencia = Muestra {
+        segundo: 0,
+        pulso: Dato::Hay(140),
+        potencia_w: Dato::Hay(200),
+        cadencia_rpm: Dato::Hay(85),
+        distancia_m: Dato::Hay(0.0),
+        temperatura_c: Dato::Hay(12.0),
+    };
+    assert_eq!(con_cadencia.cadencia_rpm, Dato::Hay(85), "si viene, se conserva tal cual");
+
+    let sin_cadencia = Muestra { cadencia_rpm: Dato::Falta, ..con_cadencia };
+    assert_eq!(
+        sin_cadencia.cadencia_rpm,
+        Dato::Falta,
+        "sin cadencia NO se pone un cero: se dice que falta"
+    );
+    assert!(
+        sin_cadencia.cadencia_rpm.valor().is_none(),
+        "y el valor tiene que ser None, no Some(0): quien lo lea tiene que poder distinguirlo"
+    );
+
+    // Y en la sesión entera: la media se hace **sobre las que la traen**, y las dos que no la traen
+    // no entran. Si entraran como ceros, la media sería (85 + 0 + 0) / 3 = 28,3 en vez de 85.
+    let sesion = Sesion::nueva(vec![
+        con_cadencia,
+        Muestra { segundo: 1, ..sin_cadencia },
+        Muestra { segundo: 2, ..sin_cadencia },
+    ]);
+    let cadencias = sesion.cadencias();
+    assert_eq!(cadencias, vec![85], "las muestras sin cadencia se SALTAN, no se rellenan con cero");
+    let media = cadencias.iter().map(|c| f64::from(*c)).sum::<f64>() / cadencias.len() as f64;
+    assert_eq!(media, 85.0, "la media de una sola cadencia de 85 rpm es 85, no 28,3");
+}
+
+#[test]
+fn un_array_con_un_hueco_Invalid_NO_inventa_el_valor_que_falta() {
+    // MEDIDO EN SUS FICHEROS: `avg_power_position` aparece como `Array([UInt16(147), Invalid])` — un
+    // hueco medido y el otro no. Antes de escribir el lector, ese `Invalid` parecía un cero; no lo
+    // es, **es un hueco**, y las dos mitades se tratan distinto: la que está se conserva, la que no
+    // está queda `Falta`.
+    let mut invalidos = std::collections::BTreeMap::new();
+    let parcial = fit::dos_huecos(
+        &fitparser::Value::Array(vec![fitparser::Value::UInt16(147), fitparser::Value::Invalid]),
+        "avg_power_position",
+        &mut invalidos,
+    );
+    assert_eq!(parcial[0], Some(147.0), "el hueco que SI se midio se conserva");
+    assert_eq!(
+        parcial[1], None,
+        "el hueco marcado Invalid queda AUSENTE: no se convierte en un cero de vatios"
+    );
+    assert_ne!(parcial[1], Some(0.0), "y sobre todo: NO es un cero");
+    assert_eq!(
+        invalidos.get("avg_power_position").copied(),
+        Some(1),
+        "y el hueco se CUENTA: es lo que permite distinguir «el sensor no lo mide» de «hoy no lo midio»"
+    );
+
+    // Una forma que no es la esperada tampoco se interpreta: ni uno, ni tres huecos.
+    let mut otros = std::collections::BTreeMap::new();
+    let uno = fit::dos_huecos(
+        &fitparser::Value::Array(vec![fitparser::Value::UInt16(147)]),
+        "avg_power_position",
+        &mut otros,
+    );
+    assert_eq!(uno, [None, None], "un array de uno no es una postura: no se adivina la que falta");
+    assert_eq!(otros.get("avg_power_position").copied(), Some(1), "y la forma rara se cuenta");
+
+    // Y una fase a la que le falta UNO de los cuatro angulos se cae ENTERA: el angulo que falta se
+    // leeria como 0 grados, y 0 grados es una posicion del pedal, no un hueco. Media fase, calculada
+    // contra un cero, es una conclusion sobre su rodilla sacada de un hueco del fichero.
+    let mut fase_invalidos = std::collections::BTreeMap::new();
+    let fase = fit::cuatro_grados(
+        &fitparser::Value::Array(vec![
+            fitparser::Value::Float64(357.2),
+            fitparser::Value::Float64(184.2),
+            fitparser::Value::Invalid,
+            fitparser::Value::Float64(90.0),
+        ]),
+        "avg_left_power_phase",
+        &mut fase_invalidos,
+    );
+    assert_eq!(fase, Dato::Falta, "con un angulo Invalid, la fase entera falta");
+    // El contraste: los cuatro buenos si se guardan.
+    let completa = fit::cuatro_grados(
+        &fitparser::Value::Array(vec![
+            fitparser::Value::Float64(357.2),
+            fitparser::Value::Float64(184.2),
+            fitparser::Value::Float64(185.6),
+            fitparser::Value::Float64(90.0),
+        ]),
+        "avg_left_power_phase",
+        &mut fase_invalidos,
+    );
+    assert_eq!(completa, Dato::Hay([357.2, 184.2, 185.6, 90.0]));
+}
+
+#[test]
+fn las_fases_de_las_dos_piernas_se_guardan_SEPARADAS_y_no_se_mezclan() {
+    // Lo unico del fichero que dice algo de UNA pierna es la fase. Si se mezclaran, el modulo de la
+    // rodilla estaria comparando una pierna consigo misma y **diria que no hay asimetria**: el peor
+    // resultado posible, porque tranquiliza.
+    let izquierda = Dato::Hay([357.2, 184.2, 185.6, 90.0]);
+    let derecha = Dato::Hay([353.0, 181.4, 187.0, 87.2]);
+    let b = motor::datos::Biomecanica {
+        fase_pierna_izquierda: izquierda,
+        fase_pierna_derecha: derecha,
+        ..motor::datos::Biomecanica::vacia()
+    };
+
+    assert_eq!(b.fase_pierna_izquierda, izquierda, "la izquierda se guarda en la izquierda");
+    assert_eq!(b.fase_pierna_derecha, derecha, "y la derecha en la derecha");
+    assert_ne!(
+        b.fase_pierna_izquierda, b.fase_pierna_derecha,
+        "el ejemplo real tiene las dos fases distintas: si salen iguales, se mezclaron"
+    );
+    let (i, d) = b.fases().expect("con las dos, se pueden comparar");
+    assert_eq!(i[0], 357.2, "y al sacarlas juntas, cada una sigue siendo la suya");
+    assert_eq!(d[0], 353.0);
+
+    // La asimetria va POR EL CAMINO CORTO. Restando directo, esta sesion daria 357,2 grados; la
+    // verdad son 4,2. Es un fallo que ya salio al medir, y por eso se mide aqui.
+    let asimetria = b.asimetria_grados().expect("con las dos fases, hay asimetria");
+    assert!(
+        (asimetria - 4.2).abs() < 1e-9,
+        "la asimetria es 4,2 grados por el camino corto (|357,2 - 353,0|), no 357,2: dio {asimetria}"
+    );
+
+    // Y con una sola pierna NO hay asimetria que afirmar: comparar contra un hueco daria una
+    // asimetria que es del fichero, no de sus piernas.
+    let solo_una = motor::datos::Biomecanica { fase_pierna_derecha: Dato::Falta, ..b };
+    assert_eq!(solo_una.asimetria_grados(), None, "sin las dos piernas no se afirma nada");
+    assert_eq!(solo_una.fases(), None);
+    assert!(!solo_una.hay_fases());
+
+    // Y el salto del cero, que es la trampa de verdad: dos piernas CASI IGUALES a los dos lados del
+    // cero (357 grados y 0,5) estan a 3,5 grados, no a 356,5.
+    let salto = motor::datos::Biomecanica {
+        fase_pierna_izquierda: Dato::Hay([357.0, 0.0, 0.0, 0.0]),
+        fase_pierna_derecha: Dato::Hay([0.5, 0.0, 0.0, 0.0]),
+        ..motor::datos::Biomecanica::vacia()
+    };
+    let a = salto.asimetria_grados().expect("las dos estan");
+    assert!((a - 3.5).abs() < 1e-9, "el cero da la vuelta: la distancia es 3,5 grados, no 356,5 (dio {a})");
+}
+
+#[test]
+fn avg_power_position_es_POSTURA_y_no_LADO_y_los_dos_nombres_lo_dicen() {
+    // ============================================================================================
+    // ESTA PRUEBA DEJA ESCRITO UN ERROR QUE YA SE COMETIO, para que no se pueda cometer dos veces.
+    // ============================================================================================
+    //
+    // `avg_power_position` = [145, 410] PARECE «145 W la pierna izquierda y 410 W la derecha»: un
+    // 37/63, un desequilibrio enorme y una conclusion grave sobre la rodilla de una persona de 62
+    // años. **Es falso.** El campo son DOS HUECOS INDEXADOS POR POSTURA, y el enum oficial del
+    // formato (`rider_position_type`) es `Seated = 0`, `Standing = 1`: **145 W sentado y 410 W de
+    // pie**, que en un puerto es lo normal y no dice nada de ninguna rodilla.
+    //
+    // Por eso esta prueba comprueba DOS cosas a la vez: el SIGNIFICADO con el valor real, y que
+    // ningún campo del modelo se llame «izquierda»/«derecha» para este dato. Con una sola de las dos
+    // no basta: un nombre honesto con los valores cruzados sigue estando mal, y unos valores bien
+    // puestos con el nombre «izquierda» vuelven a invitar al mismo error.
+    let mut invalidos = std::collections::BTreeMap::new();
+    let huecos = fit::dos_huecos(
+        &fitparser::Value::Array(vec![fitparser::Value::UInt16(145), fitparser::Value::UInt16(410)]),
+        "avg_power_position",
+        &mut invalidos,
+    );
+    let b = motor::datos::Biomecanica {
+        potencia_media_sentado: fit::de_hueco(huecos[0], fit::a_entero_u16),
+        potencia_media_de_pie: fit::de_hueco(huecos[1], fit::a_entero_u16),
+        ..motor::datos::Biomecanica::vacia()
+    };
+    // EL VALOR REAL DE SU FICHERO, puesto donde dice el formato que va:
+    assert_eq!(
+        b.potencia_media_sentado,
+        Dato::Hay(145),
+        "el hueco 0 es el SENTADO: 145 W. Si alguien lo lee como la pierna izquierda, esto se cae"
+    );
+    assert_eq!(
+        b.potencia_media_de_pie,
+        Dato::Hay(410),
+        "el hueco 1 es DE PIE: 410 W. NO es «la pierna derecha»"
+    );
+    assert_ne!(
+        b.potencia_media_sentado, b.potencia_media_de_pie,
+        "los dos valores son distintos: eso es lo que hace que confundirlos invente un 37/63"
+    );
+
+    // Y NINGUN CAMPO DE POSTURA SE LLAMA «izquierda» NI «derecha». Se enumeran todos a mano —no hay
+    // reflexion en Rust— para que el dia que alguien añada uno, tenga que pasar por aqui y decidir
+    // si el nombre dice la verdad. El comentario del modelo tambien se comprueba: es donde se lee la
+    // definicion, y un comentario que miente es peor que no tenerlo.
+    let postura = [
+        ("potencia_media_sentado", b.potencia_media_sentado.lo_hay()),
+        ("potencia_media_de_pie", b.potencia_media_de_pie.lo_hay()),
+        ("potencia_maxima_sentado", b.potencia_maxima_sentado.lo_hay()),
+        ("potencia_maxima_de_pie", b.potencia_maxima_de_pie.lo_hay()),
+        ("cadencia_media_sentado", b.cadencia_media_sentado.lo_hay()),
+        ("cadencia_media_de_pie", b.cadencia_media_de_pie.lo_hay()),
+    ];
+    for (nombre, _) in postura {
+        let n = nombre.to_lowercase();
+        assert!(
+            !n.contains("izquierda") && !n.contains("derecha") && !n.contains("izq") && !n.contains("der"),
+            "«{nombre}» es un campo de POSTURA (sentado/de pie) y su nombre no puede decir un lado: \
+             es exactamente el error que ya se cometio una vez"
+        );
+    }
+    let definicion = include_str!("../src/datos.rs").to_lowercase();
+    assert!(
+        definicion.contains("rider_position_type") && definicion.contains("seated") && definicion.contains("standing"),
+        "el modelo tiene que decir EN VOZ ALTA que `*_position` es postura y no lado, con el enum \
+         oficial del formato: es la unica defensa que queda para el que lea el codigo manana"
+    );
+    assert!(
+        definicion.contains("left_right_balance") && definicion.contains("serie del sensor"),
+        "y tiene que decir que `left_right_balance` trae el NUMERO DE SERIE del sensor, que es la \
+         otra trampa: el que parezca un porcentaje es lo que hizo concluir un 47/53 que no existe"
+    );
+
+    // Y LO QUE ES POR PIERNA, SI ES POR PIERNA: se lee de un fichero suyo y se comprueba que las dos
+    // fases son distintas. Si alguna vez salieran iguales, o el lector mezcla los campos, o la
+    // persona pedalea perfectamente simetrica — y lo medido dice que difieren en 80 de 83 sesiones.
+    let carpeta = carpeta_fit();
+    if !carpeta.exists() {
+        eprintln!("(sin ficheros FIT en esta maquina: la parte de la fase se salta)");
+        return;
+    }
+    let (bien, _) = fit::leer_carpeta_hasta(&carpeta, 1);
+    let (_, l) = match bien.first() {
+        Some(x) => x,
+        None => return,
+    };
+    let (i, d) = l
+        .sesion
+        .biomecanica
+        .fases()
+        .expect("su primer fichero trae las dos fases de pedaleo");
+    assert_ne!(
+        i, d,
+        "las fases de las dos piernas no pueden ser identicas: o se mezclaron los campos, o el \
+         fichero no es el que se midio"
+    );
+}
+
+#[test]
+fn el_PCO_en_cero_es_un_CENTINELA_y_no_se_guarda_como_dato() {
+    // La tercera trampa, medida: `avg_left_pco` y `avg_right_pco` valen **0,00 mm en las 83 sesiones
+    // y nunca difieren**. Un sensor que da cero siempre no esta midiendo: esta devolviendo su
+    // centinela. Guardarlo como dato meteria un cero que parece una medida de laboratorio, y de ahi
+    // saldria una conclusion sobre su rodilla sacada de la nada.
+    //
+    // Por eso el lector NO tiene campos para el PCO, y esta prueba lo deja dicho: si algun dia
+    // alguien los añade, tendra que venir aqui y explicar por que.
+    let definicion = include_str!("../src/datos.rs").to_lowercase();
+    assert!(
+        !definicion.contains("pub ") || !definicion.contains("pco"),
+        "el modelo NO puede tener un campo de PCO: hoy vale 0,00 siempre y es un centinela, no un dato"
+    );
+    let lector = include_str!("../src/fit.rs").to_lowercase();
+    assert!(
+        lector.contains("centinela"),
+        "y el lector tiene que decir POR QUE no lo lee, para que no parezca un olvido"
+    );
+
+    // El contraste que si se guarda: la temperatura, que esta en los 102 ficheros.
+    let carpeta = carpeta_fit();
+    if !carpeta.exists() {
+        eprintln!("(sin ficheros FIT en esta maquina: la parte de la temperatura se salta)");
+        return;
+    }
+    let (bien, _) = fit::leer_carpeta_hasta(&carpeta, 1);
+    let (_, l) = match bien.first() {
+        Some(x) => x,
+        None => return,
+    };
+    let t = l
+        .sesion
+        .temperatura_media()
+        .expect("su primer fichero trae temperatura en las muestras");
+    assert!(
+        (-20.0..60.0).contains(&t),
+        "una temperatura media de {t} grados no es un dato de este mundo: sera un centinela leido como valor"
+    );
+
+    // Y una sesion SIN temperatura da `None`, no cero grados: cero grados es una temperatura —la del
+    // hielo— y colarla en un calculo de deriva cardiaca daria un numero plausible y falso.
+    let vacia = Sesion::nueva(vec![Muestra {
+        segundo: 0,
+        pulso: Dato::Hay(140),
+        potencia_w: Dato::Hay(200),
+        cadencia_rpm: Dato::Falta,
+        distancia_m: Dato::Falta,
+        temperatura_c: Dato::Falta,
+    }]);
+    assert_eq!(vacia.temperatura_media(), None, "sin temperatura NO se dice que hacia 0 grados");
+}
+
+#[test]
+fn el_tope_de_ficheros_cuenta_FIT_y_no_ficheros_de_otra_cosa() {
+    // ESTE FALLO YA SE MIDIO Y ENGAÑABA, y por eso tiene prueba propia: `leer_carpeta_hasta` ordenaba
+    // y RECORTABA antes de filtrar por `.fit`, y en su carpeta **los primeros ficheros por nombre no
+    // son actividades, son los `.json` de Garmin**. Resultado: con `tope = 1` o `12` —que es lo que
+    // usan las pruebas del lector— **no leía ni un FIT y devolvía «0 leídos» sin un solo error**.
+    //
+    // Es el peor fallo posible en un lector: el que parece que funciona. Y no se caza leyendo el
+    // código, se caza contando. Aquí se cuenta: en una carpeta con DOS `.json` que van antes por
+    // nombre y DOS `.fit` que van después, el tope de 1 tiene que devolver **un FIT**.
+    let origen = carpeta_fit();
+    if !origen.exists() {
+        eprintln!("(sin ficheros FIT en esta maquina: la prueba se salta)");
+        return;
+    }
+    // Dos actividades de verdad, las mas pequeñas, para que la prueba siga siendo rapida.
+    let pequenos: Vec<std::path::PathBuf> = {
+        let mut v: Vec<_> = std::fs::read_dir(&origen)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "fit").unwrap_or(false))
+            .collect();
+        v.sort_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX));
+        v.truncate(2);
+        v
+    };
+    if pequenos.len() < 2 {
+        eprintln!("(no hay dos FIT: la prueba se salta)");
+        return;
+    }
+
+    let caja = std::env::temp_dir().join("pulso-prueba-tope-fit");
+    let _ = std::fs::remove_dir_all(&caja);
+    std::fs::create_dir_all(&caja).unwrap();
+    // Los señuelos van PRIMERO por nombre: es lo que hace que el fallo aparezca.
+    std::fs::write(caja.join("aaa_lista.json"), b"{\"no\": \"es un fit\"}").unwrap();
+    std::fs::write(caja.join("aab_lista.json"), b"{\"tampoco\": \"lo es\"}").unwrap();
+    for (i, p) in pequenos.iter().enumerate() {
+        std::fs::copy(p, caja.join(format!("zzz_actividad_{i}.fit"))).unwrap();
+    }
+
+    let (uno, mal) = fit::leer_carpeta_hasta(&caja, 1);
+    assert_eq!(
+        uno.len(),
+        1,
+        "con tope 1 tiene que leer UN FIT, no cero: el tope se gasta en los .json si se recorta antes \
+         de elegir (leyo {} y fallos {mal:?})",
+        uno.len()
+    );
+    assert!(mal.is_empty(), "y los .json no son fallos de lectura: simplemente no son FIT");
+
+    let (todos, _) = fit::leer_carpeta_hasta(&caja, 10);
+    assert_eq!(todos.len(), 2, "sin tope que estorbe, los dos FIT");
+
+    let _ = std::fs::remove_dir_all(&caja);
+}
+
+// ================================================================================
+// LOS AVISOS DEL ENCARGO (`motor/src/avisos.rs`)
+// ================================================================================
+//
+// De que va esto: el cliente entrego TRES modulos de aviso redactados por otra IA, y el encargo pide
+// convertirlos en funciones deterministas. Lo que se prueba aqui, y por este orden:
+//
+//   1. **QUE SIN DATOS NO SALGA NINGUN AVISO.** Es la prueba mas importante del bloque: un aviso sin
+//      fundamento es peor que ninguno, porque tranquiliza o asusta sin motivo y nadie lo nota.
+//   2. Que los dos umbrales del cliente (54 % y 100 TSS) sean SUYOS y se comporten como se decidio.
+//   3. Que una sesion sin fase de pedaleo **no** produzca aviso de rodilla.
+//   4. Que ningun texto diga «diagnostico», «lesion» ni prometa que un remedio cura.
+//   5. Que todo aviso lleve un `porque` CON UN NUMERO, y no una frase vacia.
+
+use motor::analisis::Real;
+use motor::avisos::{
+    self, Aviso, Historico, Hoy, Modulo, SesionVista, Urgencia, EN_EL_UMBRAL_DE_AGUA_DISPARA,
+    EN_EL_UMBRAL_DE_TSS_DISPARA, MINIMO_PARA_LINEA_BASE, UMBRAL_AGUA_DEL_CLIENTE_PCT,
+    UMBRAL_TSS_DEL_CLIENTE,
+};
+
+/// Una sesion vista con TODO puesto, para ir quitando lo que haga falta en cada prueba.
+fn sesion_avisos(nombre: &str, tss: Option<f64>, asimetria: Option<f64>, deriva: Option<f64>) -> SesionVista {
+    SesionVista {
+        nombre: nombre.to_string(),
+        inicio_s: None,
+        tss: tss.map(Dato::Hay).unwrap_or(Dato::Falta),
+        asimetria_grados: asimetria,
+        deriva_pct: deriva,
+    }
+}
+
+/// Un historico de `n` sesiones todas iguales a la que se pase. Existe para poder montar una linea
+/// base **sin ficheros FIT**, que es lo que hace que estas pruebas corran en milisegundos.
+fn historico_iguales(n: usize, base: SesionVista) -> Historico {
+    Historico {
+        total_sesiones: n,
+        no_leidos: Vec::new(),
+        sesiones: (0..n).map(|i| SesionVista { nombre: format!("{}_{i}.fit", base.nombre), ..base.clone() }).collect(),
+    }
+}
+
+/// Un historico con asimetrias y derivas dadas, que es lo minimo para que haya linea base.
+fn historico_con(asimetrias: &[f64], derivas: &[f64]) -> Historico {
+    let n = asimetrias.len().max(derivas.len());
+    let sesiones = (0..n)
+        .map(|i| {
+            sesion_avisos(
+                &format!("s{i}.fit"),
+                None,
+                asimetrias.get(i).copied(),
+                derivas.get(i).copied(),
+            )
+        })
+        .collect();
+    Historico { total_sesiones: n, no_leidos: Vec::new(), sesiones }
+}
+
+fn sin_real() -> Real {
+    Real::default()
+}
+
+// ---------------------------------------------------------------- 1. SIN DATOS, NINGUN AVISO INVENTADO
+
+#[test]
+fn SIN_DATOS_no_se_genera_ningun_aviso_inventado() {
+    // ESTA ES LA PRUEBA MAS IMPORTANTE DE TODO EL BLOQUE, y por eso va la primera.
+    //
+    // Un aviso sin dato que lo sostenga es **peor que ninguno**: el de la rodilla asustaria por una
+    // pierna que no se ha medido, y el del agua mandaria beber por una bascula que nadie ha pesado.
+    // Y no se notaria, porque un aviso de mas tiene exactamente la misma pinta que uno de verdad.
+    //
+    // Aqui no hay NADA: ni agua, ni historico, ni una sola sesion.
+    let persona = Persona::desconocida();
+    let real = sin_real();
+    let historico = Historico::default();
+    let hoy = Hoy::sin_datos();
+
+    let salida = avisos::avisos(&persona, &real, &historico, &hoy);
+
+    assert!(
+        salida.is_empty(),
+        "sin datos NO puede salir ni un aviso, y salieron {}: {:?}",
+        salida.len(),
+        salida.iter().map(|a| a.titulo.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn sin_datos_el_informe_DICE_que_falta_y_no_se_queda_callado() {
+    // La otra mitad de la regla: no inventar **no** es callarse. Un silencio sin explicacion se lee
+    // como «todo bien», que es lo contrario de lo que pasa: no se sabe.
+    let texto = avisos::informe(
+        &Persona::desconocida(),
+        &sin_real(),
+        &Historico::default(),
+        &Hoy::sin_datos(),
+    );
+    assert!(texto.contains("NINGUNO"), "el informe tiene que decir que no hay avisos");
+    assert!(texto.contains("LO QUE NO SALE"), "y tiene que decir que es lo que falta: {texto}");
+    for falta in ["agua corporal", "izquierda/derecha", "pulso en reposo", "sueño", "comió"] {
+        assert!(texto.contains(falta), "el informe tiene que nombrar lo que falta: «{falta}» no aparece");
+    }
+}
+
+#[test]
+fn un_historico_por_debajo_del_minimo_NO_da_linea_base_y_lo_dice() {
+    // CON MENOS DE `MINIMO_PARA_LINEA_BASE` SESIONES NO HAY LINEA BASE, y no es un techo tecnico:
+    // comparar contra una mediana de dos sesiones diria «te desvias» por puro azar. Se comprueba el
+    // borde exacto: con una menos no hay, con la que hace falta si.
+    let pocas = historico_con(&vec![1.0; MINIMO_PARA_LINEA_BASE - 1], &vec![5.0; MINIMO_PARA_LINEA_BASE - 1]);
+    assert!(pocas.base_de_fase().is_none(), "con una sesion menos del minimo NO hay linea base de fase");
+    assert!(pocas.base_de_deriva().is_none(), "con una sesion menos del minimo NO hay linea base de deriva");
+
+    let justas = historico_con(&vec![1.0; MINIMO_PARA_LINEA_BASE], &vec![5.0; MINIMO_PARA_LINEA_BASE]);
+    assert_eq!(justas.base_de_fase(), Some(1.0), "con el minimo justo SI hay linea base");
+    assert_eq!(justas.base_de_deriva(), Some(5.0), "y tambien la de la deriva");
+
+    // Y se dice CUAL falta y por que, en el parte.
+    let faltantes = avisos::lo_que_falta(&pocas, &Hoy::sin_datos());
+    let nombres: Vec<&str> = faltantes.iter().map(|(q, _)| q.as_str()).collect();
+    assert!(
+        nombres.iter().any(|n| n.contains("línea base de la fase")),
+        "el parte tiene que decir que falta la linea base de la fase: {nombres:?}"
+    );
+}
+
+#[test]
+fn una_sesion_SIN_linea_base_no_produce_aviso_aunque_el_dato_este() {
+    // El caso que mas facil seria colar: la sesion TRAE el dato, pero no hay con que compararlo.
+    // Avisar aqui seria avisar contra una norma inventada.
+    let h = Historico {
+        total_sesiones: 1,
+        no_leidos: Vec::new(),
+        sesiones: vec![sesion_avisos("solo.fit", Some(200.0), Some(40.0), Some(30.0))],
+    };
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    // El TSS no necesita linea base (el umbral es del cliente), asi que ESE aviso si sale; lo que no
+    // puede salir es el de la rodilla ni el de la recuperacion.
+    assert!(
+        !salida.iter().any(|a| a.modulo == Modulo::Rodilla),
+        "sin linea base NO puede salir el aviso de rodilla"
+    );
+    assert!(
+        !salida.iter().any(|a| a.modulo == Modulo::Recuperacion),
+        "sin linea base NO puede salir el aviso de recuperacion"
+    );
+    assert!(
+        salida.iter().any(|a| a.modulo == Modulo::Combustible),
+        "el TSS tiene umbral del cliente y no necesita linea base: ese aviso SI tiene que salir"
+    );
+}
+
+// ---------------------------------------------------------------- 2. LOS UMBRALES DEL CLIENTE
+
+#[test]
+fn el_umbral_del_agua_es_el_del_CLIENTE_y_no_uno_inventado() {
+    // El encargo pide comprobar que el 54 % es SU umbral. Si alguien lo cambiara a 50 «porque es mas
+    // redondo», la aplicacion dejaria de recordarle su regla y le recordaria otra.
+    assert_eq!(UMBRAL_AGUA_DEL_CLIENTE_PCT, 54.0, "el umbral de agua del cliente es 54 %");
+    assert_eq!(
+        Hoy::sin_datos().umbral_agua_pct,
+        UMBRAL_AGUA_DEL_CLIENTE_PCT,
+        "el parte del dia arranca con SU umbral, no con otro"
+    );
+}
+
+#[test]
+fn el_agua_54_EXACTO_no_dispara_y_53_9_SI() {
+    // LA DECISION, con su borde exacto y en las dos direcciones, que es lo que fija un umbral:
+    //
+    //   - 54,0 exacto  -> **NO** avisa. Su regla dice «si BAJA de 54», y 54 no esta por debajo de 54.
+    //   - 53,9         -> **SI** avisa. Esta por debajo, y ademas es el paso real de la bascula.
+    //
+    // Se prueban las DOS juntas a proposito: una prueba que solo mirara el 54,0 daria por bueno un
+    // umbral que nunca dispara.
+    assert!(
+        !EN_EL_UMBRAL_DE_AGUA_DISPARA,
+        "la constante tiene que decir que el valor exacto NO dispara, y la prueba de abajo lo comprueba"
+    );
+
+    let vacio = Historico::default();
+    let en_el = avisos::avisos(
+        &Persona::desconocida(),
+        &sin_real(),
+        &vacio,
+        &Hoy::con_agua(54.0_f32),
+    );
+    assert!(
+        !en_el.iter().any(|a| a.modulo == Modulo::Combustible),
+        "54,0 exacto NO puede avisar: su regla dice «si baja de 54»"
+    );
+
+    let debajo = avisos::avisos(
+        &Persona::desconocida(),
+        &sin_real(),
+        &vacio,
+        &Hoy::con_agua(53.9_f32),
+    );
+    let agua: Vec<&Aviso> = debajo.iter().filter(|a| a.modulo == Modulo::Combustible).collect();
+    assert_eq!(agua.len(), 1, "53,9 SI tiene que avisar, y una sola vez");
+    assert_eq!(agua[0].urgencia, Urgencia::Hoy, "el aviso del agua es de los de «hoy»");
+    assert!(agua[0].porque.contains("54"), "el porque tiene que decir SU umbral: {}", agua[0].porque);
+    assert!(agua[0].porque.contains("53,9"), "y el valor medido: {}", agua[0].porque);
+}
+
+#[test]
+fn sin_agua_corporal_NO_hay_aviso_de_agua_y_se_dice_que_falta() {
+    // El agua la mete el a mano. Si no la ha metido, no se sabe, y no saberlo NO es estar bien.
+    let salida = avisos::avisos(
+        &Persona::desconocida(),
+        &sin_real(),
+        &Historico::default(),
+        &Hoy::sin_datos(),
+    );
+    assert!(
+        !salida.iter().any(|a| a.modulo == Modulo::Combustible),
+        "sin agua corporal no puede salir el aviso del agua"
+    );
+    let faltantes = avisos::lo_que_falta(&Historico::default(), &Hoy::sin_datos());
+    assert!(
+        faltantes.iter().any(|(q, _)| q.contains("agua corporal")),
+        "y hay que decir que falta, no callarse"
+    );
+}
+
+#[test]
+fn el_umbral_del_TSS_es_el_del_CLIENTE_y_NO_es_un_hallazgo() {
+    // El corte de 100 TSS es SU pauta. El TSS es un dato medido, pero el CORTE no: eso va en la
+    // fuente del aviso, y la prueba lo exige escrito.
+    assert_eq!(UMBRAL_TSS_DEL_CLIENTE, 100.0, "el umbral de TSS del cliente es 100");
+
+    let h = historico_iguales(1, sesion_avisos("s.fit", Some(108.0), None, None));
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let a = salida
+        .iter()
+        .find(|a| a.modulo == Modulo::Combustible)
+        .expect("108 TSS tiene que producir aviso");
+    assert!(
+        a.fundamento.fuente.contains("PAUTA DEL CLIENTE"),
+        "el fundamento TIENE que decir que el corte es pauta suya y no un hallazgo: {}",
+        a.fundamento.fuente
+    );
+    assert!(
+        a.fundamento.fuente.contains("medido"),
+        "y que el TSS en cambio si es medido: {}",
+        a.fundamento.fuente
+    );
+}
+
+#[test]
+fn los_100_TSS_EXACTOS_no_disparan_y_100_1_SI() {
+    // La otra decision con su borde, en las dos direcciones. Su regla dice «si SUPERA 100 TSS», y 100
+    // no supera 100.
+    //
+    // Medido ademas sobre sus 83 sesiones con TSS: **ninguna vale exactamente 100** (las mas cercanas
+    // son 99,5 y 101,3), asi que esta eleccion no silencia ni un aviso suyo. Se fija igual, porque el
+    // dia que una sesion valga 100 clavados tiene que haber una respuesta decidida.
+    assert!(
+        !EN_EL_UMBRAL_DE_TSS_DISPARA,
+        "la constante tiene que decir que 100 exacto NO dispara"
+    );
+
+    // El 100 va EL ULTIMO a proposito: el aviso mira la sesion mas reciente que supera el umbral, asi
+    // que si el corte estuviera mal puesto, el aviso saldria con el 100 y la prueba lo cazaria.
+    let h = Historico {
+        total_sesiones: 2,
+        no_leidos: Vec::new(),
+        sesiones: vec![
+            sesion_avisos("corta.fit", Some(101.3), None, None),
+            sesion_avisos("justa.fit", Some(100.0), None, None),
+        ],
+    };
+    assert_eq!(h.sesiones_sobre_tss(UMBRAL_TSS_DEL_CLIENTE), 1, "solo la de 101,3 supera el umbral");
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let a = salida
+        .iter()
+        .find(|a| a.modulo == Modulo::Combustible)
+        .expect("101,3 tiene que avisar");
+    assert!(
+        a.titulo.contains("101"),
+        "el aviso tiene que ser de la sesion de 101,3, NO de la de 100 exactos: {}",
+        a.titulo
+    );
+}
+
+#[test]
+fn el_aviso_del_TSS_dice_CUANTAS_sesiones_pasan_el_umbral_y_de_cuantas() {
+    // Un aviso que dice «te pasaste» sin decir «te has pasado 18 veces de 83» deja al cliente sin saber
+    // si eso es su vida normal o un caso raro. Medido: son 18 de sus 83 con TSS.
+    let mut sesiones: Vec<SesionVista> = (0..18)
+        .map(|i| sesion_avisos(&format!("alta{i}.fit"), Some(120.0), None, None))
+        .collect();
+    // Y 20 sesiones suaves DEBAJO del umbral: la de 99,5 es la mas cercana, y no puede contar.
+    sesiones.extend((0..20).map(|i| sesion_avisos(&format!("baja{i}.fit"), Some(if i == 0 { 99.5 } else { 60.0 }), None, None)));
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    assert_eq!(h.sesiones_sobre_tss(UMBRAL_TSS_DEL_CLIENTE), 18, "18 sesiones superan el umbral");
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let a = salida.iter().find(|a| a.modulo == Modulo::Combustible).unwrap();
+    assert!(a.porque.contains("18"), "el porque tiene que decir cuantas pasan el umbral: {}", a.porque);
+    assert!(a.porque.contains("38"), "y de cuantas con TSS: {}", a.porque);
+    assert!(a.porque.contains("99.5") == false, "la de 99,5 no es una de las que pasan: {}", a.porque);
+}
+
+// ---------------------------------------------------------------- 3. LA RODILLA: SIN FASE, SIN AVISO
+
+#[test]
+fn una_sesion_SIN_fase_de_pedaleo_no_produce_aviso_de_rodilla() {
+    // El encargo lo pide literalmente, y es el caso de 19 de sus 102 ficheros: no traen fase.
+    // La sesion SI existe, SI tiene TSS y SI tiene deriva; lo que no tiene es fase.
+    let mut sesiones: Vec<SesionVista> = (0..MINIMO_PARA_LINEA_BASE * 2)
+        .map(|i| sesion_avisos(&format!("con_fase{i}.fit"), None, Some(1.0), Some(5.0)))
+        .collect();
+    // Y la ultima, la mas reciente, SIN fase y con una asimetria que seria escandalosa si existiera.
+    sesiones.push(sesion_avisos("sin_fase.fit", None, None, Some(5.0)));
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    assert!(h.base_de_fase().is_some(), "las otras sesiones SI dan linea base");
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    assert!(
+        !salida.iter().any(|a| a.modulo == Modulo::Rodilla),
+        "una sesion sin fase NO puede producir aviso de rodilla, y salio: {:?}",
+        salida.iter().map(|a| a.titulo.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn una_asimetria_que_supera_el_DOBLE_de_su_base_SI_avisa() {
+    // La otra cara: cuando el dato esta y se sale de SU norma, el aviso sale. Y con la cuenta dicha.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("normal{i}.fit"), None, Some(2.0), None))
+        .collect();
+    sesiones.push(sesion_avisos("desviada.fit", None, Some(9.0), None));
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    let base = h.base_de_fase().unwrap();
+    let corte = h.corte_de_fase().unwrap();
+    assert_eq!(base, 2.0, "la base es la mediana de las 21 sesiones");
+    assert_eq!(corte, avisos::alinear_a_la_escala(4.0), "el corte es el doble de la base");
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let a = salida
+        .iter()
+        .find(|a| a.modulo == Modulo::Rodilla)
+        .expect("una asimetria de 9,0 contra una base de 2,0 tiene que avisar");
+    assert_eq!(a.urgencia, Urgencia::Atencion, "el de la rodilla es «atención», no «hoy»");
+    assert!(a.porque.contains("2,00"), "dice su base con coma decimal, como se escribe en espanol: {}", a.porque);
+    assert!(a.porque.contains("9,0"), "y su valor: {}", a.porque);
+}
+
+#[test]
+fn la_asimetria_usa_la_diferencia_CIRCULAR_y_no_una_resta_a_pelo() {
+    // ESTE ERROR SE COMETIO MIDIENDO, y por eso tiene prueba: el primer angulo de la fase salta del
+    // 357° al 2°, y esos dos valores estan a **5 grados**, no a 355. Una resta a pelo diria que esa
+    // sesion tiene una asimetria de 355° — la peor de su historia — cuando en realidad va bien.
+    //
+    // 357,1875 y 352,96875 son los dos valores REALES de la primera sesion de su historico.
+    let izq = [357.1875, 184.21875, 185.625, 90.0];
+    let der = [352.96875, 181.40625, 187.03125, 87.1875];
+    let a = avisos::asimetria_de_fase(Some(izq), Some(der)).expect("las dos fases estan");
+    assert!(
+        a < 10.0,
+        "la asimetria de esa sesion real es de unos 4,2 grados; si sale {a} se esta restando a pelo \
+         en vez de usar la distancia angular"
+    );
+
+    // Y el caso que delata la resta a pelo, llevado al extremo: 1° contra 359° son DOS grados.
+    let cerca = avisos::asimetria_de_fase(Some([1.0, 1.0, 1.0, 1.0]), Some([359.0, 359.0, 359.0, 359.0]));
+    assert_eq!(cerca, Some(2.0), "1° y 359° estan a 2 grados, no a 358");
+}
+
+#[test]
+fn sin_UNA_de_las_dos_fases_la_asimetria_es_None_y_no_un_CERO() {
+    // Un cero seria una AFIRMACION («las dos piernas van iguales») y no se puede hacer sin las dos
+    // piernas. Comparar una pierna contra un hueco no dice nada.
+    let fase = [10.0, 20.0, 30.0, 40.0];
+    assert_eq!(avisos::asimetria_de_fase(Some(fase), None), None, "sin la derecha no hay asimetria");
+    assert_eq!(avisos::asimetria_de_fase(None, Some(fase)), None, "sin la izquierda tampoco");
+    assert_eq!(avisos::asimetria_de_fase(None, None), None, "y sin ninguna, menos");
+}
+
+// ---------------------------------------------------------------- 4. LA HONESTIDAD DEL TEXTO
+
+/// Parte un texto en palabras comparables: sin tildes, en minusculas y sin puntuacion pegada.
+///
+/// POR QUE HACE FALTA: buscar «lesion» en un texto que dice «lesiones» con un `contains` **no lo
+/// encuentra**, y una prueba que no encuentra lo que busca **da verde siempre** — que es peor que no
+/// tenerla. Aqui se normaliza y se compara palabra a palabra.
+fn palabras(texto: &str) -> Vec<String> {
+    texto
+        .to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            otro => otro,
+        })
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .map(|p| p.to_string())
+        .collect()
+}
+
+/// Todos los avisos que se pueden sacar con datos COMPLETOS, para poder revisarlos de una vez.
+fn todos_los_avisos_posibles() -> Vec<Aviso> {
+    let mut salida = Vec::new();
+    let real = sin_real();
+    let persona = Persona::desconocida();
+
+    // a) El agua, por debajo del umbral.
+    salida.extend(avisos::avisos(&persona, &real, &Historico::default(), &Hoy::con_agua(50.0_f32)));
+
+    // b) El TSS, con una sesion muy por encima.
+    let h_tss = historico_iguales(1, sesion_avisos("s.fit", Some(222.0), None, None));
+    salida.extend(avisos::avisos(&persona, &real, &h_tss, &Hoy::sin_datos()));
+
+    // c) La rodilla, con una desviacion grande y linea base.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("n{i}.fit"), None, Some(1.40625), Some(3.0)))
+        .collect();
+    sesiones.push(sesion_avisos("desviada.fit", None, Some(43.59375), Some(34.71)));
+    let h_rodilla = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+    salida.extend(avisos::avisos(&persona, &real, &h_rodilla, &Hoy::sin_datos()));
+
+    // d) La recuperacion, con una deriva muy por encima de su linea base.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("d{i}.fit"), None, None, Some(3.0)))
+        .collect();
+    sesiones.push(sesion_avisos("escapada.fit", None, None, Some(34.71)));
+    let h_deriva = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+    salida.extend(avisos::avisos(&persona, &real, &h_deriva, &Hoy::sin_datos()));
+
+    salida
+}
+
+#[test]
+fn NINGUN_texto_de_aviso_dice_diagnostico_ni_lesion_ni_promete_que_algo_cure() {
+    // LA PRUEBA DE HONESTIDAD DEL ENCARGO, y es literal: el aviso de la rodilla **no puede** parecer
+    // un informe medico. Un texto que diga «posible lesion» sobre la rodilla de una persona de 62 años
+    // es exactamente lo que este proyecto existe para no hacer.
+    //
+    // SE BUSCA PALABRA A PALABRA Y NO CON `contains`, por un motivo medido: `contains("lesion")` **no
+    // encuentra «lesiones»**, asi que una prueba escrita asi daria verde SIEMPRE. Se comprobo.
+    let prohibidas = [
+        "diagnostico", "diagnostica", "diagnostican", "diagnosticar",
+        "lesion", "lesiones", "lastimado", "lastimada",
+        "cura", "curan", "curar", "curacion", "curable",
+        "remedia", "remedian", "remediar", "trata", "tratan", "tratamiento",
+    ];
+
+    for a in todos_los_avisos_posibles() {
+        let suyas = palabras(&a.texto());
+        for p in &suyas {
+            assert!(
+                !prohibidas.contains(&p.as_str()),
+                "el texto de un aviso NO puede decir «{p}»: es un juicio clinico, y esto solo observa \
+                 datos. Aviso: {} · {}",
+                a.modulo.nombre(),
+                a.titulo
+            );
+        }
+    }
+}
+
+#[test]
+fn el_INFORME_no_promete_remedios_aunque_lleva_su_aviso_de_que_no_diagnostica() {
+    // EL INFORME LLEVA UN AVISO QUE ES OBLIGATORIO Y QUE USA UNA PALABRA PROHIBIDA EN LOS AVISOS:
+    // la ultima linea dice que este programa **«no diagnostica enfermedades ni receta»**. Es una
+    // **negacion**, y decirla es mas honesto que callarla, asi que se permite **con la frase entera
+    // dicha**, no con la palabra suelta.
+    //
+    // Y la prueba sigue sirviendo para lo que importa: si alguien anadiera al informe algo que prometa
+    // un remedio, seguiria saltando.
+    let texto = avisos::informe(
+        &Persona::desconocida(),
+        &sin_real(),
+        &Historico::default(),
+        &Hoy::con_agua(50.0_f32),
+    );
+    let suyas = palabras(&texto);
+
+    // Ninguna palabra de REMEDIO, en ninguna forma.
+    for prohibida in [
+        "cura", "curan", "curar", "curacion", "curable",
+        "remedia", "remedian", "remediar", "trata", "tratan", "tratamiento",
+        "lesion", "lesiones",
+    ] {
+        assert!(
+            !suyas.iter().any(|p| p == prohibida),
+            "el informe NO puede prometer un remedio, y dice «{prohibida}»"
+        );
+    }
+
+    // «diagnostica» SOLO puede aparecer dentro de la negacion completa, que es lo que se dice.
+    let dice_que_no = suyas.windows(2).any(|w| w[0] == "no" && w[1] == "diagnostica");
+    let aparece = suyas.iter().any(|p| p == "diagnostica");
+    if aparece {
+        assert!(
+            dice_que_no,
+            "la palabra «diagnostica» solo se admite dentro de «no diagnostica», que es la negacion"
+        );
+    }
+    // Y esa negacion tiene que ESTAR: callarla seria peor que decirla.
+    assert!(
+        texto.contains("no diagnostica enfermedades ni receta"),
+        "el informe tiene que decir que no diagnostica ni receta: {texto}"
+    );
+}
+
+#[test]
+fn el_aviso_de_la_rodilla_dice_que_es_una_OBSERVACION_y_no_un_diagnostico() {
+    // La regla de honestidad del encargo, comprobada por el otro lado: no basta con no decir la
+    // palabra prohibida, hay que **decir el sentido**. Y si alguien escribiera un aviso de rodilla sin
+    // reserva, `es_observacion()` lo delataria.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("n{i}.fit"), None, Some(1.40625), None))
+        .collect();
+    sesiones.push(sesion_avisos("desviada.fit", None, Some(9.0), None));
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let rodilla = salida
+        .iter()
+        .find(|a| a.modulo == Modulo::Rodilla)
+        .expect("tiene que salir el aviso de rodilla");
+
+    assert!(rodilla.es_observacion(), "el aviso de la rodilla TIENE que declararse observacion");
+    let reserva = rodilla.fundamento.reserva.as_ref().expect("y llevar su reserva escrita");
+    assert!(
+        reserva.contains("observación de sus propios datos"),
+        "la reserva tiene que decir que es una observacion de sus datos: {reserva}"
+    );
+    assert!(
+        reserva.contains("no una valoración médica"),
+        "y que NO es una valoracion medica: {reserva}"
+    );
+
+    // Y un aviso de rodilla SIN reserva tiene que delatarse como lo que es.
+    let malo = Aviso::nuevo(Modulo::Rodilla, Urgencia::Atencion, "t", "p", "q", "f", None);
+    assert!(
+        !malo.es_observacion(),
+        "un aviso de rodilla sin reserva afirma mas de lo que sabe, y `es_observacion` tiene que cazarlo"
+    );
+}
+
+#[test]
+fn el_aviso_de_la_rodilla_dice_que_el_reparto_izquierda_derecha_NO_existe() {
+    // Cada vez que se habla de la rodilla hay que decir de donde sale el dato Y cual NO esta, porque
+    // el cliente pidio justamente el que no existe. Si no se dice, va a seguir buscandolo.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("n{i}.fit"), None, Some(1.40625), None))
+        .collect();
+    sesiones.push(sesion_avisos("desviada.fit", None, Some(9.0), None));
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    let rodilla = salida.iter().find(|a| a.modulo == Modulo::Rodilla).unwrap();
+    let reserva = rodilla.fundamento.reserva.as_ref().unwrap();
+    assert!(
+        reserva.contains("NO viaja en el fichero FIT"),
+        "tiene que decir que el reparto de potencia NO esta en el fichero: {reserva}"
+    );
+    assert!(
+        reserva.contains("Garmin Connect"),
+        "y donde SI se puede mirar, que es lo unico util que se le puede ofrecer: {reserva}"
+    );
+}
+
+#[test]
+fn el_aviso_del_agua_NO_afirma_que_el_consome_o_los_electrolitos_sirvan() {
+    // El encargo lo pide con todas las letras: la aplicacion los RECUERDA como pauta suya y **no
+    // afirma que sirvan**, porque no hay ni una fuente que lo sostenga. Esta prueba es la que impide
+    // que un dia alguien escriba «el consomé repone los electrolitos» y nadie lo note.
+    let salida = avisos::avisos(
+        &Persona::desconocida(),
+        &sin_real(),
+        &Historico::default(),
+        &Hoy::con_agua(50.0_f32),
+    );
+    let a = salida.iter().find(|a| a.modulo == Modulo::Combustible).unwrap();
+
+    assert!(
+        a.fundamento.fuente.contains("PAUTA DEL CLIENTE"),
+        "el fundamento tiene que decir que es SU pauta: {}",
+        a.fundamento.fuente
+    );
+    assert!(
+        a.fundamento.fuente.contains("NO se afirma que sirvan"),
+        "y que NO se afirma que sirvan: {}",
+        a.fundamento.fuente
+    );
+    // Y la palabra «peligro» no puede aparecer: un umbral que el eligio no es un hallazgo clinico.
+    let suyas = palabras(&a.texto());
+    assert!(
+        !suyas.iter().any(|p| p == "peligro" || p == "peligrosa" || p == "peligroso" || p == "riesgo"),
+        "su propia pauta no se puede presentar como un peligro: {}",
+        a.texto()
+    );
+}
+
+// ---------------------------------------------------------------- 5. TODO AVISO LLEVA UN NUMERO
+
+#[test]
+fn cada_aviso_lleva_su_PORQUE_con_un_NUMERO_y_no_una_frase_vacia() {
+    // «Conviene vigilarlo» no es un aviso: es relleno. Un aviso utilizable tiene que poder decirse con
+    // un numero al lado, porque si no, el cliente no puede discutirlo ni comprobarlo.
+    let avisos_posibles = todos_los_avisos_posibles();
+    assert!(avisos_posibles.len() >= 3, "la prueba tiene que estar mirando avisos de verdad");
+
+    for a in &avisos_posibles {
+        assert!(!a.porque.trim().is_empty(), "un aviso sin porque no es un aviso");
+        assert!(
+            a.porque.chars().any(|c| c.is_ascii_digit()),
+            "el porque TIENE que llevar un numero ({} · {}): «{}»",
+            a.modulo.nombre(),
+            a.titulo,
+            a.porque
+        );
+        // Y la fuente, que es lo que separa un aviso de una opinion.
+        assert!(
+            !a.fundamento.fuente.trim().is_empty(),
+            "un aviso sin fuente no se puede comprobar: {}",
+            a.titulo
+        );
+        assert_eq!(
+            a.fundamento.afirmacion, a.porque,
+            "el fundamento y el porque tienen que decir LO MISMO, no dos cosas distintas"
+        );
+    }
+}
+
+#[test]
+fn el_titulo_y_el_que_hacer_de_un_aviso_son_UNA_sola_linea() {
+    // El encargo lo pide asi, y no es estetica: un aviso de cinco lineas no se lee en el movil, y
+    // estos avisos estan para leerse antes de una etapa.
+    for a in todos_los_avisos_posibles() {
+        assert!(
+            !a.titulo.contains('\n'),
+            "el titulo tiene que ser UNA linea: {}",
+            a.titulo
+        );
+        assert!(
+            !a.que_hacer.contains('\n'),
+            "el «que hacer» tiene que ser UNA linea: {}",
+            a.que_hacer
+        );
+        assert!(!a.titulo.trim().is_empty(), "y ninguno puede ir vacio");
+        assert!(!a.que_hacer.trim().is_empty(), "ni el que hacer");
+    }
+}
+
+#[test]
+fn los_avisos_salen_ordenados_con_lo_mas_urgente_PRIMERO() {
+    // Un aviso urgente que aparece el quinto se lee tarde. Se comprueba que el orden es por urgencia.
+    let h = historico_iguales(1, sesion_avisos("s.fit", Some(150.0), None, None));
+    let mut sesiones = h.sesiones.clone();
+    // Una rodilla desviada, para tener un segundo aviso de otra urgencia.
+    let mut con_fase: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("n{i}.fit"), None, Some(1.40625), None))
+        .collect();
+    con_fase.push(sesion_avisos("desviada.fit", None, Some(9.0), None));
+    sesiones.extend(con_fase);
+    let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::con_agua(50.0_f32));
+    assert!(salida.len() >= 3, "tienen que salir los tres modulos, y salieron {}", salida.len());
+
+    for par in salida.windows(2) {
+        assert!(
+            par[0].urgencia >= par[1].urgencia,
+            "los avisos tienen que ir de mas urgente a menos: {:?} antes de {:?}",
+            par[0].urgencia,
+            par[1].urgencia
+        );
+    }
+    assert_eq!(salida[0].urgencia, Urgencia::Hoy, "el primero tiene que ser de los de «hoy»");
+}
+
+#[test]
+fn la_confianza_de_un_aviso_BAJA_cuando_tiene_reserva() {
+    // La regla del motor, que no se sube por tener muchos datos y si se baja por faltar uno: un aviso
+    // con reserva NO es «seguro».
+    let con_reserva = Aviso::nuevo(
+        Modulo::Rodilla,
+        Urgencia::Atencion,
+        "t",
+        "p con 3.5",
+        "q",
+        "f",
+        Some("r".to_string()),
+    );
+    assert_eq!(
+        con_reserva.confianza(),
+        Confianza::ConReserva,
+        "un aviso con reserva no puede ser «seguro»"
+    );
+}
+
+// ================================================== 18. LA POTENCIA
+//
+// POR QUE ESTA SECCION EXISTE, y es el problema que la justifica entera: el motor calculaba las zonas
+// SOLO con el pulso, y este cliente **entrena con potencia** — medidor de doble sensor y un FTP que le
+// detecto el reloj. Para un puerto las zonas de potencia dicen mas que las de pulso: el pulso va con
+// retraso y lo mueven el calor y la fatiga, y un vatio es un vatio.
+//
+// MEDIDO sobre sus 102 ficheros: 83 traen potencia y 19 no. Por eso estas pruebas comprueban las dos
+// mitades: que las zonas salen bien cuando hay vatios, y que **no se inventa nada** cuando no los hay.
+
+use motor::potencia::{self, DeclaradoDePotencia, ZonaPotencia};
+
+/// Un fichero FIT de verdad **con potencia**, si esta en esta maquina. Si no, la prueba se salta.
+///
+/// SE BUSCA EL PRIMERO QUE SE PUEDA LEER ENTERO, y no se fija uno por nombre a proposito: hay
+/// ficheros que `fitparser` no sabe abrir (`ParseError(Tag)` en el primer byte) y **no es un fallo
+/// nuestro**, es un fichero raro. Una prueba que dependa de un fichero concreto se pone roja por un
+/// motivo que no tiene nada que ver con lo que comprueba — y entonces deja de proteger.
+fn fit_con_potencia() -> Option<(std::path::PathBuf, motor::fit::Lectura, DeclaradoDePotencia)> {
+    let carpeta = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../datos/garmin_files/storage");
+    let mut rutas: Vec<std::path::PathBuf> = std::fs::read_dir(&carpeta)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "fit").unwrap_or(false))
+        .collect();
+    rutas.sort();
+    for ruta in rutas {
+        let Ok(d) = potencia::leer_declarado_de_potencia(&ruta) else { continue };
+        if !d.umbral_w.lo_hay() {
+            continue;
+        }
+        if let Ok(l) = motor::fit::leer(&ruta) {
+            return Some((ruta, l, d));
+        }
+    }
+    None
+}
+
+#[test]
+fn las_zonas_de_potencia_cubren_todo_el_rango_SIN_HUECOS_Y_SIN_SOLAPARSE() {
+    // ESTA ES LA PRUEBA QUE IMPIDE EL DEFECTO CLASICO: una zona empieza donde acaba la anterior, asi
+    // que si el techo de una no es exactamente el suelo de la siguiente, o hay un vatio sin zona
+    // (hueco) o hay dos zonas diciendo lo mismo (solape).
+    let ftp = potencia::Ftp::estimado(213.0);
+    let zs = potencia::zonas_de_potencia(&ftp);
+    assert_eq!(zs.len(), 7, "las siete zonas de Coggan");
+
+    for par in zs.windows(2) {
+        let techo = par[0]
+            .2
+            .as_ref()
+            .expect("solo la ULTIMA zona puede no tener techo");
+        assert_eq!(
+            techo.valor, par[1].1.valor,
+            "la zona {} acaba en {:.1} y la {} empieza en {:.1}: o hay hueco o hay solape",
+            par[0].0.nombre(),
+            techo.valor,
+            par[1].0.nombre(),
+            par[1].1.valor
+        );
+    }
+    // Y la ultima NO tiene techo, porque la fuente no lo publica: eso es un dato, no un olvido.
+    assert!(zs.last().unwrap().2.is_none(), "la zona 7 no tiene techo en la fuente");
+    assert!(zs.last().unwrap().0.sin_techo());
+}
+
+#[test]
+fn NINGUNA_zona_ensena_el_mismo_tramo_que_la_anterior() {
+    // ESTE DEFECTO YA SALIO UNA VEZ EN ESTE PROYECTO, y por eso tiene su propia prueba: la primera
+    // version de `zonas_del_umbral` devolvia solo el SuELO, y como cada zona empieza donde acaba la
+    // anterior, **dos zonas seguidas ensenaban el mismo numero**. Un informe que dice dos veces 213 no
+    // se entiende, y el fallo era de lectura, no de calculo.
+    let ftp = potencia::Ftp::estimado(213.0);
+    let zs = potencia::zonas_de_potencia(&ftp);
+    for (i, w) in zs.windows(2).enumerate() {
+        assert_ne!(
+            w[0].2.as_ref().map(|r| r.valor),
+            w[1].2.as_ref().map(|r| r.valor),
+            "las zonas {} y {} acaban en el mismo vatio",
+            i + 1,
+            i + 2
+        );
+        assert_ne!(
+            w[0].1.valor, w[1].1.valor,
+            "las zonas {} y {} empiezan en el mismo vatio",
+            i + 1,
+            i + 2
+        );
+    }
+    // Y ninguna zona enseña un tramo VACIO: «de 213 a 213» no es una zona.
+    for (z, desde, hasta) in &zs {
+        if let Some(h) = hasta {
+            assert!(
+                h.valor > desde.valor,
+                "la zona {} enseña un tramo vacio ({} a {})",
+                z.nombre(),
+                desde.valor,
+                h.valor
+            );
+        }
+    }
+}
+
+#[test]
+fn los_cortes_son_los_de_COGGAN_calculados_a_mano() {
+    // A mano, sobre 213 W, con los cortes de la fuente (55 / 75 / 90 / 105 / 120 / 150 %):
+    //   213 x 0,55 = 117,15 · x 0,75 = 159,75 · x 0,90 = 191,7 · x 1,05 = 223,65 · x 1,20 = 255,6 · x 1,50 = 319,5
+    // Si estos numeros no cuadran, la tabla del comentario y el codigo se han separado.
+    let ftp = potencia::Ftp::estimado(213.0);
+    let zs = potencia::zonas_de_potencia(&ftp);
+    let techos: Vec<f64> = zs.iter().filter_map(|(_, _, h)| h.as_ref().map(|r| r.valor)).collect();
+    assert_eq!(techos.len(), 6, "seis techos: la zona 7 no tiene");
+    for (obtenido, esperado) in techos.iter().zip([117.15, 159.75, 191.7, 223.65, 255.6, 319.5]) {
+        assert!(
+            (obtenido - esperado).abs() < 0.01,
+            "el corte no cuadra con el calculo a mano: {obtenido:.2} frente a {esperado:.2}"
+        );
+    }
+}
+
+#[test]
+fn con_FTP_CERO_o_sin_FTP_NO_se_inventan_zonas() {
+    // «No inventar» NO es lo mismo que «no responder», pero aqui la respuesta correcta ES «falta»:
+    // siete zonas de cero vatios no son una respuesta, son un error con aspecto de tabla.
+    let sin_nada = motor::fit::Declarado::default();
+    assert_eq!(
+        potencia::umbral_de_potencia(&sin_nada),
+        motor::Dato::Falta,
+        "sin umbral declarado no hay zonas, y se dice"
+    );
+
+    let mut cero = motor::fit::Declarado::default();
+    cero.potencia_umbral = motor::Dato::Hay(0);
+    assert_eq!(
+        potencia::umbral_de_potencia(&cero),
+        motor::Dato::Falta,
+        "un umbral de CERO no es un umbral: daria siete zonas de cero vatios"
+    );
+
+    // Y el caso con vatios pero sin umbral tampoco se rellena: se dice QUE falta.
+    let que = potencia::que_falta_para_potencia(false, true).expect("tiene que decir que falta");
+    assert!(que.contains("prueba de 20 minutos"), "y tiene que decir que haria falta: {que}");
+}
+
+#[test]
+fn el_FTP_DECLARADO_por_el_aparato_lleva_SU_margen_y_su_origen() {
+    // El margen NO es cero: el aparato estima. Y el origen se declara, porque un umbral declarado por
+    // el reloj y uno estimado por nosotros no valen lo mismo.
+    let mut d = motor::fit::Declarado::default();
+    d.potencia_umbral = motor::Dato::Hay(213);
+    match potencia::umbral_de_potencia(&d) {
+        motor::Dato::Hay(ftp) => {
+            assert_eq!(ftp.valor(), 213.0);
+            assert_eq!(ftp.referencia, potencia::Referencia::DeclaradoPorElAparato);
+            assert!(
+                (ftp.rango.margen - potencia::ERROR_FTP_DECLARADO).abs() < 1e-9,
+                "el margen es el error tipico publicado (7 W), no un cero"
+            );
+            assert!(ftp.referencia.que_falta().is_none(), "con el aparato declarandolo, no falta nada");
+            // Y el margen del estimado es MAS ANCHO, que es lo que pide el encargo.
+            let estimado = potencia::Ftp::estimado(213.0);
+            assert!(
+                estimado.rango.margen > ftp.rango.margen,
+                "una estimacion no puede tener el margen de un dato respaldado"
+            );
+            assert_eq!(estimado.referencia, potencia::Referencia::Estimado);
+            assert!(estimado.referencia.que_falta().is_some());
+        }
+        motor::Dato::Falta => panic!("con 213 W declarados tiene que haber umbral"),
+    }
+}
+
+#[test]
+fn el_TSS_se_LEE_del_fichero_y_NO_se_recalcula() {
+    // ESTA PRUEBA ES LA REGLA DEL PROYECTO, y por eso se comprueba con un fichero de verdad y con las
+    // piezas en la mano: si `carga_de` recalculara, el numero que devuelve NO seria el del fichero.
+    // Se lee un FIT suyo, y se comprueba contra el valor que ese mismo fichero declara.
+    let Some((ruta, l, d)) = fit_con_potencia() else {
+        eprintln!("(sin ficheros FIT con potencia en esta maquina: la prueba se salta)");
+        return;
+    };
+
+    // a) lo que devuelve `carga_de` es EXACTAMENTE lo que trae el fichero, y el fichero declara el
+    //    mismo TSS que lee nuestro lector de potencia: dos lectores distintos, el mismo numero.
+    let tss = potencia::carga_de(&l.declarado);
+    assert!(tss.lo_hay(), "ese fichero tiene potencia, asi que tiene TSS");
+    assert_eq!(tss, d.tss, "los dos lectores tienen que leer el mismo TSS del mismo fichero");
+
+    // b) y NO se recalcula. Sobre TODOS los ficheros de la carpeta, ninguno tiene un TSS que sea
+    //    exactamente `duracion x NP x IF / (FTP x 3600) x 100`: la probabilidad de que la cuenta caiga
+    //    clavada es practicamente nula, asi que si `carga_de` recalculase, esta prueba se pondria roja.
+    //    (Medido sobre sus 83 sesiones con potencia: cuadran 55 dentro de media unidad, y NINGUNA da
+    //    el mismo numero con todos los decimales.)
+    let c = potencia::comprobar_tss(&l.declarado, potencia::TOLERANCIA_TSS)
+        .expect("ese fichero trae NP, IF y FTP");
+    assert!(
+        (c.recalculado - c.declarado).abs() > 1e-6,
+        "si la cuenta diera clavado el TSS del fichero, esta prueba no probaria nada: {ruta:?}"
+    );
+    assert!(
+        c.cuadra,
+        "y aun asi tiene que cuadrar dentro de media unidad: {:.1} frente a {:.1}",
+        c.recalculado, c.declarado
+    );
+}
+
+#[test]
+fn una_carga_ALTA_se_detecta_con_el_umbral_del_cliente_y_100_exacto_NO_lo_es() {
+    // EL CORTE ES ESTRICTO, Y ES UNA DECISION QUE HAY QUE JUSTIFICAR: el cliente escribio «si el
+    // entrenamiento supERA los 100 TSS», y superar quiere decir MAS de. Asi que 100,0 exacto NO es
+    // carga alta, y la frontera queda del lado conservador. La alternativa marcaria como alta una
+    // sesion que esta exactamente en el numero que el puso como limite.
+    let u = potencia::UMBRAL_DE_CARGA_DEL_CLIENTE;
+    assert_eq!(u, 100.0, "el umbral es el que puso el cliente");
+    assert_eq!(u, motor::avisos::UMBRAL_TSS_DEL_CLIENTE, "y esta en UN solo sitio");
+
+    assert!(!potencia::carga_es_alta(u, u), "100 exacto NO supera 100");
+    assert!(potencia::carga_es_alta(100.1, u), "una decima mas SI");
+    assert!(potencia::carga_es_alta(221.5, u), "y su sesion mas dura, tambien");
+    assert!(!potencia::carga_es_alta(99.9, u), "99,9 no llega");
+    assert!(!potencia::carga_es_alta(64.1, u), "su mediana tampoco");
+
+    // Y un dato que no es un dato NO dispara el aviso: no se avisa por un hueco.
+    assert!(!potencia::carga_es_alta(f64::NAN, u), "NaN no es una carga alta");
+    assert!(!potencia::carga_es_alta(-5.0, u), "una carga negativa no existe");
+    assert!(!potencia::carga_es_alta(0.0, u), "cero no supera nada");
+
+    // El fundamento dice que es SU regla, no un hallazgo: eso es lo que impide llamarlo «peligro».
+    let f = potencia::fundamento_del_aviso_de_carga();
+    assert!(f.contains("regla del propio cliente"), "el fundamento tiene que ser suyo: {f}");
+    assert!(f.contains("NO es un hallazgo"), "y tiene que decir lo que NO es: {f}");
+}
+
+#[test]
+fn una_sesion_SIN_POTENCIA_no_produce_zona_de_potencia_y_lo_DICE() {
+    // 19 DE SUS 102 SESIONES NO TIENEN POTENCIA, y ese numero manda sobre el diseno: la respuesta
+    // correcta no es una lista de ceros —eso seria una afirmacion falsa— sino «falta».
+    let sin_zonas = DeclaradoDePotencia::default();
+    assert!(
+        potencia::tiempo_en_zonas(&sin_zonas.tiempo_en_potencia_s).is_none(),
+        "sin reparto en el fichero no hay zonas, y NO una lista de ceros"
+    );
+    // Y una lista vacia tampoco es un dato: es un hueco con forma de dato.
+    let mut vacia = DeclaradoDePotencia::default();
+    vacia.tiempo_en_potencia_s = motor::Dato::Hay(Vec::new());
+    assert!(potencia::tiempo_en_zonas(&vacia.tiempo_en_potencia_s).is_none());
+
+    let que = potencia::que_falta_para_potencia(true, false).expect("tiene que decir que falta");
+    assert!(que.contains("no se rellenan con ceros"), "y por que no se rellenan: {que}");
+
+    // El caso mas honesto: ni vatios ni umbral.
+    let nada = potencia::que_falta_para_potencia(false, false).expect("tambien lo dice");
+    assert!(nada.contains("ni vatios ni umbral"), "y lo dice entero: {nada}");
+}
+
+#[test]
+fn el_TSS_que_trae_el_fichero_SI_cuadra_con_NP_IF_y_FTP_y_lo_hemos_medido() {
+    // 55 DE SUS 83 SESIONES CON POTENCIA cuadran dentro de media unidad de TSS. La comprobacion VALE,
+    // y por eso se puede afirmar que la cadena cuadra; y las 28 que no cuadran son justo lo que hay
+    // que mirar. Esta es la comprobacion que `fit.rs` describe: si no coinciden, uno de los dos esta
+    // mal, y eso sale gratis.
+    let Some((ruta, l, d)) = fit_con_potencia() else {
+        eprintln!("(sin ficheros FIT: la prueba se salta)");
+        return;
+    };
+    // LA DURACION ES LA CLAVE, y esta medido: `fit::Declarado.duracion_s` guarda el tiempo
+    // TRANSCURRIDO, y la cuenta de Coggan necesita el tiempo EN MOVIMIENTO. Con la transcurrida
+    // cuadran 31 de sus 83 sesiones; con la de movimiento, 55. Aqui se usa la que hace falta para la
+    // cuenta, que es la que trae este lector, y se declara.
+    let mut declarado = l.declarado.clone();
+    let movimiento = d.duracion_en_movimiento_s.valor().expect("ese fichero trae duracion");
+    declarado.duracion_s = motor::Dato::Hay(movimiento as u32);
+    let c = potencia::comprobar_tss(&declarado, potencia::TOLERANCIA_TSS).expect("trae las piezas");
+    assert!(
+        c.cuadra,
+        "en ESTE fichero ({ruta:?}) la cuenta cuadra: {:.1} calculado frente a {:.1} declarado",
+        c.recalculado, c.declarado
+    );
+    // Y sin la duracion no se puede comprobar: `None`, no un numero inventado.
+    let mut sin_duracion = declarado.clone();
+    sin_duracion.duracion_s = motor::Dato::Falta;
+    assert!(potencia::comprobar_tss(&sin_duracion, potencia::TOLERANCIA_TSS).is_none());
+    assert!(ruta.exists());
+}
+
+#[test]
+fn el_lector_de_zonas_de_potencia_COGE_EL_MENSAJE_DE_LA_SESION_y_su_reparto_CUADRA() {
+    // ESTA PRUEBA ES LA QUE JUSTIFICA MIRAR `reference_mesg`, y costo medirlo: el FIT trae un mensaje
+    // `TimeInZone` POR VUELTA y uno mas por la sesion. Cogiendo el PRIMERO —que es lo natural si no se
+    // mira— el reparto suma, de mediana, un 84,7 % MENOS que la sesion, y **el numero seguiria
+    // pareciendo bueno**. Con el de la sesion, cuadra.
+    let Some((_ruta, _l, d)) = fit_con_potencia() else {
+        eprintln!("(sin ficheros FIT: la prueba se salta)");
+        return;
+    };
+    let zonas = potencia::tiempo_en_zonas(&d.tiempo_en_potencia_s).expect("trae reparto de zonas");
+    assert_eq!(zonas.len(), 7, "siete zonas con nombre, no las diez posiciones del array");
+
+    let duracion = d.duracion_en_movimiento_s.valor().expect("trae duracion");
+    let c = potencia::comparar_zonas_con_duracion(&zonas, duracion, 0.01);
+    let sin_zona = potencia::segundos_sin_zona(&d.tiempo_en_potencia_s);
+    // LA SUMA COMPLETA ES LA QUE CUADRA, y esa es la comprobacion que vale: las siete zonas que la
+    // fuente define MAS el tiempo que el aparato mete en los tramos 8 a 10, que no se nombran. Si el
+    // lector cogiera el mensaje de una vuelta en vez del de la sesion, esto no cuadraria ni de lejos.
+    let total = c.suma_de_zonas_s + sin_zona;
+    assert!(
+        (total - duracion).abs() / duracion < 0.001,
+        "la suma completa tiene que cuadrar con la duracion: {total:.1} frente a {duracion:.1}"
+    );
+    // Y el tiempo sin zona no puede ser mayor que la sesion: si lo fuera, el lector estaria sumando
+    // dos veces el mismo mensaje.
+    assert!(sin_zona <= duracion, "el tiempo sin zona no puede pasar de la sesion");
+
+    // Y el umbral que declara ese fichero es el suyo, medido: 213 W en las 83 sesiones con potencia.
+    assert_eq!(d.umbral_w, motor::Dato::Hay(213));
+}
+
+#[test]
+fn una_sesion_sin_potencia_deja_el_reparto_de_zonas_VACIO_y_eso_es_lo_correcto() {
+    // Medido: las 19 sesiones sin potencia suman 0 segundos de zonas de potencia. El aparato deja el
+    // reparto vacio, y por eso el motor devuelve «falta» en vez de una lista de ceros. Se comprueba
+    // sobre una de ellas, de verdad.
+    let carpeta = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../datos/garmin_files/storage");
+    let mut rutas: Vec<std::path::PathBuf> = match std::fs::read_dir(&carpeta) {
+        Ok(d) => d
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map(|x| x == "fit").unwrap_or(false))
+            .collect(),
+        Err(_) => {
+            eprintln!("(sin ficheros FIT: la prueba se salta)");
+            return;
+        }
+    };
+    rutas.sort();
+
+    let mut encontradas = 0;
+    for ruta in &rutas {
+        let Ok(d) = potencia::leer_declarado_de_potencia(ruta) else { continue };
+        // Solo interesan las que NO traen umbral: son las que no tienen potencia.
+        if d.umbral_w.lo_hay() {
+            continue;
+        }
+        encontradas += 1;
+        assert!(
+            potencia::tiempo_en_zonas(&d.tiempo_en_potencia_s).is_none(),
+            "una sesion sin potencia NO puede tener zonas de potencia"
+        );
+        assert!(
+            potencia::que_falta_para_potencia(false, false).is_some(),
+            "y el motor tiene que decir que falta"
+        );
+        // Con dos basta: leer las 102 tarda, y una prueba lenta se deja de correr.
+        if encontradas >= 2 {
+            break;
+        }
+    }
+    assert!(encontradas > 0, "tiene que haber sesiones sin potencia: medido, 19 de 102");
+}
+
+#[test]
+fn la_carga_semanal_agrupa_por_lunes_y_NO_suma_los_huecos_como_cero() {
+    // La trampa que esta prueba caza: una sesion sin TSS sumada como 0 haria que una semana con dos
+    // sesiones ilegibles pareciera una semana de descanso, y esa confusion es la que produce planes
+    // equivocados.
+    let sesiones = vec![
+        potencia::SesionConCarga::nueva("2026-05-02", 100.0), // sabado -> lunes 2026-04-27
+        potencia::SesionConCarga::nueva("2026-05-03", 50.0),  // domingo -> la MISMA semana
+        potencia::SesionConCarga::nueva("2026-05-05", 30.0),  // martes -> lunes 2026-05-04
+        potencia::SesionConCarga::sin_datos(),                // sin fecha: NO entra en ninguna semana
+    ];
+    let semanas = potencia::carga_semanal(&sesiones);
+    assert_eq!(semanas.len(), 2, "dos semanas, y la sesion sin fecha no inventa una tercera");
+    assert_eq!(semanas[0].lunes, "2026-04-27", "el sabado pertenece a la semana del lunes anterior");
+    assert!((semanas[0].tss_total - 150.0).abs() < 1e-9);
+    assert_eq!(semanas[0].sesiones, 2);
+    assert_eq!(semanas[1].lunes, "2026-05-04");
+    assert!((semanas[1].tss_total - 30.0).abs() < 1e-9);
+
+    // Y una sesion CON fecha pero SIN TSS: cuenta como sesion y NO suma cero.
+    let con_hueco = potencia::carga_semanal(&[
+        potencia::SesionConCarga {
+            fecha: Some("2026-05-05".to_string()),
+            tss: motor::Dato::Hay(40.0),
+        },
+        potencia::SesionConCarga {
+            fecha: Some("2026-05-06".to_string()),
+            tss: motor::Dato::Falta,
+        },
+    ]);
+    assert_eq!(con_hueco.len(), 1);
+    assert_eq!(con_hueco[0].sesiones, 2, "las dos cuentan como sesiones");
+    assert_eq!(con_hueco[0].sin_tss, 1, "y la que no trae TSS se cuenta aparte");
+    assert!((con_hueco[0].tss_total - 40.0).abs() < 1e-9, "no se suma un cero por ella");
+
+    // Y los lunes estan bien calculados: el 2026-05-02 fue sabado (comprobado con el calendario).
+    assert_eq!(potencia::lunes_de_la_semana("2026-05-02").unwrap(), "2026-04-27");
+    assert_eq!(potencia::lunes_de_la_semana("2026-10-13").unwrap(), "2026-10-12");
+    assert_eq!(potencia::lunes_de_la_semana("2026-11-29").unwrap(), "2026-11-23");
+    // Y una fecha que no es una fecha NO se adivina.
+    assert!(potencia::lunes_de_la_semana("(sin fecha)").is_none());
+    assert!(potencia::lunes_de_la_semana("2026-13-01").is_none(), "el mes 13 no existe");
+    assert!(potencia::lunes_de_la_semana("2026-05-40").is_none(), "el dia 40 tampoco");
+}
+
+#[test]
+fn el_resumen_de_carga_CUENTA_las_sesiones_sin_potencia_y_sin_TSS() {
+    // Un minimo, una mediana y un maximo calculados sobre 83 sesiones de 102 NO significan lo mismo
+    // que sobre 102, y quien lee tiene derecho a saberlo en la misma linea.
+    let sesiones = vec![
+        (motor::Dato::Hay(221.5), true),
+        (motor::Dato::Hay(64.1), true),
+        (motor::Dato::Hay(3.2), true),
+        (motor::Dato::Hay(155.6), true),
+        (motor::Dato::Falta, false), // una de las 19 sin potencia
+    ];
+    let r = potencia::ResumenDeCarga::calcular(&sesiones, potencia::UMBRAL_DE_CARGA_DEL_CLIENTE);
+    assert_eq!(r.sesiones, 5);
+    assert_eq!(r.con_tss, 4);
+    assert_eq!(r.sin_tss, 1);
+    assert_eq!(r.con_potencia, 4);
+    assert_eq!(r.sin_potencia, 1);
+    assert_eq!(r.minimo, Some(3.2));
+    assert_eq!(r.maximo, Some(221.5));
+    // Con cuatro valores (par), la mediana es la media de los dos centrales: (64,1 + 155,6) / 2.
+    assert!((r.mediana.unwrap() - 109.85).abs() < 1e-9, "la mediana de un numero par de valores");
+    assert_eq!(r.por_encima_del_umbral, 2, "221,5 y 155,6 superan los 100");
+    assert!(r.frase().contains("SIN TSS"), "la frase tiene que decir lo que falta: {}", r.frase());
+    assert!(r.frase().contains("sin potencia"), "y las que no traen vatios");
+
+    // Sin ni una sesion con TSS, no se dice nada de la carga en vez de decir «0».
+    let vacio = potencia::ResumenDeCarga::calcular(&[(motor::Dato::Falta, false)], 100.0);
+    assert_eq!(vacio.minimo, None, "sin datos no hay minimo: `None`, no cero");
+    assert!(vacio.frase().contains("no hay ni una sesión"), "{}", vacio.frase());
+}
+
+#[test]
+fn una_potencia_cae_en_SU_zona_y_la_ultima_zona_es_ABIERTA() {
+    // La zona se busca por los cortes, y la ultima se lleva todo lo que sobre: eso es lo que la fuente
+    // dice («maximal», sin techo). Se comprueba con los numeros de su FTP de 213 W.
+    let ftp = potencia::Ftp::estimado(213.0);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 100.0), ZonaPotencia::RecuperacionActiva);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 130.0), ZonaPotencia::Resistencia);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 180.0), ZonaPotencia::Tempo);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 213.0), ZonaPotencia::Umbral);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 240.0), ZonaPotencia::ConsumoMaximo);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 300.0), ZonaPotencia::CapacidadAnaerobica);
+    // Y por encima de 1,50 x FTP sigue habiendo zona: la septima, que NO tiene techo.
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 319.5), ZonaPotencia::Neuromuscular);
+    assert_eq!(potencia::zona_de_una_potencia(&ftp, 596.0), ZonaPotencia::Neuromuscular);
+    // Su potencia MAXIMA medida en las muestras es 596 W: cae en la septima, y no se sale de la tabla.
+    assert!(ZonaPotencia::todas().contains(&potencia::zona_de_una_potencia(&ftp, 596.0)));
+}
+
+#[test]
+fn el_ruido_de_la_escala_NO_cambia_la_cuenta_de_las_sesiones_que_avisan() {
+    // ESTE FALLO OCURRIO DE VERDAD Y COSTO DOS INTENTOS, por eso tiene prueba propia.
+    //
+    // La fase de pedaleo viene CUANTIZADA: el FIT la guarda en un byte y el lector la escala a grados,
+    // asi que los valores son multiplos de 1,40625° **con un ruido de hasta 5,5·10⁻⁶** encima. Medido:
+    // una asimetria que deberia valer 5,625 llega como 5,6250000879 o como 5,6249944628.
+    //
+    // Y el corte —el doble de la mediana— **cae sobre un peldaño**, asi que hay sesiones que estan EN
+    // el corte salvo ese ruido. Comparando con un `>` a pelo, entraban o no segun el ruido del
+    // redondeo, y el aviso decia **28 sesiones donde hay 20**.
+    //
+    // Aqui se reproducen las tres formas del mismo peldaño y se comprueba que cuentan IGUAL.
+    let paso = avisos::PASO_DE_LA_FASE_GRADOS;
+    let en_el_corte = 4.0 * paso; // 5,625°
+
+    // Veinte sesiones en 2 peldaños (la linea base) y tres en el corte, con las tres formas del ruido.
+    let mut sesiones: Vec<SesionVista> = (0..20)
+        .map(|i| sesion_avisos(&format!("base{i}.fit"), None, Some(2.0 * paso), None))
+        .collect();
+    for (i, desviacion) in [0.0, 8.789061212155502e-8, -5.537109473152668e-6].iter().enumerate() {
+        sesiones.push(sesion_avisos(&format!("borde{i}.fit"), None, Some(en_el_corte + desviacion), None));
+    }
+    let h = Historico {
+        total_sesiones: sesiones.len(),
+        no_leidos: Vec::new(),
+        sesiones,
+    };
+
+    assert_eq!(h.base_de_fase(), Some(2.0 * paso), "la base son dos peldaños");
+    assert_eq!(
+        h.corte_de_fase(),
+        Some(avsios_corte(h.base_de_fase().unwrap())),
+        "el corte tiene que estar ALINEADO al peldaño, no en el valor crudo del doble"
+    );
+
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::sin_datos());
+    assert!(
+        !salida.iter().any(|a| a.modulo == Modulo::Rodilla),
+        "las tres sesiones estan EN el corte (una de ellas con ruido), y ninguna puede avisar. \
+         Si alguna avisa, la cuenta depende del redondeo del ordenador y no de la bicicleta"
+    );
+}
+
+/// El corte de la fase, escrito a mano para no copiarlo del modulo que se esta probando.
+fn avsios_corte(base: f64) -> f64 {
+    let paso = 360.0 / 256.0;
+    ((base * 2.0) / paso).round() * paso
 }

@@ -12,7 +12,7 @@
 //! cliente aún no ha dado los suyos. **Sirve para probar el motor entero sin depender de nadie.**
 
 use crate::datos::{Dato, Muestra, Persona, Sesion, Sexo};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Un dato que **puede venir o no venir** en el fichero.
 ///
@@ -20,12 +20,12 @@ use serde::Deserialize;
 /// exterior entiende. La traducción a `Dato` la hace este módulo, **en un solo sitio**.
 type Quizas<T> = Option<T>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PerfilJson {
     pub persona: PersonaJson,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PersonaJson {
     pub edad: Quizas<u8>,
     pub peso_kg: Quizas<f32>,
@@ -67,6 +67,33 @@ impl PersonaJson {
             },
         }
     }
+
+    /// Traduce **al revés**: del modelo del motor al formato del fichero.
+    ///
+    /// **Lo que falta se escribe `null`, nunca un cero.** Es la misma regla en el otro sentido, y
+    /// tiene la misma consecuencia: un dato ausente escrito como 0, al volver a leerlo, parecería un
+    /// dato de la persona. «No sé su peso» se convertiría en «pesa cero kilos» — y ese cero viajaría
+    /// por todas las fórmulas sin que nadie lo notara.
+    pub fn de(p: &Persona) -> Self {
+        Self {
+            edad: quizas(p.edad),
+            peso_kg: quizas(p.peso_kg),
+            pulso_reposo: quizas(p.pulso_reposo),
+            pulso_maximo_medido: quizas(p.pulso_maximo_medido),
+            // El sexo se guarda con la misma palabra que entiende `a_persona`, para que el ciclo
+            // leer → guardar → leer no cambie el dato por el camino.
+            sexo: match p.sexo {
+                Dato::Hay(Sexo::Femenino) => Some("femenino".to_string()),
+                Dato::Hay(Sexo::Masculino) => Some("masculino".to_string()),
+                Dato::Falta => None,
+            },
+            altura_cm: quizas(p.altura_cm),
+            grasa_corporal_pct: quizas(p.grasa_corporal_pct),
+            masa_muscular_kg: quizas(p.masa_muscular_kg),
+            umbral_lactato: quizas(p.umbral_lactato),
+            vo2_maximo: quizas(p.vo2_maximo),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,24 +114,36 @@ pub struct MuestraJson {
     pub segundo: u32,
     pub pulso: Quizas<u16>,
     pub potencia_w: Quizas<u16>,
+    /// La cadencia, **si el formato de fuera la trae**. Los ficheros de ejemplo que ya existen no la
+    /// tienen, y por eso es `Quizas`: sin ella la muestra queda en `Falta`, que es la verdad — **no
+    /// en 0 rpm**, que sería una bicicleta parada.
+    pub cadencia_rpm: Quizas<u8>,
+    /// La distancia acumulada y la temperatura, por el mismo motivo: si el fichero no las trae,
+    /// quedan en `Falta` y **no en cero**.
+    pub distancia_m: Quizas<f64>,
+    pub temperatura_c: Quizas<f32>,
 }
 
 impl SesionJson {
     /// Traduce una sesión al modelo del motor, **conservando lo que falta como `Falta`**.
+    ///
+    /// La biomecánica se deja vacía a propósito: el JSON de fuera **todavía no la declara**, y
+    /// rellenarla con ceros sería exactamente lo que este motor no hace. El día que ese formato la
+    /// traiga, se traduce aquí y se dice.
     pub fn a_sesion(&self) -> Sesion {
-        Sesion {
-            muestras: self
-                .muestras
-                .iter()
-                .map(|m| Muestra {
-                    segundo: m.segundo,
-                    pulso: segun(m.pulso),
-                    potencia_w: segun(m.potencia_w),
-                })
-                .collect(),
-            duracion_s: Dato::Hay(self.duracion_s),
-            intervalos_rr_ms: Vec::new(),
-        }
+        let muestras: Vec<Muestra> = self
+            .muestras
+            .iter()
+            .map(|m| Muestra {
+                segundo: m.segundo,
+                pulso: segun(m.pulso),
+                potencia_w: segun(m.potencia_w),
+                cadencia_rpm: segun(m.cadencia_rpm),
+                distancia_m: segun(m.distancia_m),
+                temperatura_c: segun(m.temperatura_c),
+            })
+            .collect();
+        Sesion::con_duracion(muestras, self.duracion_s)
     }
 }
 
@@ -116,10 +155,33 @@ fn segun<T>(v: Quizas<T>) -> Dato<T> {
     }
 }
 
+/// Y la vuelta: un `Dato` nuestro a lo que entiende el mundo exterior. **El otro sentido de la misma
+/// regla**, y por eso vive aquí al lado: si un dato falta, sale `null` — nunca un valor inventado.
+fn quizas<T>(d: Dato<T>) -> Quizas<T> {
+    match d {
+        Dato::Hay(v) => Some(v),
+        Dato::Falta => None,
+    }
+}
+
 /// Lee el perfil de la persona desde un texto JSON.
 pub fn leer_perfil(texto: &str) -> Result<Persona, String> {
     let p: PerfilJson = serde_json::from_str(texto).map_err(|e| format!("el JSON no se entiende: {e}"))?;
     Ok(p.persona.a_persona())
+}
+
+/// Escribe el perfil de la persona como texto JSON.
+///
+/// **INDENTADO A PROPÓSITO**: el fichero vive junto al programa y su dueño va a abrirlo y mirarlo.
+/// Un JSON en una sola línea lo lee un programa, no la persona a la que pertenecen los datos.
+///
+/// No devuelve `Result`: escribir un perfil no puede fallar (son números, textos y `null`), y aquí no
+/// hay nada que decidir. Si algún día fallara, sería un fallo del programa y tendría que verse, en
+/// vez de devolver un texto a medias que luego no se pudiera leer.
+pub fn a_json(p: &Persona) -> String {
+    let perfil = PerfilJson { persona: PersonaJson::de(p) };
+    serde_json::to_string_pretty(&perfil)
+        .expect("un perfil de números, textos y null siempre se puede escribir")
 }
 
 /// Lee las semanas de entrenamiento desde un texto JSON.

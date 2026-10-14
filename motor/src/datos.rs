@@ -164,6 +164,177 @@ pub struct Muestra {
     pub pulso: Dato<u16>,
     /// Vatios, si hay medidor de potencia.
     pub potencia_w: Dato<u16>,
+    /// **Cadencia, en revoluciones por minuto.**
+    ///
+    /// ESTE CAMPO SE LEÍA Y SE TIRABA, y por eso está aquí escrito. El lector ya sacaba
+    /// `Record.cadence` del fichero y lo descartaba con un «el motor no la usa»; medido sobre sus
+    /// datos, son **421.449 muestras en 83 de sus 102 ficheros**, con mediana 83 rpm. Tirar un dato
+    /// que se está leyendo no es ahorrar: es **no poder contestar una pregunta que ya tenías
+    /// contestada**, y la cadencia es la mitad de «cómo pedalea» — la otra mitad es la fase.
+    ///
+    /// Va en `u8` porque el FIT la declara de un byte y no llega a 255 ni girando en un descenso.
+    /// Y va en `Dato` por la regla de siempre: **una muestra sin cadencia no gira a 0 rpm**, y ese
+    /// cero, promediado con las demás, hundiría la media sin que nadie lo notara.
+    pub cadencia_rpm: Dato<u8>,
+    /// **Distancia acumulada desde el comienzo, en metros.**
+    ///
+    /// Se guarda por muestra —y no solo el total de la sesión— porque **sin ella no se puede
+    /// preguntar dónde**: «la fase de la pierna se desvía a partir del kilómetro 60» es una pregunta
+    /// que el total de la sesión no contesta, y la deriva por distancia solo se ve con esto.
+    ///
+    /// Y no es un número monótono garantizado: si el aparato se pierde o el fichero se corta, puede
+    /// bajar. **Aquí no se corrige**: se guarda lo que dice el fichero y el que lo use decide.
+    pub distancia_m: Dato<f64>,
+    /// **Temperatura, en grados centígrados.**
+    ///
+    /// Está en **los 102 ficheros** y el motor la ignoraba. Importa porque **la deriva cardíaca que
+    /// este motor mide depende del calor**: la misma potencia a 12 °C y a 34 °C no cuesta lo mismo, y
+    /// sin este dato una deriva por temperatura se leería como una pérdida de forma física.
+    pub temperatura_c: Dato<f32>,
+}
+
+/// **La postura sobre la bicicleta**: sentado o de pie.
+///
+/// EXISTE POR UN ERROR QUE YA SE COMETIÓ, y este enum es la vacuna. El FIT tiene dos campos que
+/// parecen decir «izquierda» y «derecha» y **no lo dicen**: `avg_power_position` y
+/// `avg_cadence_position` son **potencia y cadencia por POSTURA**, y sus dos huecos los define el
+/// enum oficial del formato, `rider_position_type`: **`Seated = 0`, `Standing = 1`**.
+///
+/// Leído al revés, su ejemplo `[145, 410]` se convierte en «145 W la pierna izquierda y 410 W la
+/// derecha»: un 37/63 que **no existe**, y que basta para asustar a una persona de 62 años por una
+/// rodilla que está bien. Escribir el enum aquí hace que **el día que alguien lea el campo, lea la
+/// palabra «postura»** y no una letra suelta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Postura {
+    /// `rider_position_type = 0`.
+    Sentado,
+    /// `rider_position_type = 1`.
+    DePie,
+}
+
+/// **Lo que el fichero declara de biomecánica y de carga** — lo que el reloj ya calculó.
+///
+/// POR QUÉ ES UN STRUCT Y NO CAMPOS SUELTOS DE `Sesion`: son doce datos que **vienen juntos o no
+/// vienen**, y ninguno se puede deducir de las muestras. Separados, cualquiera que construya una
+/// sesión tendría que escribir doce `Falta`; juntos, se escriben **una vez** con `Biomecanica::vacia()`.
+///
+/// DOS ADVERTENCIAS QUE VAN ESCRITAS AQUÍ PORQUE COSTARON DOS CONCLUSIONES FALSAS:
+///
+/// 1. **`potencia_media_sentado` / `potencia_media_de_pie` NO son izquierda y derecha.** Son la
+///    potencia media mientras iba sentado y mientras iba de pie (el `avg_power_position` del FIT, dos
+///    huecos indexados por `rider_position_type`). Lo mismo la cadencia. **Un nombre con «izquierda»
+///    aquí sería una mentira con forma de dato, y por eso no existe ninguno.**
+/// 2. **`fase_*` SÍ es por pierna**, y no tiene nada que ver con la postura: son los cuatro ángulos
+///    de la fase de pedaleo de cada pierna (`avg_left_power_phase` / `avg_right_power_phase`), en
+///    **grados**, ya escalados por el lector. **Esto es lo único de todo el fichero que dice algo de
+///    una pierna concreta**, y por eso es lo que sostiene el módulo de la rodilla.
+///
+/// Y lo que **NO** está aquí, a propósito: el **reparto de potencia** izquierda/derecha. Ese dato
+/// **no viaja en el FIT** — lo calcula Garmin en su servidor — y el campo que parece traerlo
+/// (`left_right_balance`) trae **el número de serie del sensor**: medido en sus ficheros, 37950,
+/// 38087, 38201… Un número de serie leído como porcentaje da un 47/53 que parece un desequilibrio y
+/// no es más que el identificador de su potenciómetro. Inventarlo aquí sería el peor de los errores
+/// posibles en este proyecto: un número plausible sobre el cuerpo de una persona.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Biomecanica {
+    /// Vatios medios **mientras iba sentado** (`avg_power_position[Seated]`).
+    pub potencia_media_sentado: Dato<u16>,
+    /// Vatios medios **mientras iba de pie** (`avg_power_position[Standing]`).
+    pub potencia_media_de_pie: Dato<u16>,
+    /// Vatios **máximos** sentado (`max_power_position[Seated]`).
+    pub potencia_maxima_sentado: Dato<u16>,
+    /// Vatios **máximos** de pie (`max_power_position[Standing]`).
+    pub potencia_maxima_de_pie: Dato<u16>,
+    /// Revoluciones por minuto **sentado** (`avg_cadence_position[Seated]`).
+    pub cadencia_media_sentado: Dato<f64>,
+    /// Revoluciones por minuto **de pie** (`avg_cadence_position[Standing]`).
+    pub cadencia_media_de_pie: Dato<f64>,
+    /// **Fase de pedaleo de la pierna IZQUIERDA**: 4 ángulos en grados.
+    ///
+    /// Esto sí es una pierna, y es lo único del fichero que lo es. Si falta, falta **la pierna
+    /// entera**: media fase no se promedia.
+    pub fase_pierna_izquierda: Dato<[f64; 4]>,
+    /// **Fase de pedaleo de la pierna DERECHA**: los mismos 4 ángulos.
+    pub fase_pierna_derecha: Dato<[f64; 4]>,
+    /// Respiraciones por minuto, media de la sesión (`enhanced_avg_respiration_rate`).
+    pub respiracion_media: Dato<f64>,
+    /// Respiraciones por minuto, **máximo** de la sesión (`enhanced_max_respiration_rate`).
+    ///
+    /// La respiración **estaba dada por perdida** y no lo está: viene en **97 de sus 102** ficheros.
+    /// Va como `u8` en la mitad de los casos y como decimal en la otra mitad, así que se guarda en
+    /// `f64` para no perder la segunda mitad.
+    pub respiracion_maxima: Dato<f64>,
+    /// **Carga anaeróbica** de la sesión (`total_anaerobic_training_effect`).
+    ///
+    /// Lleva la «A» delante del nombre porque es la del campo del FIT, y son **dos cargas
+    /// distintas**: la aeróbica (`total_training_effect`) y la anaeróbica se suman mal.
+    pub carga_anaerobica: Dato<f64>,
+    /// **Pico de carga** de la sesión (`training_load_peak`), en la escala de carga de Garmin.
+    pub pico_de_carga: Dato<f64>,
+}
+
+impl Biomecanica {
+    /// Una biomecánica de la que **no sabemos nada**. Es como empieza toda sesión, y es honesto.
+    pub fn vacia() -> Self {
+        Self::default()
+    }
+
+    /// ¿Hay **alguna** de las fases? Es lo que se pregunta antes de enseñar nada de la rodilla.
+    pub fn hay_fases(&self) -> bool {
+        self.fase_pierna_izquierda.lo_hay() && self.fase_pierna_derecha.lo_hay()
+    }
+
+    /// Las dos fases juntas, si están las dos. Devuelve `None` si falta **cualquiera** de las dos:
+    /// comparar una pierna contra un hueco no dice nada de la asimetría.
+    pub fn fases(&self) -> Option<([f64; 4], [f64; 4])> {
+        match (self.fase_pierna_izquierda, self.fase_pierna_derecha) {
+            (Dato::Hay(i), Dato::Hay(d)) => Some((i, d)),
+            _ => None,
+        }
+    }
+
+    /// **Cuánta asimetría hay entre las dos piernas**, en grados: la diferencia máxima entre los
+    /// cuatro ángulos de una y los de la otra.
+    ///
+    /// POR QUÉ EL MÁXIMO Y NO LA MEDIA: interesa **el gesto que más se desvía**, no el promedio. Dos
+    /// piernas pueden coincidir en tres ángulos y separarse 30° en el cuarto —justo el que delata un
+    /// pedaleo descompensado— y la media de los cuatro lo taparía dividiéndolo entre cuatro.
+    ///
+    /// Y LA RESTA VA POR EL CAMINO CORTO, que es un fallo que ya salió al medir: la primera versión
+    /// restaba los ángulos tal cual, y una sesión daba **357,2° de asimetría**. No era una pierna
+    /// desviada: eran dos piernas **casi iguales** con el cero en distinto lado —una empezaba el
+    /// empuje en 357° y la otra en 0°, o sea 3° de diferencia—. Los ángulos son una circunferencia y
+    /// **el cero está donde el potenciómetro quiere**: sin plegar la resta al rango −180..180, el
+    /// número sale 357 donde la verdad es 3, y en la escala de «peor caso» eso parecería una alarma.
+    ///
+    /// Y devuelve `None` cuando falta una fase, en vez de un cero: **cero asimetría es una
+    /// afirmación** («las dos piernas van iguales») y no se puede hacer sin las dos piernas.
+    pub fn asimetria_grados(&self) -> Option<f64> {
+        let (i, d) = self.fases()?;
+        Some(
+            i.iter()
+                .zip(d.iter())
+                .map(|(a, b)| distancia_angular(*a, *b))
+                .fold(0.0_f64, f64::max),
+        )
+    }
+}
+
+/// **La distancia entre dos ángulos, por el camino corto**: siempre entre 0 y 180 grados.
+///
+/// Existe por una medición, no por elegancia. La primera versión de `asimetria_grados` restaba los
+/// ángulos directamente, y sobre sus 83 sesiones dio un «peor caso» de **357,2°** — que en la escala de
+/// una pierna desviada parece una barbaridad y en realidad era **una sesión con las dos piernas casi
+/// idénticas**: una empezaba el empuje en 357° y la otra en 0°, o sea **3°**. Los ángulos dan la vuelta
+/// a los 360 y **el cero lo pone el potenciómetro donde quiere**, así que una resta directa inventa
+/// diferencias enormes donde hay coincidencia.
+pub fn distancia_angular(a: f64, b: f64) -> f64 {
+    let bruta = (a - b).rem_euclid(360.0);
+    if bruta > 180.0 {
+        360.0 - bruta
+    } else {
+        bruta
+    }
 }
 
 /// Una sesión de entrenamiento: la lista de muestras y lo poco que sabemos de su contexto.
@@ -180,11 +351,23 @@ pub struct Sesion {
     /// entrenar. El FIT lo trae —**617.677 intervalos en sus 102 actividades**— y **Garmin Connect no
     /// lo enseña**.
     pub intervalos_rr_ms: Vec<f64>,
+    /// **Lo que el fichero declara de biomecánica y de carga**, ya calculado por el reloj.
+    ///
+    /// Va en la sesión y no en el fichero leído porque es **de la sesión**: si mañana los datos
+    /// entran por otra vía (una API, un JSON), el motor tiene que poder recibir lo mismo por el mismo
+    /// sitio. Y va con valor por defecto —`Biomecanica::vacia()`— para que una sesión de la que no se
+    /// sabe nada **no se pueda confundir con una de biomecánica cero**.
+    pub biomecanica: Biomecanica,
 }
 
 impl Sesion {
     pub fn nueva(muestras: Vec<Muestra>) -> Self {
-        Self { muestras, duracion_s: Dato::Falta, intervalos_rr_ms: Vec::new() }
+        Self {
+            muestras,
+            duracion_s: Dato::Falta,
+            intervalos_rr_ms: Vec::new(),
+            biomecanica: Biomecanica::vacia(),
+        }
     }
 
     /// Una sesión con su duración declarada.
@@ -197,12 +380,22 @@ impl Sesion {
             muestras,
             duracion_s: Dato::Hay(duracion_s),
             intervalos_rr_ms: Vec::new(),
+            biomecanica: Biomecanica::vacia(),
         }
     }
 
     /// Y una con sus intervalos entre latidos, para el HRV.
     pub fn con_rr(mut self, intervalos_rr_ms: Vec<f64>) -> Self {
         self.intervalos_rr_ms = intervalos_rr_ms;
+        self
+    }
+
+    /// Y una con lo que el fichero **declara** de biomecánica y carga.
+    ///
+    /// Es el mismo patrón que `con_rr`, y por el mismo motivo: el lector de FIT rellena esto, y una
+    /// sesión construida a mano en una prueba **no tiene por qué saber que existe**.
+    pub fn con_biomecanica(mut self, biomecanica: Biomecanica) -> Self {
+        self.biomecanica = biomecanica;
         self
     }
 
@@ -231,5 +424,36 @@ impl Sesion {
     /// Las pulsaciones de las muestras **que las traen**. Las que no, se saltan — no se rellenan.
     pub fn pulsos(&self) -> Vec<u16> {
         self.muestras.iter().filter_map(|m| m.pulso.valor()).collect()
+    }
+
+    /// **Las cadencias con las que de verdad pedaleó**, en rpm.
+    ///
+    /// **LOS CEROS SE SALTAN, y esto es una medición, no una opinión.** El `cadence` del FIT vale 0
+    /// cuando no hay pedaleo, así que un cero no es «giraba a 0 rpm»: es **no saber**, otra vez. Y la
+    /// prueba está en uno de sus ficheros: el fichero declara 75 rpm de media, la media de TODAS las
+    /// muestras da **67,9** y la de las muestras con pedaleo da **75,4**. Garmin calcula justo eso
+    /// —su propio perfil dice *«total_cycles / total_timer_time if nonzero_avg_cadence»*— y el motor
+    /// no puede dar un número distinto del que da el aparato **por colar ceros**.
+    ///
+    /// El día que haya que estudiar el tiempo sin pedalear, ese cero se mira **en la muestra**, que
+    /// sigue ahí entera; lo que no puede es entrar en una media disfrazado de cadencia.
+    pub fn cadencias(&self) -> Vec<u8> {
+        self.muestras
+            .iter()
+            .filter_map(|m| m.cadencia_rpm.valor())
+            .filter(|c| *c > 0)
+            .collect()
+    }
+
+    /// **La temperatura media de la sesión**, de las muestras que la traen.
+    ///
+    /// Devuelve `None` —no cero grados— cuando no hay ni una: **cero grados es una temperatura**, y
+    /// es además la del hielo, o sea el peor número posible para colar en un cálculo de deriva.
+    pub fn temperatura_media(&self) -> Option<f32> {
+        let t: Vec<f32> = self.muestras.iter().filter_map(|m| m.temperatura_c.valor()).collect();
+        if t.is_empty() {
+            return None;
+        }
+        Some(t.iter().sum::<f32>() / t.len() as f32)
     }
 }

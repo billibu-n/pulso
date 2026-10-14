@@ -2016,7 +2016,11 @@ fn el_tope_de_ficheros_cuenta_FIT_y_no_ficheros_de_otra_cosa() {
         return;
     }
 
-    let caja = std::env::temp_dir().join("pulso-prueba-tope-fit");
+    // EL NOMBRE LLEVA EL PID, y no es un adorno: con un nombre FIJO, dos `cargo test` a la vez
+    // (por ejemplo uno mio comprobando mientras un agente mide) **se pisan el directorio** y la
+    // prueba falla sin que nada este mal. Medido por un agente: 11 de 100 pares fallaban asi.
+    // **Una prueba que falla por una carrera se deja de creer**, y entonces deja de proteger.
+    let caja = std::env::temp_dir().join(format!("pulso-prueba-tope-fit-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&caja);
     std::fs::create_dir_all(&caja).unwrap();
     // Los señuelos van PRIMERO por nombre: es lo que hace que el fallo aparezca.

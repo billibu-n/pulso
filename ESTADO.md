@@ -147,24 +147,35 @@ cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mi
 - **lo visual se MIDE, no se mira** — y si no se puede medir, **eso es la tarea**;
 - **nunca abrir la ventana en la pantalla del dueño** para comprobar algo. Se mide.
 
-## 6-ter. Lo que está EN VUELO ahora mismo (2026-10-13, noche)
+## 6-ter. La conexión, HECHA (2026-10-13, noche)
 
-**Dos rondas trabajando, y su trabajo NO está respaldado todavía** — vive en el árbol de trabajo:
+**Las tres piezas están conectadas a `ventana.rs`**, y comprobado con la salida literal:
 
-| módulo | líneas | qué |
-|---|---|---|
-| `motor/src/potencia.rs` | **1.277** | zonas de POTENCIA desde su FTP de 213 W, TSS y carga semanal |
-| `motor/src/avisos.rs` | **1.461** | el motor de reglas: sus tres módulos, con lo que los datos sostienen |
+```
+--- LO QUE LA VENTANA RECIBE Y ENSEÑA ---
+  NO SE PUEDE DIAGNOSTICAR TODAVIA
+  Faltan tus datos: con la edad y el umbral ya se calculan las zonas. Se rellenan en Datos.
+  102 sesiones · 549842 lecturas · 1259082 intervalos de HRV
+```
 
-**Y hay TRES cosas construidas y verificadas que todavía NO están conectadas** — es lo primero que
-hay que hacer cuando las rondas cierren, y está aquí para que no se pierda:
+**CERO cifras calculadas sin datos de la persona.** Ese era el fallo más grave que tenía la aplicación:
+enseñaba `169±3` con un umbral escrito a mano **y** decía «sin datos» a la vez.
 
-1. **`motor/src/profile.rs`** — leer y guardar el perfil, **junto al programa** (con reserva si la
-   carpeta es de solo lectura). **`ventana.rs` todavía tiene los datos escritos a mano.**
-2. **`motor/src/memoria.rs`** — la memoria entre arranques, **medida: 5,40 s -> 0,001 s**. Nadie la
-   llama: **la aplicación sigue tardando 5,4 s en abrir.**
-3. **`motor/src/cara.rs`** — `lo_que_ensena`, que saca lo que va a la pantalla **sin abrir ventana**.
-   **`ventana.rs` sigue calculando dentro de `main`.**
+**Y medido, con el comando que lo mide** (`medir-carga`, y un control con la caché de disco ya caliente):
+
+| | |
+|---|---|
+| leer los 102 ficheros | **5,57 s** |
+| con la memoria | **0,032 s** (proceso entero, no solo la lectura) |
+| el fichero de memoria | **9.473 bytes**, en vez de releer los **34 MB** de FIT |
+
+**OJO CON UN NÚMERO QUE ESTABA MAL EN ESTE FICHERO**: donde decía «1.003 MB» son los 102 FIT. **1.003 MB
+es TODO `datos/`**, con la base de datos de Garmin dentro. Los FIT pesan **34 MB**. Corregido también en
+el comentario del código.
+
+**Lo que NO se pudo ejecutar de punta a punta**: **pulsar «Guardar»** — necesita abrir la ventana, y eso
+está prohibido. La rama aplicar → guardar → **recalcular con los datos nuevos** está compilada y
+revisada, pero **no probada de punta a punta**. Es lo primero que hay que probar mañana, con la ventana.
 
 **Y la EDAD sigue mal**: dice `60` y tiene **62**. No se arregla escribiendo 62 — eso **caduca el 25 de
 enero** — sino **guardando la fecha de nacimiento** y calculando la edad al usarla. Eso exige un campo

@@ -10,6 +10,33 @@
 
 import { Claro, Oscuro } from "temas.slint";
 import { ArmazonEscritorio, ArmazonMovil, Medidas, Seccion } from "armazon.slint";
+// LOS CONTROLES DE SERIE, que son una decision tomada del dueño: traen probado el foco, el teclado,
+// el estado pulsado y la accesibilidad, que es justo lo que habria que construir y probar a mano.
+// Lo que NO traen son nuestros colores; eso se resuelve abajo, en la raiz, con `Palette`.
+import { ComboBox, Button, LineEdit, RadioGroup, Switch, Palette } from "std-widgets.slint";
+
+// LO QUE LA PANTALLA ENTREGA AL GUARDAR. **Todo son textos, incluso los numeros**: la interfaz no
+// valida, no convierte y no calcula — solo entrega lo que el usuario escribio. Traducirlo a datos
+// del motor es trabajo de Rust (`profile::de_campos`), y ahi esta la unica regla que importa:
+// **un campo vacio es «no lo sé», no un cero.**
+//
+// Se entrega como ESTRUCTURA y no como una lista de textos sueltos para que cada dato viaje con su
+// nombre: con una lista, cambiar dos campos de sitio seria un fallo silencioso.
+export struct DatosPersona {
+    edad: string,
+    pulso_reposo: string,
+    pulso_maximo_medido: string,
+    peso_kg: string,
+    altura_cm: string,
+    grasa_corporal_pct: string,
+    masa_muscular_kg: string,
+    umbral_lactato: string,
+    vo2_maximo: string,
+    // 0 femenino, 1 masculino, 2 «no lo sé». El 2 no es un adorno: un `RadioGroup` no se puede
+    // desmarcar, y sin esa opcion el que se equivoca al pulsar **no puede volver a decir que no lo
+    // sabe** — o sea, el «no lo sé» dejaria de existir por un accidente de la interfaz.
+    sexo: int,
+}
 
 // ---- Las piezas que se repiten, declaradas UNA vez (AU-41: una accion, una forma) ----
 
@@ -193,6 +220,188 @@ component Contenido inherits VerticalLayout {
     Aviso { texto: root.aviso; oscuro: root.oscuro; }
 }
 
+// ================================================================================================
+// LA SECCION «DATOS»: los datos de la persona, y **son suyos**.
+// ================================================================================================
+//
+// POR QUE ES LA SECCION QUE MAS IMPORTA: hasta hoy los datos de la persona estaban **escritos en el
+// codigo**, asi que los resultados que enseñaba la pantalla **no eran del cliente, eran de quien
+// compilo el programa** -- y eso no se veia: los numeros tenian buena cara.
+//
+// Y AQUI NO HAY `Slider` NI `SpinBox`, que seria lo comodo: un deslizador obliga a fijar un MINIMO y
+// un MAXIMO, y **ese rango seria una decision inventada** sobre el cuerpo de una persona. Se usan
+// campos de texto, y decide el motor: el que escriba «900» vera que el motor no lo acepta.
+
+// UN CAMPO: la etiqueta, y el control de serie DENTRO de un marco nuestro.
+//
+// POR QUE EL MARCO, y esta medido de la fuente del estilo: en el tema negro el borde del campo es
+// blanco al 8 % sobre negro (**~1,1:1**, minimo 3:1) y su relleno es blanco al 6 %, o sea que **el
+// campo no se ve**: solo se ve lo que se escribe dentro. El contorno lo pone un `Rectangle` NUESTRO
+// por fuera -- la salida que ya esta probada en `sonda-borde.slint`, donde se comprobo que el marco
+// no recorta al control si el hueco lo pone el `padding` del layout.
+component Campo inherits VerticalLayout {
+    in property <string> etiqueta;
+    // `accessible-id` es la forma OFICIAL de encontrar un elemento desde las pruebas, y **exige un
+    // papel de accesibilidad**: el del `LineEdit` ya viene puesto por el estilo, y la prueba lo
+    // comprueba.
+    in property <string> identificador;
+    in property <string> pista;
+    in-out property <string> texto;
+    in property <bool> oscuro: false;
+
+    spacing: 3px;
+    Text {
+        text: root.etiqueta;
+        font-size: 11px;
+        color: root.oscuro ? Oscuro.muted : Claro.muted;
+    }
+    Rectangle {
+        border-width: 1px;
+        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+        border-radius: Medidas.radio;
+        // La altura se le PIDE AL HIJO. Calcularla con `self.preferred-height + 4px` fue el fallo que
+        // se cazo midiendo en la sonda: el marco salia de 4 px de alto y el control se salia.
+        height: self.preferred-height;
+        VerticalLayout {
+            padding: 2px;
+            LineEdit {
+                accessible-id: root.identificador;
+                text <=> root.texto;
+                placeholder-text: root.pista;
+                // El minimo tactil del proyecto son 48 dp y el estilo trae 32: **hay que pedirlo**.
+                // Con `max()` y no con un 48 fijo: asi, el dia que el texto necesite mas alto, el
+                // campo crece en vez de recortarlo.
+                height: max(48px, self.preferred-height);
+            }
+        }
+    }
+}
+
+component Datos inherits VerticalLayout {
+    in-out property <DatosPersona> campos;
+    in-out property <bool> oscuro: false;
+    in property <string> mensaje;
+    in property <bool> error: false;
+    in property <string> ruta;
+    callback guardar;
+
+    spacing: 10px;
+
+    Text {
+        text: "Sus datos";
+        font-size: 15px; font-weight: 700;
+        color: root.oscuro ? Oscuro.fg : Claro.fg;
+    }
+    // UNA linea, y dice lo unico que hay que saber antes de escribir: que dejarlo vacio es una
+    // respuesta valida y significa «no lo sé».
+    Text {
+        text: "Lo que ningún aparato puede saber. Un campo vacío es «no lo sé», no un cero.";
+        font-size: 11px;
+        wrap: word-wrap;
+        color: root.oscuro ? Oscuro.muted : Claro.muted;
+    }
+
+    // LOS CAMPOS, en dos columnas: a la izquierda los del corazon y el esfuerzo, a la derecha los de
+    // la bascula. Es la agrupacion que el cliente ya usa al hablar de sus datos, y ademas hace que
+    // los diez quepan sin desplazar la pantalla.
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 8px;
+            Campo { etiqueta: "Edad"; identificador: "datos-edad"; pista: "años"; texto <=> root.campos.edad; oscuro: root.oscuro; }
+            Campo { etiqueta: "Pulso en reposo"; identificador: "datos-pulso_reposo"; pista: "ppm, durmiendo"; texto <=> root.campos.pulso_reposo; oscuro: root.oscuro; }
+            Campo { etiqueta: "Pulso máximo"; identificador: "datos-pulso_maximo_medido"; pista: "ppm, medido"; texto <=> root.campos.pulso_maximo_medido; oscuro: root.oscuro; }
+            Campo { etiqueta: "Umbral de lactato"; identificador: "datos-umbral_lactato"; pista: "ppm, de una prueba"; texto <=> root.campos.umbral_lactato; oscuro: root.oscuro; }
+            Campo { etiqueta: "VO₂ máximo"; identificador: "datos-vo2_maximo"; pista: "ml/kg/min"; texto <=> root.campos.vo2_maximo; oscuro: root.oscuro; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 8px;
+            Campo { etiqueta: "Peso"; identificador: "datos-peso_kg"; pista: "kg"; texto <=> root.campos.peso_kg; oscuro: root.oscuro; }
+            Campo { etiqueta: "Altura"; identificador: "datos-altura_cm"; pista: "cm"; texto <=> root.campos.altura_cm; oscuro: root.oscuro; }
+            Campo { etiqueta: "Grasa corporal"; identificador: "datos-grasa_corporal_pct"; pista: "%"; texto <=> root.campos.grasa_corporal_pct; oscuro: root.oscuro; }
+            Campo { etiqueta: "Masa muscular"; identificador: "datos-masa_muscular_kg"; pista: "kg"; texto <=> root.campos.masa_muscular_kg; oscuro: root.oscuro; }
+        }
+    }
+
+    // EL SEXO. Se deja SIN marco a proposito: el circulo del `RadioButton` es blanco al 60 %, que
+    // sobre negro da mas de 7:1 -- o sea, aqui el estilo SI dibuja lo que hace falta. Poner un marco
+    // donde no falta es ruido.
+    // EL SEXO, con un `ComboBox` y NO con un `RadioGroup`.
+    //
+    // POR QUE, y esta MEDIDO a golpes: el `RadioGroup` de Slint 1.18 **no deja escribir su indice
+    // desde fuera** -- `current-index <=> ...` da «Unknown property current-index in RadioGroup»,
+    // aunque la propiedad SI existe en el estilo (`radiogroup-base.slint`). Y el mensaje engaña,
+    // porque señala a una propiedad que esta.
+    //
+    // El `ComboBox` si deja: se le da el `model` y se lee y escribe `current-index`. Y para TRES
+    // opciones excluyentes es ademas lo que la norma pide: **una accion, una forma**.
+    ComboBox {
+        accessible-id: "datos-sexo";
+        model: ["No lo sé", "Femenino", "Masculino"];
+        current-index: root.campos.sexo;
+        // El callback entrega el TEXTO, y nuestro campo es un indice: se traduce aqui, que es donde
+        // esta la lista. Traducir en Rust obligaria a que Rust conociera los rotulos de la pantalla.
+        selected(t) => {
+            root.campos.sexo = t == "Femenino" ? 1 : (t == "Masculino" ? 2 : 0);
+        }
+    }
+
+    // GUARDAR. El boton va dentro de un marco nuestro por lo mismo que los campos, y esta medido: en
+    // el tema negro el borde de serie del boton da **1,14:1** y **no se ve** -- un boton sin contorno,
+    // sobre negro, parece un rotulo.
+    Rectangle {
+        border-width: 2px;
+        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+        border-radius: 8px;
+        height: self.preferred-height;
+        VerticalLayout {
+            // El hueco entre el borde y el boton lo pone el `padding`, no una cuenta.
+            padding: 2px;
+            Button {
+                accessible-id: "datos-guardar";
+                height: max(48px, self.preferred-height);
+                text: "Guardar mis datos";
+                primary: true;
+                clicked => { root.guardar(); }
+            }
+        }
+    }
+
+    // LO QUE PASO AL GUARDAR, en una linea: o se guardo, o se dice que campo esta mal. **Un numero mal
+    // escrito no se traga en silencio**: guardar un cero donde el usuario no escribio nada seria un
+    // dato falso con buena cara, que es justo lo que este proyecto no hace.
+    Text {
+        accessible-id: "datos-mensaje";
+        text: root.mensaje;
+        font-size: 12px;
+        wrap: word-wrap;
+        color: root.error
+            ? (root.oscuro ? Oscuro.aviso : Claro.aviso)
+            : (root.oscuro ? Oscuro.ok : Claro.ok);
+    }
+
+    // DONDE VIVEN SUS DATOS, y no es un detalle: el dueño decidio que el fichero viaje JUNTO AL
+    // PROGRAMA, y si no se pudo escribir ahi hay que decirlo, porque el usuario tiene derecho a saber
+    // donde estan sus datos.
+    Text {
+        accessible-id: "datos-ruta";
+        text: root.ruta;
+        font-size: 11px;
+        wrap: word-wrap;
+        color: root.oscuro ? Oscuro.muted : Claro.muted;
+    }
+
+    // EL TEMA. Manda SIEMPRE el nuestro, nunca el del sistema (ver `Palette` en la raiz), y este es
+    // el mando: cambiar de tema es cambiar UNA propiedad.
+    Switch {
+        accessible-id: "datos-tema";
+        checked <=> root.oscuro;
+        text: "Tema oscuro";
+    }
+}
+
 export component Ventana inherits Window {
     // LOS NOMBRES DE LOS SITIOS, para poder MEDIRLOS desde las pruebas (AU-63).
     // No son decorativos: sin un nombre, un elemento no se puede consultar ni medir.
@@ -206,7 +415,28 @@ export component Ventana inherits Window {
     in property <string> aviso;
     in property <string> vacio;
     // EL TEMA. Cambiar de tema es cambiar ESTA linea: ninguna pieza se toca (AU-39).
-    in property <bool> oscuro: false;
+    // Es `in-out` y no `in` porque el mando del tema vive DENTRO de la pantalla (el `Switch` de la
+    // seccion «Datos»): un `in` solo lo puede escribir quien crea la ventana, y el usuario no es ese.
+    in-out property <bool> oscuro: false;
+
+    // LA SECCION ELEGIDA, y lo que decide que se enseña. Es estado de la pantalla, no del motor.
+    in-out property <int> seccion_activa: 0;
+
+    // LOS DATOS DE LA PERSONA, tal como estan en los campos. Arrancan VACIOS y con «no lo sé» en el
+    // sexo: antes de que Rust lea el perfil, la pantalla no puede enseñar un dato que no tiene.
+    in-out property <DatosPersona> campos: {
+        edad: "", pulso_reposo: "", pulso_maximo_medido: "", peso_kg: "", altura_cm: "",
+        grasa_corporal_pct: "", masa_muscular_kg: "", umbral_lactato: "", vo2_maximo: "", sexo: 2,
+    };
+    // Lo que paso al guardar, y donde quedaron los datos.
+    in property <string> mensaje_guardado;
+    in property <bool> error_al_guardar: false;
+    in property <string> ruta_del_perfil;
+
+    // PARA MEDIR EL TEMA DE LOS CONTROLES DE SERIE DESDE UNA PRUEBA: no hay otra forma de consultar
+    // un global de Slint desde Rust, y esta linea es la que demuestra que el esquema sigue a nuestro
+    // tema en vez de al del sistema.
+    out property <bool> controles_en_oscuro: Palette.color-scheme == ColorScheme.dark;
 
     title: "Pulso";
     // SIN EL MARCO DEL SISTEMA, y no es un capricho: la barra de ventana de arriba **no es parte de
@@ -224,13 +454,31 @@ export component Ventana inherits Window {
 
     // Las secciones, declaradas UNA vez y usadas por los dos armazones (AU-10).
     property <[Seccion]> las_secciones: [
-        { nombre: "Resumen", activa: true },
-        { nombre: "Zonas", activa: false },
-        { nombre: "Sesiones", activa: false },
-        { nombre: "Datos", activa: false },
+        { nombre: "Resumen", activa: root.seccion_activa == 0 },
+        { nombre: "Zonas", activa: root.seccion_activa == 1 },
+        { nombre: "Sesiones", activa: root.seccion_activa == 2 },
+        { nombre: "Datos", activa: root.seccion_activa == 3 },
     ];
 
     callback elegir(int);
+    // El armazon avisa de la seccion elegida, y aqui se cambia lo que se enseña. Estaba en Rust y
+    // hacia otra cosa: alternaba el tema al pulsar «Datos», que era un apaño mientras no habia mas
+    // pantallas. **El tema tiene su propio mando, y este callback hace lo que dice su nombre.**
+    elegir(i) => { root.seccion_activa = i; }
+
+    // LA INTERFAZ ENTREGA, RUST GUARDA. Aqui no se valida nada: los textos salen tal cual y es Rust
+    // quien los traduce, los comprueba y los escribe en el fichero.
+    callback guardar-datos(DatosPersona);
+
+    // EL TEMA DE LOS CONTROLES DE SERIE SE FIJA DESDE EL NUESTRO, NUNCA DESDE EL DEL SISTEMA.
+    //
+    // POR QUE, y esta medido (`temas/contraste-widgets.py`): los controles de serie sacan sus colores
+    // del esquema del sistema. Si el sistema esta en oscuro y nuestra pantalla en claro, el texto del
+    // control sale blanco sobre crema: **1,05:1**, con minimo 4,5:1. O sea: **el texto desaparece**.
+    //
+    // Y ES UN BINDING, no un `init`: `init` corre UNA vez al arrancar, y el usuario cambia de tema
+    // cuando quiere. Con el binding, el esquema de los controles **sigue** a nuestro tema.
+    init => { Palette.color-scheme = root.oscuro ? ColorScheme.dark : ColorScheme.light; }
 
     if root.es_movil : ArmazonMovil {
         // El armazon de movil, medible.
@@ -238,7 +486,15 @@ export component Ventana inherits Window {
         titulo: "Pulso";
         secciones: root.las_secciones;
         elegir(i) => { root.elegir(i); }
-        Contenido {
+        if root.seccion_activa == 3 : Datos {
+            oscuro <=> root.oscuro;
+            campos <=> root.campos;
+            mensaje: root.mensaje_guardado;
+            error: root.error_al_guardar;
+            ruta: root.ruta_del_perfil;
+            guardar => { root.guardar-datos(root.campos); }
+        }
+        if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
             cifras: root.cifras; etiquetas: root.etiquetas;
             zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;
@@ -252,7 +508,15 @@ export component Ventana inherits Window {
         titulo: "Pulso";
         secciones: root.las_secciones;
         elegir(i) => { root.elegir(i); }
-        Contenido {
+        if root.seccion_activa == 3 : Datos {
+            oscuro <=> root.oscuro;
+            campos <=> root.campos;
+            mensaje: root.mensaje_guardado;
+            error: root.error_al_guardar;
+            ruta: root.ruta_del_perfil;
+            guardar => { root.guardar-datos(root.campos); }
+        }
+        if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
             cifras: root.cifras; etiquetas: root.etiquetas;
             zonas_nombres: root.zonas_nombres; zonas_tramos: root.zonas_tramos;

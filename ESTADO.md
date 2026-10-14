@@ -534,3 +534,15 @@ Suite 346 verdes, 0 avisos. **Lecciones del retome, sin escribir aún en la memo
 volvió a fallar sin escribir (4.ª vez) y **la ruta gemini de verificación sigue ROTA** (4.º fallo sin
 mensaje): la puerta de calidad la hace el orquestador leyendo el diff entero. Cierre del hito local:
 informe en `datos/trabajo-ui/disfraz-informe.md`, sin push.
+
+**La prueba de control (mismo chat, después)**: el dueño corrió la librería de referencia con sus
+credenciales reales (`garminconnect` recién instalada en `/tmp/gconnect`): `mobile` dio **429 rate
+limited** («can be triggered by the client fingerprint, not only the IP»), el `widget` ya no recibe el
+título esperado («unexpected title 'GARMIN Authentication Application'») y **en el navegador oficial
+entra sin problemas**. Medido también: la librería con credenciales falsas recibe el MISMO 401 con la
+página repetida que el instrumento. Conclusión: la cuenta está sana y **el bloqueo es solo contra los
+flujos programáticos** (huella/IP), agravado por los intentos de estos días. **Protocolo: NO reintentar
+el login hoy** (ventana de espera de horas); al pasar, reintentar UNA vez con el instrumento. Si
+persiste el 429/401, **decisión pendiente del dueño** (la cláusula ya escrita: el crate de suplantación
+TLS se pide solo si Garmin responde 403/429 — ahora hay 429 medido): huella TLS en Rust (`wreq`) o
+portar la vía `portal` nueva de la librería.

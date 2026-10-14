@@ -87,7 +87,7 @@ const DEPENDENCIAS_CANDIDATAS: &[(&str, &str)] = &[
     ),
     (
         "NADA HOY",
-        "el `curl_cffi impersonate=\"chrome\"` de la herramienta comunitaria (huella TLS de navegador,\n             contra el WAF) **no tiene candidato sano en Rust**: a `rquest` le están *yanked* sus 152\n             versiones en crates.io (medido), y `wreq`, su sucesor, solo publica candidatas\n             (6.0.0-rc.31). `isahc` ataría el proyecto a libcurl. Decisión: se mide con `ureq`;\n             **solo si Garmin responde 403/429** se le pide al dueño el crate de suplantación, con\n             este dato delante.",
+        "el `curl_cffi impersonate=\"chrome\"` de la herramienta comunitaria (huella TLS de navegador,\n             contra el WAF) **no tiene candidato sano en Rust**: a `rquest` le están *yanked* sus 152\n             versiones en crates.io (medido), y `wreq`, su sucesor, solo publica candidatas\n             (6.0.0-rc.31). `isahc` ataría el proyecto a libcurl. Decisión: se mide con `ureq`;\n             **solo si Garmin responde 403/429** se le pide al dueño el crate de suplantación, con\n             este dato delante. OJO, para no confundir las dos huellas: la de CABECERAS de navegador\n             SÍ se porta y va puesta en los tres pasos del SSO (`cabeceras_del_disfraz`, medida el\n             2026-10-14); lo que no tiene candidato en Rust es la huella TLS.",
     ),
 ];
 
@@ -2019,16 +2019,23 @@ fn codificar(valor: &str) -> String {
 /// `application/x-www-form-urlencoded`. Los campos del cuerpo fueron `_csrf`, `embed`, `password` y
 /// `username`: **los mismos que manda este instrumento**.
 ///
-/// Se dejan FUERA tres que no son una diferencia entre los dos, y se dice por qué:
+/// Se dejan FUERA cuatro que no son una diferencia entre los dos, y se dice por qué:
 /// - `host`: lo pone cualquier cliente (también el nuestro).
 /// - `cookie`: las dos partes mandan la jarra que tengan; se dice aparte, con el número de cookies.
-/// - `upgrade` y `http2-settings`: son un artefacto de haber medido contra un servidor **en claro**
-///   (curl_cffi intenta el `h2c`); contra Garmin, que es HTTPS, no van.
+/// - `connection`: MEDIDO, contra el eco **en claro** llegó `Connection: Upgrade, HTTP2-Settings`
+///   (el intento de `h2c` de `curl_cffi`); contra Garmin, que es HTTPS con h2, la propia librería no
+///   lo manda, y `ureq` es HTTP/1.1 y la gestiona él si hace falta. Contarla sería tomar un artefacto
+///   de la medición en claro por una diferencia de verdad.
+/// - `upgrade` y `http2-settings`: el mismo artefacto del `h2c` contra el eco en claro; contra
+///   Garmin, que es HTTPS, no van.
+///
+/// Lo medido —estos nombres y sus valores— está apuntado en
+/// `datos/trabajo-ui/_evidencia-huella-curl-cffi.txt` (2026-10-14, servidor de eco local): es la
+/// evidencia contra la que se compara `cabeceras_del_disfraz`.
 const CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO: &[&str] = &[
     "accept",
     "accept-encoding",
     "accept-language",
-    "connection",
     "content-length",
     "content-type",
     "referer",
@@ -2272,13 +2279,12 @@ fn diagnostico_del_acceso(salida: &sincronizacion::Salida, cookies_en_la_jarra: 
             "      (sin dato: este transporte no mide qué cabeceras salen; el de verdad sí, con el\n\
              \x20       `middleware` de `ureq`)\n",
         );
-        s.push_str(
-            "      lo que ella manda en este POST, medido con un servidor de eco: accept,\n\
-             \x20       accept-encoding, accept-language, connection, content-length, content-type,\n\
-             \x20       referer, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, sec-fetch-dest,\n\
-             \x20       sec-fetch-mode, sec-fetch-site, sec-fetch-user, upgrade-insecure-requests,\n\
-             \x20       user-agent\n",
-        );
+        s.push_str(&format!(
+            "      lo que ella manda en este POST, medido con un servidor de eco: {}\n",
+            // De la lista de arriba, no de una copia: dos verdades se contradicen el día que una
+            // cambie, y este instrumento existe para no contradecirse.
+            CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO.join(", ")
+        ));
         return s;
     }
     let mut nuestras = salida.nombres.clone();
@@ -2311,9 +2317,16 @@ fn diagnostico_del_acceso(salida: &sincronizacion::Salida, cookies_en_la_jarra: 
              \x20       (`send_body.rs:309-314`). El backend no lo lee como formulario y revienta con\n\
              \x20       un 500 JSON (`java.lang.StringIndexOutOfBoundsException`): el 500 NO es de las\n\
              \x20       credenciales.\n\
-             \x20       Lo demás que falta es la huella de navegador de `curl_cffi`, no un requisito\n\
-             \x20       del formulario: el `user-agent` coincide en nombre y no en valor (ella va como\n\
-             \x20       un Chrome; nosotros, como la librería HTTP).\n",
+             \x20       Lo demás que falta, si falta, es la huella del navegador (el disfraz la manda: `cabeceras_del_disfraz`).\n",
+        );
+    } else if solo_ella.is_empty() {
+        // El caso BUENO, y el que ahora se mide de verdad: el flujo manda el disfraz completo y el
+        // `content-type` del formulario sigue vivo, así que no falta ni una cabecera de la lista.
+        s.push_str(
+            "      → el `content-type` SÍ sale (lo pone `post_form`) y las cabeceras coinciden con las de la\n\
+             \x20       librería portada: el disfraz del navegador está completo. Si Garmin contesta 401,\n\
+             \x20       es SU respuesta de acceso: las credenciales no se aceptaron (un 401 de credenciales,\n\
+             \x20       no un fallo de forma).\n",
         );
     } else {
         s.push_str(
@@ -2398,16 +2411,31 @@ struct Sesion {
 }
 
 /// `client.py:770-775` — la primera visita, que deja las cookies de sesión.
+///
+/// Lleva el **DISFRAZ** (`sincronizacion::cabeceras_del_disfraz`): la librería portada pide las
+/// páginas del SSO con `curl_cffi.Session(impersonate="chrome")` (`client.py:751`), y el rastreo midió
+/// que ella manda esa huella y nosotros no. Es de los tres pasos del SSO (1, 2 y 3); los pasos del
+/// cliente móvil DI tienen sus propias cabeceras y no se tocan.
 fn paso_embed(t: &dyn Transporte) -> Result<(), Fallo> {
     t.nombra("el widget: la primera visita, que deja las cookies de sesión (client.py:770-775)");
-    let r = pedir(t, &Peticion::get(flujo::URL_EMBED, flujo::parametros_embed()))?;
+    let r = pedir(
+        t,
+        &Peticion::get(flujo::URL_EMBED, flujo::parametros_embed())
+            .mas_cabeceras(sincronizacion::cabeceras_del_disfraz()),
+    )?;
     exigir_estado(&r, "la página de entrada del widget (client.py:770-775)")
 }
 
 /// `client.py:777-788` — la página de acceso, de donde sale el `_csrf`.
+///
+/// Con el mismo DISFRAZ que el paso 1: es otra petición de DOCUMENTO del SSO.
 fn paso_csrf(t: &dyn Transporte) -> Result<String, Fallo> {
     t.nombra("la página de acceso: de aquí sale el `_csrf` (client.py:777-788)");
-    let r = pedir(t, &Peticion::get(flujo::URL_SIGNIN, flujo::parametros_signin()))?;
+    let r = pedir(
+        t,
+        &Peticion::get(flujo::URL_SIGNIN, flujo::parametros_signin())
+            .mas_cabeceras(sincronizacion::cabeceras_del_disfraz()),
+    )?;
     exigir_estado(&r, "la página de acceso (client.py:777-788)")?;
     flujo::extraer_csrf(&r.cuerpo)
 }
@@ -2432,8 +2460,12 @@ fn peticion_del_acceso(csrf: &str, usuario: &Secreto, clave: &Secreto) -> Petici
         &flujo::campos_del_login(csrf, usuario, clave),
     )
     .con_consulta(flujo::parametros_signin())
+    // PRIMERO el disfraz del navegador (pasos 1, 2 y 3 del SSO van con la misma huella,
+    // `client.py:751`), y DESPUÉS el `Referer` del acceso.
+    .mas_cabeceras(sincronizacion::cabeceras_del_disfraz())
     // `mas_cabeceras` (AÑADE), no `con_cabeceras` (REEMPLAZA): reemplazar se llevó por delante el
-    // `Content-Type` del formulario y Garmin respondió 500 (medido 2026-10-14).
+    // `Content-Type` del formulario y Garmin respondió 500 (medido 2026-10-14). La regla se mantiene:
+    // las cabeceras se SUMAN una a una, nunca se reemplaza la lista.
     .mas_cabeceras(vec![(
         "Referer".to_string(),
         flujo::url_de_la_pagina_de_acceso(),
@@ -3436,15 +3468,37 @@ mod pruebas {
     /// marcador aparece en el rastro, es que se volcó un cuerpo.
     const JSON_DEL_500: &str = r#"{"timestamp":1,"status":500,"error":"Internal Server Error","exception":"MARCADOR-DEL-CUERPO","path":"/sso/signin"}"#;
 
-    /// Lo que sale de verdad en el POST del acceso del instrumento: el `Referer` y nada más (el
-    /// `Content-Type` del formulario se pierde al reemplazar la lista de cabeceras). Es el dato que en
-    /// la vida real mide el middleware de `ureq`; aquí se copia, porque la prueba no sale a la red.
+    /// Los NOMBRES del disfraz, en minúsculas, tal y como los apunta el middleware: el flujo los pone
+    /// con su grafía (`Sec-Fetch-Dest`), y el middleware compara sin distinguir mayúsculas.
+    fn nombres_del_disfraz() -> Vec<String> {
+        sincronizacion::cabeceras_del_disfraz()
+            .into_iter()
+            .map(|(n, _)| n.to_ascii_lowercase())
+            .collect()
+    }
+
+    /// **Lo que sale de verdad en el POST del acceso del instrumento**: el disfraz del navegador
+    /// (11 nombres, `cabeceras_del_disfraz`), su `Referer` y el `Content-Type` del formulario. Es el
+    /// dato que en la vida real mide el middleware de `ureq`; aquí se copia, porque la prueba no sale
+    /// a la red.
     fn lo_que_sale_en_el_acceso() -> sincronizacion::Salida {
+        let mut nombres = nombres_del_disfraz();
+        nombres.push("referer".to_string());
+        nombres.push("content-type".to_string());
         sincronizacion::Salida {
             medido: true,
-            nombres: vec!["referer".to_string()],
-            content_type: None,
+            nombres,
+            content_type: Some("application/x-www-form-urlencoded".to_string()),
         }
+    }
+
+    /// Lo mismo **sin** el `content-type`: el caso que la hipótesis del 500 describía (el formulario
+    /// sale sin declarar). Se conserva para poder afirmar que el diagnóstico sigue sabiendo decirlo.
+    fn lo_que_sale_en_el_acceso_sin_content_type() -> sincronizacion::Salida {
+        let mut s = lo_que_sale_en_el_acceso();
+        s.nombres.retain(|n| n != "content-type");
+        s.content_type = None;
+        s
     }
 
     #[test]
@@ -3495,9 +3549,11 @@ mod pruebas {
         );
         assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
         assert!(!dicho.contains("CSRF-DE-PRUEBA"), "salió el _csrf: {dicho}");
-        // 3) El content-type, el estado, los bytes y la presencia de set-cookie/location.
+        // 3) El content-type, el estado, los bytes y la presencia de set-cookie/location. El
+        // `content-type` SÍ sale: lo pone `post_form` y el `Referer`/el disfraz se AÑADEN con
+        // `mas_cabeceras`, no reemplazan la lista (la lección del 500).
         assert!(
-            dicho.contains("content-type    (NINGUNO"),
+            dicho.contains("content-type    application/x-www-form-urlencoded"),
             "el content-type que sale: {dicho}"
         );
         assert!(dicho.contains("respuesta       500"), "{dicho}");
@@ -3507,20 +3563,28 @@ mod pruebas {
         assert!(dicho.contains("cookies"), "las cookies de la jarra: {dicho}");
         // 4) El cuerpo de la respuesta NO se vuelca, ni siquiera teniendo un marcador dentro.
         assert!(!dicho.contains("MARCADOR-DEL-CUERPO"), "se volcó el cuerpo: {dicho}");
-        // 5) Y el diagnóstico, pegado al POST que falla, con el `content-type` señalado.
+        // 5) Y el diagnóstico, pegado al POST que falla: con el disfraz completo no falta ninguna
+        // cabecera de la lista de la librería, y el 500 se lee como lo que es —una respuesta del
+        // backend, no un fallo de forma—.
         assert!(dicho.contains("DIAGNÓSTICO"), "{dicho}");
         assert!(
-            dicho.contains(
-                "ella manda y NOSOTROS NO: accept-language, connection, content-type, sec-ch-ua,"
-            ),
+            dicho.contains("ella manda y NOSOTROS NO: nada"),
             "la comparación con la librería portada: {dicho}"
         );
         assert!(
-            dicho.contains("coincidimos en: accept, accept-encoding, content-length, referer, user-agent"),
+            dicho.contains("el disfraz del navegador está completo"),
+            "{dicho}"
+        );
+        assert!(
+            dicho.contains(
+                "coincidimos en: accept, accept-encoding, accept-language, content-length, \
+                 content-type, referer, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, \
+                 sec-fetch-dest, sec-fetch-mode, sec-fetch-site, sec-fetch-user, \
+                 upgrade-insecure-requests, user-agent"
+            ),
             "lo que SÍ coincide, para no exagerar la diferencia: {dicho}"
         );
         assert!(dicho.contains("nosotros mandamos y ELLA NO: nada"), "{dicho}");
-        assert!(dicho.contains("el que explica el 500 es `content-type`"), "{dicho}");
         // El flujo paró donde tenía que parar, y con el mismo código que `--probar`.
         assert_eq!(fallo.codigo(), CODIGO_SIN_RED, "{}", fallo.mensaje());
     }
@@ -3557,38 +3621,76 @@ mod pruebas {
 
     #[test]
     fn la_comparacion_de_cabeceras_dice_cual_falta_y_cual_coincide() {
-        let nuestras = vec!["Referer".to_string()];
+        // **Lo que manda el flujo ahora**: el disfraz del navegador (pasos 1, 2 y 3 del SSO) más el
+        // `Referer` del acceso, y MÁS las que añade `ureq` solo (`CABECERAS_QUE_ANADE_EL_CLIENTE`),
+        // que es como se alimenta la comparación dentro de `diagnostico_del_acceso`: comparar solo la
+        // lista de la petición diría que no mandamos `accept-encoding` ni `content-length` cuando sí
+        // salen por el cable. Los nombres van con la grafía del disfraz (`Sec-Fetch-Dest`) a
+        // propósito: la comparación no distingue mayúsculas, y eso también se prueba.
+        let mut nuestras: Vec<String> = sincronizacion::cabeceras_del_disfraz()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        nuestras.push("Referer".to_string());
+        for anadida in CABECERAS_QUE_ANADE_EL_CLIENTE {
+            if !nuestras.iter().any(|n| n.eq_ignore_ascii_case(anadida)) {
+                nuestras.push(anadida.to_string());
+            }
+        }
         let (solo_ella, solo_nosotras, coinciden) =
             comparar_cabeceras(&nuestras, CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO);
-        assert!(solo_ella.contains(&"content-type".to_string()), "{solo_ella:?}");
-        assert!(solo_ella.contains(&"user-agent".to_string()), "{solo_ella:?}");
+        // Lo único que le falta al flujo es lo que pone `post_form` (el `Content-Type`), que NO es
+        // parte de la huella: el disfraz no lo lleva a propósito.
+        assert_eq!(solo_ella, vec!["content-type".to_string()], "{solo_ella:?}");
         assert!(solo_nosotras.is_empty(), "{solo_nosotras:?}");
-        // La comparación no distingue mayúsculas: `Referer` de aquí es `referer` de allí.
-        assert_eq!(coinciden, vec!["referer".to_string()]);
+        // Las dos cabeceras que el rastreo echaba en falta, ahora coincidiendo.
+        assert!(coinciden.contains(&"user-agent".to_string()), "{coinciden:?}");
+        assert!(coinciden.contains(&"sec-ch-ua".to_string()), "{coinciden:?}");
+        // `Referer` de aquí es `referer` de allí: la comparación no distingue mayúsculas.
+        assert!(coinciden.contains(&"referer".to_string()), "{coinciden:?}");
+        // Y el `connection` que se midió contra el eco en claro NO entra: es un artefacto del `h2c`,
+        // no una diferencia con la librería contra Garmin (HTTPS, h2).
+        assert!(
+            !coinciden.contains(&"connection".to_string()),
+            "el artefacto del claro no es una cabecera de la librería: {coinciden:?}"
+        );
+        assert!(
+            !solo_ella.contains(&"connection".to_string()),
+            "{solo_ella:?}"
+        );
     }
 
     #[test]
     fn el_diagnostico_solo_afirma_lo_que_sus_datos_dicen() {
-        // Con el `content-type` ausente: la hipótesis se afirma.
-        let texto = diagnostico_del_acceso(&lo_que_sale_en_el_acceso(), 5);
+        // Con el `content-type` ausente: la hipótesis se afirma. Y «NOSOTROS NO» ya no lleva
+        // `accept-language` ni `connection` delante: el flujo manda el disfraz (así que el
+        // `accept-language` coincide) y el `connection` salió de la lista por artefacto del claro.
+        let texto = diagnostico_del_acceso(&lo_que_sale_en_el_acceso_sin_content_type(), 5);
         assert!(texto.contains("el que explica el 500 es `content-type`"), "{texto}");
-        assert!(texto.contains("NOSOTROS NO: accept-language, connection, content-type"), "{texto}");
-        // Y NO exagera la diferencia: lo que sí sale se dice que coincide. El `user-agent` y el
-        // `accept` los añade `ureq`, y la comparación tiene que contarlos.
+        assert!(texto.contains("NOSOTROS NO: content-type"), "{texto}");
+        // Y NO exagera la diferencia: lo que sí sale se dice que coincide —el disfraz entero—. El
+        // `accept-encoding` y el `content-length` los añade `ureq`, y la comparación los cuenta.
         assert!(
-            texto.contains("coincidimos en: accept, accept-encoding, content-length, referer, user-agent"),
+            texto.contains(
+                "coincidimos en: accept, accept-encoding, accept-language, content-length, \
+                 referer, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, sec-fetch-dest, \
+                 sec-fetch-mode, sec-fetch-site, sec-fetch-user, upgrade-insecure-requests, \
+                 user-agent"
+            ),
             "{texto}"
         );
         assert!(texto.contains("5 en memoria"), "las cookies, aparte: {texto}");
-        // Con el `content-type` presente: NO se afirma, y se dice por qué.
-        let con = sincronizacion::Salida {
-            medido: true,
-            nombres: vec!["referer".to_string(), "content-type".to_string()],
-            content_type: Some("application/x-www-form-urlencoded".to_string()),
-        };
+        // Con el `content-type` presente y el disfraz completo: NO se afirma, y se dice que no falta
+        // nada por el lado de la forma.
+        let con = lo_que_sale_en_el_acceso();
         let texto = diagnostico_del_acceso(&con, 0);
         assert!(texto.contains("SÍ sale"), "{texto}");
+        assert!(texto.contains("el disfraz del navegador está completo"), "{texto}");
         assert!(!texto.contains("el que explica el 500"), "{texto}");
+        assert!(
+            !texto.contains("lo que falte"),
+            "si no falta nada, no se habla de lo que falte: {texto}"
+        );
         // Medido y VACÍO no es lo mismo que sin medir: si la petición no lleva ninguna cabecera, la
         // comparación se hace igual y sale que falta lo que no añade el cliente.
         let vacio = sincronizacion::Salida {
@@ -3600,9 +3702,18 @@ mod pruebas {
         assert!(!texto.contains("sin dato"), "{texto}");
         assert!(texto.contains("NOSOTROS NO: accept-language"), "{texto}");
         // Y con un transporte que no mide (el falso sin `salida`): se dice «sin dato», no se inventa.
+        // La lista que se enseña es la del `const`, no una copia: sin `connection` y con los 15.
         let texto = diagnostico_del_acceso(&sincronizacion::Salida::default(), 0);
         assert!(texto.contains("sin dato"), "{texto}");
         assert!(!texto.contains("el que explica el 500"), "{texto}");
+        assert!(
+            texto.contains(&format!(
+                "medido con un servidor de eco: {}",
+                CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO.join(", ")
+            )),
+            "{texto}"
+        );
+        assert!(!texto.contains("connection"), "{texto}");
     }
 
     #[test]
@@ -3799,6 +3910,47 @@ mod pruebas {
             referer.contains("gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed"),
             "{referer}"
         );
+    }
+
+    #[test]
+    fn el_acceso_lleva_el_disfraz_del_navegador() {
+        // `client.py:751` — `curl_cffi.Session(impersonate="chrome")`: el POST del acceso va, como
+        // los dos GET del SSO, con la huella MEDIDA de Chrome 150. Se afirma sobre la petición de
+        // verdad (`peticion_del_acceso`), no sobre una copia que se parece.
+        let p = peticion_del_acceso(
+            "CSRF-DE-PRUEBA",
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(FALSA.into()),
+        );
+        let valor_de = |nombre: &str| -> Option<String> {
+            p.cabeceras
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(nombre))
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(valor_de("sec-fetch-dest").as_deref(), Some("document"));
+        assert_eq!(valor_de("accept-language").as_deref(), Some("en-US,en;q=0.9"));
+        assert_eq!(valor_de("sec-ch-ua-mobile").as_deref(), Some("?0"));
+        let agente = valor_de("user-agent").expect("el disfraz trae `User-Agent`");
+        assert!(agente.starts_with("Mozilla/5.0 (Macintosh"), "{agente}");
+        // Y el `Referer` sigue siendo el del acceso, DESPUÉS del disfraz: los dos conviven porque
+        // `mas_cabeceras` AÑADE (si reemplazara, uno de los dos se perdería).
+        assert_eq!(
+            valor_de("referer"),
+            Some(flujo::url_de_la_pagina_de_acceso())
+        );
+        // Los tres que ni se anuncian ni se ponen a mano: `cookie` la lleva la jarra, `connection` la
+        // gestiona `ureq` (HTTP/1.1) y `accept-encoding` lo pone el cliente con lo que sabe
+        // descomprimir.
+        for prohibido in ["cookie", "connection", "accept-encoding"] {
+            assert!(
+                !p.cabeceras
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case(prohibido)),
+                "el flujo no manda «{prohibido}»: {:?}",
+                p.cabeceras
+            );
+        }
     }
 
     #[test]

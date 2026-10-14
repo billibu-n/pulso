@@ -385,24 +385,32 @@ pub fn cabeceras_de_sesion(token: Option<&str>, jwt_web: Option<&str>) -> Vec<(S
     h
 }
 
-/// `client.py:795-807` — las cabeceras del POST del login. Además del `Content-Type` (que lo pone el
-/// cliente al enviar un formulario, `ureq` `src/request.rs:600-602`), la librería manda un `Referer`
-/// con la propia página del widget: es parte del flujo del SSO, no un adorno.
+/// **La huella de navegador con la que la librería portada pide las páginas del SSO** —`client.py:751`,
+/// `curl_cffi.Session(impersonate="chrome")`—. **MEDIDA, no leída**: valores apuntados el 2026-10-14
+/// contra un servidor de eco local (evidencia: `datos/trabajo-ui/_evidencia-huella-curl-cffi.txt`),
+/// la misma vía con la que se midió la lista de `CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO`.
 ///
-/// Está `#[cfg(test)]` porque el POST del login del instrumento construye su `Referer` al lado de la
-/// petición (donde se lee de un tirón qué se manda y con qué), y esta función es la que la suite
-/// compara contra esa lista.
-#[cfg(test)]
-pub fn cabeceras_del_login() -> Vec<(String, String)> {
+/// Es lo que el rastreo echaba en falta («ella manda y NOSOTROS NO»): Chrome 150 en una petición de
+/// documento. Se dejan FUERA, a propósito:
+/// - `connection`, `upgrade` y `http2-settings`: contra el eco EN CLARO llegan por el intento de `h2c`
+///   (medido: `Connection: Upgrade, HTTP2-Settings`); contra Garmin, que es HTTPS con h2, ni la
+///   librería las manda.
+/// - `accept-encoding`: la pone `ureq` con lo que SABE descomprimir; anunciar `br`/`zstd` sin soporte
+///   dejaría la respuesta ilegible.
+/// - `content-type`: lo pone `post_form` con el formulario; no es parte de la huella.
+pub fn cabeceras_del_disfraz() -> Vec<(String, String)> {
     vec![
-        (
-            "Content-Type".to_string(),
-            "application/x-www-form-urlencoded".to_string(),
-        ),
-        (
-            "Referer".to_string(),
-            "https://sso.garmin.com/sso/embed".to_string(),
-        ),
+        ("Accept".into(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7".into()),
+        ("Accept-Language".into(), "en-US,en;q=0.9".into()),
+        ("Sec-Fetch-Dest".into(), "document".into()),
+        ("Sec-Fetch-Mode".into(), "navigate".into()),
+        ("Sec-Fetch-Site".into(), "none".into()),
+        ("Sec-Fetch-User".into(), "?1".into()),
+        ("Upgrade-Insecure-Requests".into(), "1".into()),
+        ("User-Agent".into(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36".into()),
+        ("sec-ch-ua".into(), "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"".into()),
+        ("sec-ch-ua-mobile".into(), "?0".into()),
+        ("sec-ch-ua-platform".into(), "\"macOS\"".into()),
     ]
 }
 
@@ -674,17 +682,6 @@ mod pruebas {
     }
 
     #[test]
-    fn el_login_manda_el_referer_del_widget_y_el_tipo_de_formulario() {
-        let h = cabeceras_del_login();
-        assert!(h
-            .iter()
-            .any(|(k, v)| k == "Referer" && v == "https://sso.garmin.com/sso/embed"));
-        assert!(h
-            .iter()
-            .any(|(k, v)| k == "Content-Type" && v == "application/x-www-form-urlencoded"));
-    }
-
-    #[test]
     fn de_una_autorizacion_solo_se_dice_el_esquema() {
         let dicho = esquema_de_autorizacion(&format!("Bearer {FALSA}"));
         assert_eq!(dicho, "Bearer …");
@@ -841,5 +838,43 @@ mod pruebas {
             "{}",
             fallo.mensaje()
         );
+    }
+
+    #[test]
+    fn las_cabeceras_del_disfraz_son_las_medidas() {
+        // 11 pares, ni uno más ni uno menos: la huella de Chrome 150 que se apuntó del eco local
+        // (`datos/trabajo-ui/_evidencia-huella-curl-cffi.txt`, 2026-10-14).
+        let h = cabeceras_del_disfraz();
+        assert_eq!(h.len(), 11, "{h:?}");
+        // Los NOMBRES exactos, EN ORDEN: como los apunta la evidencia, para que se pueda comparar
+        // la función línea a línea con el fichero de la medida.
+        let nombres: Vec<&str> = h.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(
+            nombres,
+            vec![
+                "Accept",
+                "Accept-Language",
+                "Sec-Fetch-Dest",
+                "Sec-Fetch-Mode",
+                "Sec-Fetch-Site",
+                "Sec-Fetch-User",
+                "Upgrade-Insecure-Requests",
+                "User-Agent",
+                "sec-ch-ua",
+                "sec-ch-ua-mobile",
+                "sec-ch-ua-platform",
+            ],
+            "{nombres:?}"
+        );
+        // Y NINGUNO de los cuatro que NO se anuncian: no se promete lo que no se sabe descomprimir
+        // (`accept-encoding`), no se mete la jarra a mano (`cookie`), no se declara el tipo del
+        // formulario (`content-type`, que lo pone `post_form`) ni se manda un `connection` que es
+        // artefacto de la medición en claro o que gestiona el propio `ureq` (HTTP/1.1).
+        for prohibido in ["content-type", "cookie", "accept-encoding", "connection"] {
+            assert!(
+                !nombres.iter().any(|n| n.eq_ignore_ascii_case(prohibido)),
+                "«{prohibido}» NO es parte de la huella: {nombres:?}"
+            );
+        }
     }
 }

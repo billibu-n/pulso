@@ -374,6 +374,26 @@ Contrato ANTES del código: `docs/CONTRATO-agua-en-el-recorrido.md`. Lo que camb
 **Y LO QUE FALTA DEL PUNTO 3, dicho como tarea**: es la `P6.6` de `TASKS.json`, **pendiente y bloqueada
 por el cliente**. La vía está lista; solo falta su ZIP real.
 
+**Y PARA QUE LA COMPROBACIÓN SEA EXACTA, hay instrumento propio** (2026-10-14, ronda 2):
+`motor/src/bin/medir-huawei.rs`, con su contrato en cinco líneas. Recibe el ZIP (o la carpeta) y
+**imprime LOS CINCO campos con cuántas mediciones los traen y su mínimo y máximo**, más el periodo y
+cuántas mediciones hay por día. Es lo que `--texto` no enseñaba (solo el agua). Medido sobre un ZIP
+sintético que **solo trae el peso**:
+
+```
+  campo (clave JSON)             con dato     minimo      maximo
+  peso_kg (bodyWeight)           1/1         70,0        70,0
+  grasa_corporal_% (bodyFatRate) 0/1         —           —
+  agua_corporal_% (moistureRate) 0/1         —           —
+  masa_muscular_kg (muscleMass)  0/1         —           —
+  masa_osea_kg (boneSalt)        0/1         —           —
+
+  SIN DATO EN NINGUNA MEDICION: grasa_corporal_%, agua_corporal_%, masa_muscular_kg, masa_osea_kg
+```
+
+**No rellena con ceros**: dice que no está. El día que llegue SU ZIP, un solo comando contesta la
+pregunta del bloque: `cargo run -q --bin medir-huawei -- <su.zip>`.
+
 **2 · El PERIODO en la pantalla.** Antes `Real.desde`/`hasta` **solo** se veían en `--texto`. Ahora
 `cara::lo_que_ensena` calcula **`periodo`** (una línea, con `avisos::fecha_de_epoch`) y **la ventana lo
 recibe ya escrito**: la interfaz no calcula. `--texto` imprime **la misma cadena** (una sola fuente: si
@@ -390,7 +410,8 @@ El primer intento **absorbió el hueco sobrante del reparto** (la celda salió d
 98 debajo); se movió **dentro de la tarjeta del recuento**, que tiene alto fijo, y quedó en **17 px**. Es
 un ejemplo de lo que el método pide: **lo visual se mide, y la medición encontró el defecto**.
 
-**Estado medido**: **200 pruebas en verde, 0 avisos** (`cargo test`). `--ayuda`, `--texto` y `--elegir`
+**Estado medido**: **203 pruebas en verde, 0 avisos** (`cargo test`), 3 de ellas del instrumento
+`medir-huawei`. `--ayuda`, `--texto` y `--elegir`
 siguen devolviendo antes de `run()`: **no se abrió ninguna ventana**.
 
 **LO QUE NO ESTÁ HECHO, dicho claro:**

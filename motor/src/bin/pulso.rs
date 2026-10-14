@@ -122,7 +122,7 @@ fn lista_de_campos(c: &DatosPersona) -> Vec<(&'static str, String)> {
         .collect()
 }
 
-/// El analisis de la carpeta: **de la memoria si sirve, y si no, leyendo**.
+/// El analisis de la carpeta: **lo recordado, y SOLO lo nuevo o lo cambiado**.
 ///
 /// ESTA FUNCION ES LA QUE HACE QUE LA APLICACION ABRA AL INSTANTE. Y las cifras van MEDIDAS, con el
 /// comando que las mide, porque una cifra redonda en un comentario acaba siendo una creencia:
@@ -136,17 +136,22 @@ fn lista_de_campos(c: &DatosPersona) -> Vec<(&'static str, String)> {
 /// OJO CON EL TAMANO: al principio se comparo contra «1.003 MB», y era un error mio -- esa cifra es
 /// **todo** `datos/`, con la base de datos de Garmin dentro. Los 102 FIT pesan **34 MB**.
 fn el_analisis(carpeta: &Path, ruta_memoria: &Path) -> Option<Real> {
-    if let Some(r) = memoria::leer(ruta_memoria, carpeta) {
-        return Some(r);
-    }
-    // No hay memoria, o la carpeta cambio: se lee. Y si la carpeta no existe, no se lee nada -- que no
-    // es un error, es «no hay datos», y la pantalla ya sabe decirlo.
+    // La carpeta no existe: no se lee nada. No es un error, es «no hay datos», y la pantalla ya sabe
+    // decirlo.
     if !carpeta.exists() {
         return None;
     }
-    let real = analisis::de_carpeta(carpeta);
+    // LO RECORDADO, Y SOLO LO NUEVO. Esto es lo que hace que añadir la sesion de hoy no obligue a
+    // releer los tres meses de historico: cada fichero ya leido deja su ficha, y aqui solo se leen las
+    // fichas que faltan o que cambiaron de tamaño.
+    let previas = memoria::leer_fichas(ruta_memoria);
+    let (real, fichas, cuantas) = analisis::actualizar(carpeta, &previas);
     if real.hay_datos() {
-        memoria::guardar(ruta_memoria, carpeta, &real);
+        memoria::guardar(ruta_memoria, &fichas);
+        eprintln!(
+            "  {} sesiones - {} recordadas - {} leidas",
+            real.sesiones, cuantas.recordadas, cuantas.leidas
+        );
         Some(real)
     } else {
         None
@@ -297,6 +302,17 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         println!("  {}", ensenado.vacio);
         println!();
+        // EL PERIODO QUE CUBRE: la coherencia de las fechas, dicha sin abrir ventana. Sin esto, un
+        // total de tres meses y uno de hoy se parecen demasiado.
+        if let Some(r) = real.as_ref() {
+            if let (Some(d), Some(h)) = (r.desde, r.hasta) {
+                println!(
+                    "  periodo ... {} .. {}",
+                    motor::avisos::fecha_de_epoch(d),
+                    motor::avisos::fecha_de_epoch(h)
+                );
+            }
+        }
         println!("  perfil .... {}", ruta_perfil.display());
         println!("  memoria ... {}", ruta_memoria.display());
         println!("  ==> los MISMOS valores que salen en pantalla, no un resumen aparte.");

@@ -47,6 +47,14 @@ pub struct Lectura {
     /// Va aquí y no en `Sesion` porque **no es un dato de la sesión**: es una avería del fichero, y
     /// una avería se cuenta, no se promedia.
     pub invalidos: Vec<(String, usize)>,
+    /// **Cuándo empezó la sesión**, en segundos desde el 1 de enero de 1970 (UTC). `None` si el
+    /// fichero no lo trae.
+    ///
+    /// ESTE DATO ES LO QUE HACE QUE LA MEMORIA PUEDA DECIR QUÉ PERIODO CUBRE. Sin fecha, un total de
+    /// tres meses y un total de hoy se parecen demasiado. Va en `Lectura` y no en `Sesion` porque es
+    /// **un dato del fichero**, como los totales declarados: el modelo del motor no necesita la hora
+    /// para calcular, pero la memoria sí para no mentir con el periodo.
+    pub inicio_s: Option<i64>,
 }
 
 /// Los totales que el FIT trae ya calculados. **Se conservan para comparar, no para sustituir.**
@@ -114,6 +122,9 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
     let mut biomecanica = Biomecanica::vacia();
     let mut invalidos: std::collections::BTreeMap<String, usize> = Default::default();
     let mut cuenta: std::collections::BTreeMap<String, usize> = Default::default();
+    // La fecha de la sesión: primero la del primer `Record`, y si el mensaje `Session` trae su
+    // `start_time`, manda ese (es el que el reloj declara como comienzo, no el primer latido).
+    let mut inicio_s: Option<i64> = None;
 
     for r in datos.iter() {
         let tipo = format!("{:?}", r.kind());
@@ -135,6 +146,9 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
                             // resta el primero: lo que importa es el tiempo DENTRO de la sesión.
                             if let fitparser::Value::Timestamp(t) = c.value() {
                                 segundo = Some(t.timestamp() as u32);
+                                if inicio_s.is_none() {
+                                    inicio_s = Some(t.timestamp() as i64);
+                                }
                             }
                         }
                         "heart_rate" => pulso = entero(c.value()),
@@ -189,6 +203,13 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
             "Session" => {
                 for c in r.fields() {
                     match c.name() {
+                        // La fecha que declara el reloj para la sesión. Manda sobre la del primer
+                        // registro: una sesión puede empezar antes del primer latido.
+                        "start_time" => {
+                            if let fitparser::Value::Timestamp(t) = c.value() {
+                                inicio_s = Some(t.timestamp() as i64);
+                            }
+                        }
                         "total_elapsed_time" | "total_timer_time" => {
                             if declarado.duracion_s.falta() {
                                 if let Some(v) = real(c.value()) {
@@ -343,7 +364,33 @@ pub fn leer(ruta: &Path) -> Result<Lectura, String> {
         declarado,
         mensajes: cuenta.into_iter().collect(),
         invalidos: invalidos.into_iter().collect(),
+        inicio_s,
     })
+}
+
+/// **Los FIT de una carpeta con su TAMAÑO, sin leer ninguno**, ordenados por nombre.
+///
+/// ES LA BASE DE LA MEMORIA INCREMENTAL: mirar el tamaño de 102 ficheros es instantáneo, y con eso se
+/// decide **cuáles hay que leer de verdad**. Los ficheros de otro tipo no cuentan: no se leen, así que
+/// no cambian el resultado.
+///
+/// **EL TAMAÑO Y NO LA FECHA**, a propósito: la fecha cambia al copiar un fichero aunque el contenido
+/// sea el mismo, y con la fecha, copiar sus datos invalidaría media memoria sin motivo.
+pub fn listar(carpeta: &Path) -> Vec<(String, u64)> {
+    let mut v: Vec<(String, u64)> = match std::fs::read_dir(carpeta) {
+        Ok(d) => d
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map(|x| x == "fit").unwrap_or(false))
+            .filter_map(|e| {
+                let nombre = e.file_name().to_string_lossy().to_string();
+                let tam = e.metadata().ok()?.len();
+                Some((nombre, tam))
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    v.sort();
+    v
 }
 
 /// Un valor que no está **se cuenta**, para poder distinguir «el aparato no lo mide» de «hoy no lo

@@ -1,35 +1,32 @@
-//! **El resultado del análisis, y su MEMORIA entre arranques.**
+//! **La memoria entre arranques, INCREMENTAL.**
 //!
-//! POR QUE EXISTE, y esta MEDIDO, no supuesto: abrir la aplicacion con 102 ficheros de verdad tardaba
-//! **5,50 s**, y de esos 5,50 s, **5,50 son LEER los ficheros**. Contar 549.842 muestras y calcular la
-//! deriva de las 102 sesiones es **instantaneo** (0,000 s y 0,00 s, medido). O sea que el problema no
-//! era calcular: era **volver a leer lo que no ha cambiado**.
+//! POR QUE EXISTE, y esta MEDIDO: abrir la aplicacion con 102 ficheros de verdad tardaba **5,50 s**, y
+//! de esos 5,50 s, **5,50 son LEER los ficheros**. Contar 549.842 muestras y calcular la deriva de las
+//! 102 sesiones es **instantaneo**. O sea que el problema no era calcular: era **volver a leer lo que
+//! no ha cambiado**.
 //!
-//! Un ciclista que abre la aplicacion para mirar sus zonas **no va a esperar cinco segundos y medio
-//! cada vez**, y menos en el telefono. Y el paso 8 del recorrido del usuario lo dice: **una aplicacion
-//! que hay que reconfigurar cada vez no se usa dos veces.**
+//! QUE CAMBIO EL 2026-10-14, y por que: la primera version guardaba SOLO el resultado y una huella. Si
+//! la huella no coincidia -- y NO coincide en cuanto el ciclista añade la sesion de hoy -- **se releia
+//! el historico entero para sumar un fichero**. El dueño lo pidio asi de claro:
 //!
-//! COMO SE RESUELVE, y por que asi: se guarda **el resultado** -- no los ficheros, que son enormes --
-//! junto a una **huella** de lo que se leyo. Al arrancar se recalcula la huella mirando la carpeta:
-//! **leer el tamaño de 102 ficheros es instantaneo**, asi que sale mucho mas barato que volver a
-//! leerlos. Si la huella coincide, se usa lo guardado. Si no, se lee todo y se guarda otra vez.
+//! > «por cada activacion de la aplicacion, no tenga que releer de nuevo toda la informacion de hace
+//! > meses y ir sumando la informacion mas reciente».
 //!
-//! POR QUE EL TAMAÑO Y NO LA FECHA: la fecha de un fichero cambia si se **copia**, aunque el contenido
-//! sea el mismo; el tamaño no. Con la fecha, copiar sus datos invalidaria la memoria sin motivo. Se
-//! probo a mirarlo y se elige el tamaño **a proposito**, no por comodidad.
+//! Ahora se guarda **una ficha por fichero** (nombre, tamaño y su APORTE al total), y al arrancar solo
+//! se leen las fichas **nuevas o cambiadas**. El contrato esta en docs/CONTRATO-memoria-incremental.md.
 //!
-//! Y **lo que NO se hace**: guardar los datos crudos, ni en un formato binario propio, ni comprimidos.
-//! El resultado son **nueve numeros**, y un fichero de texto con nueve numeros se puede **leer y
-//! comprobar a ojo** -- que es lo que este proyecto pide de todo lo que guarda.
+//! LO QUE **NO** SE HACE: guardar los datos crudos, ni en un formato binario propio, ni comprimidos.
+//! Se guardan aportes de nueve numeros, y un fichero de texto con eso se puede **leer y comprobar a
+//! ojo** -- que es lo que este proyecto pide de todo lo que guarda.
 
-use crate::analisis::Real;
+use crate::analisis::Ficha;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Lo que se guarda en disco: **el resultado y la huella de lo que se leyo**.
+/// Lo que se guarda en disco: **las fichas y de cuando son**.
 ///
-/// Van juntos a proposito: un resultado **sin** la huella no se puede comprobar, y entonces no se sabe
-/// si corresponde a los ficheros que hay ahora. Un resultado que no se puede comprobar no sirve.
+/// La fecha del guardado NO decide nada; se guarda para poder **documentar** de cuando es la memoria.
+/// Un total sin fecha no se puede poner en contexto.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Guardado {
     /// La version del formato. Si un dia cambia lo que se guarda, esto lo delata.
@@ -38,66 +35,51 @@ pub struct Guardado {
     /// **sin avisar**. Con la version, se detecta y se vuelve a calcular. Es mas barato recalcular
     /// que dar un dato falso.
     pub version: u32,
-    /// La huella de los ficheros: nombre y tamaño de cada uno.
-    pub huella: Vec<(String, u64)>,
-    /// El resultado.
-    pub real: Real,
+    /// Cuando se calculo, en segundos desde el 1 de enero de 1970 (UTC). None si el reloj no se pudo
+    /// leer, que no es motivo para no guardar.
+    pub guardado_en_s: Option<i64>,
+    /// Una ficha por fichero recordado.
+    pub fichas: Vec<Ficha>,
 }
 
-/// La version del formato de la memoria. **Se sube a mano cuando cambia `Real`.**
-pub const VERSION: u32 = 1;
-
-/// La huella de una carpeta: de cada `.fit`, su **nombre y su tamaño**, ordenado.
+/// La version del formato de la memoria. **Se sube a mano cuando cambia lo que se guarda.**
 ///
-/// Se mira solo lo que puede cambiar el resultado: si aparece un fichero, si desaparece, o si cambia
-/// de tamaño. Los ficheros de otro tipo no cuentan -- no se leen, asi que no cambian nada.
-pub fn huella(carpeta: &Path) -> Vec<(String, u64)> {
-    let mut h: Vec<(String, u64)> = match std::fs::read_dir(carpeta) {
-        Ok(d) => d
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map(|x| x == "fit").unwrap_or(false))
-            .filter_map(|e| {
-                let nombre = e.file_name().to_string_lossy().to_string();
-                let tam = e.metadata().ok()?.len();
-                Some((nombre, tam))
-            })
-            .collect(),
-        // Una carpeta que no se puede leer da una huella VACIA, no un error: el que llama tiene que
-        // poder distinguir «no hay nada» de «no se pudo mirar». Y una huella vacia no casara con nada.
-        Err(_) => Vec::new(),
-    };
-    h.sort();
-    h
-}
+/// LA VERSION 2 ES LA DE LOS APORTES: la 1 guardaba solo el resultado y una huella, y no se puede
+/// convertir a fichas sin releer. Se sube, y una memoria de la version 1 se descarta y se recalcula.
+pub const VERSION: u32 = 2;
 
-/// Lee la memoria del disco.
+/// Lee el fichero de memoria entero.
 ///
-/// Devuelve `None` -- **y no un error** -- cuando no hay memoria, cuando esta corrupta o cuando es de
-/// otra version. En los tres casos la respuesta correcta es la misma: **volver a calcular**. Un error
-/// aqui no es un problema que el usuario tenga que resolver.
-pub fn leer(ruta: &Path, carpeta: &Path) -> Option<Real> {
+/// Devuelve None -- **y no un error** -- cuando no hay memoria, cuando esta corrupta o cuando es de
+/// otra version. En los tres casos la respuesta correcta es la misma: **volver a leer**. Un error aqui
+/// no es un problema que el usuario tenga que resolver.
+pub fn leer_guardado(ruta: &Path) -> Option<Guardado> {
     let texto = std::fs::read_to_string(ruta).ok()?;
     let g: Guardado = serde_json::from_str(&texto).ok()?;
     if g.version != VERSION {
         return None;
     }
-    // Y LA COMPROBACION QUE HACE QUE ESTO SIRVA DE ALGO: la huella tiene que ser la de AHORA.
-    if g.huella != huella(carpeta) {
-        return None;
-    }
-    Some(g.real)
+    Some(g)
+}
+
+/// **Lo que se recuerda**, listo para pasarselo a analisis::actualizar.
+///
+/// Si no hay memoria, esta corrupta o es de otra version, devuelve una lista VACIA: eso significa
+/// «no recuerdo nada», y el llamante leera todo. Es exactamente lo que hay que hacer la primera vez.
+pub fn leer_fichas(ruta: &Path) -> Vec<Ficha> {
+    leer_guardado(ruta).map(|g| g.fichas).unwrap_or_default()
 }
 
 /// Escribe la memoria. Si no se puede escribir, **no pasa nada**: se pierde la memoria, no el resultado.
 ///
 /// POR QUE NO DEVUELVE ERROR: la memoria es una **comodidad**, no un dato. Que no se pueda guardar
-/// significa que la proxima vez tardara cinco segundos otra vez, y eso no es un fallo que haya que
-/// enseñarle a nadie. Devolver un error obligaria a decidir que hacer con el, y no hay nada que hacer.
-pub fn guardar(ruta: &Path, carpeta: &Path, real: &Real) {
+/// significa que la proxima vez tardara unos segundos mas, y eso no es un fallo que haya que enseñarle
+/// a nadie. Devolver un error obligaria a decidir que hacer con el, y no hay nada que hacer.
+pub fn guardar(ruta: &Path, fichas: &[Ficha]) {
     let g = Guardado {
         version: VERSION,
-        huella: huella(carpeta),
-        real: real.clone(),
+        guardado_en_s: ahora_s(),
+        fichas: fichas.to_vec(),
     };
     // Si la carpeta no existe se crea. En el telefono, la carpeta de la aplicacion puede no existir
     // todavia, y no poder guardar por eso seria un fallo tonto.
@@ -107,4 +89,12 @@ pub fn guardar(ruta: &Path, carpeta: &Path, real: &Real) {
     if let Ok(texto) = serde_json::to_string_pretty(&g) {
         let _ = std::fs::write(ruta, texto);
     }
+}
+
+/// El instante de ahora, en segundos epoch. None si el reloj del sistema va antes de 1970.
+fn ahora_s() -> Option<i64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
 }

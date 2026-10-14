@@ -66,6 +66,8 @@ fn sus_sesiones() -> Real {
         hrv_medio: Some(9.2),
         maxima_vista: Some(183),
         no_leidos: Vec::new(),
+        desde: Some(1_700_000_000),
+        hasta: Some(1_720_000_000),
     }
 }
 

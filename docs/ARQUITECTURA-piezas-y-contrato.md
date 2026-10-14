@@ -8,7 +8,7 @@ crítica del dueño que es correcta y hay que dejar escrita:
 > auto: el motor, la transmisión… Todos son piezas independientes que se acoplan entre sí.»*
 
 **Y LO QUE PASÓ, dicho sin adornos**: se construyeron **el motor, la transmisión y las ruedas**, cada uno
-por separado y bien —el motor con 181 pruebas— y **se descubrió al final que no había bancada**. La pieza
+por separado y bien —el motor con 183 pruebas— y **se descubrió al final que no había bancada**. La pieza
 que acopla todo, `pulso.rs` (entonces `ventana.rs`), fue **la última y la más frágil**: se escribió de una vez, no compilaba, y
 hubo que delegar el arreglo. **Eso no es mala suerte: es haber empezado a ejecutar sin los planos.**
 
@@ -73,7 +73,7 @@ Cada una dice: **qué es**, **qué NO es**, **quién depende de quién**, y **c�
 | **`rango.rs`**, **`juicio.rs`**, **`fuentes.rs`** | **cuánto vale un número y de dónde sale**: el margen, la confianza, la procedencia | no calcula fisiología |
 | **`formulas*.rs`**, **`umbral.rs`**, **`esfuerzo.rs`**, **`patron.rs`**, **`hrv.rs`**, **`tendencia.rs`**, **`potencia.rs`**, **`avisos.rs`** | **el cálculo**, cada uno con su fórmula citada | **no saben qué es un FIT, ni un JSON, ni una pantalla** |
 
-**La prueba de que esta capa está bien separada**: `cargo test --test pruebas` → **148 pruebas que no
+**La prueba de que esta capa está bien separada**: `cargo test --test pruebas` → **150 pruebas que no
 tocan ningún fichero de fuera**. Se construyen personas y sesiones **a mano** y se comprueba el cálculo.
 **Si alguna de estas pruebas necesitara un FIT, la capa estaría mal.**
 
@@ -134,11 +134,11 @@ tamaño lo delata: **si `pulso.rs` crece, es que se está colando lógica dentro
 
 | contrato | quién lo comprueba |
 |---|---|
-| **el motor no conoce el mundo exterior** | `cargo test --test pruebas`: 148 pruebas **sin tocar un fichero de fuera** |
+| **el motor no conoce el mundo exterior** | `cargo test --test pruebas`: 150 pruebas **sin tocar un fichero de fuera** |
 | **lo que se enseña se puede obtener sin ventana** | `cargo test --test recorrido`: 11 pruebas |
 | **sin datos de la persona, NO se enseña ningún número** | la prueba del paso 1 del recorrido, y **una que busca los números prohibidos en el texto** |
 | **`Falta` no es cero** | pruebas del perfil: un campo vacío vuelve como `Falta` |
-| **la memoria no miente**: si los ficheros cambian, no se usa | 5 pruebas de `memoria.rs`, incluida la de la memoria corrupta |
+| **la memoria no miente y no relee lo que ya tiene** | pruebas de `fit::listar` + `analisis::decidir` + la memoria corrupta, y `medir-carga` sobre datos reales (0 ficheros releidos) |
 | **lo que va a la pantalla son 4 cifras y 5 zonas** | la ventana indexa 0..3 y 0..4: si un array llega corto, **falla** |
 | **los dos temas cumplen WCAG** | `temas/contraste.py` y `contraste-widgets.py`, que **salen con error** si bajan del mínimo |
 | **el esquema de los controles sigue a nuestro tema** | una prueba que lee `controles_en_oscuro` |

@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **181 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **183 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -59,7 +59,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/bin/          18: pulso (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs 148 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
+│   ├── tests/pruebas.rs 150 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 181 pruebas, en verde, 0 avisos
+cargo test                              # 183 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -254,7 +254,7 @@ es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye*
 Y el binario de la aplicación **se llama `pulso`**: `ventana.rs` → `pulso.rs`, y `default-run = "pulso"`
 hace que **`cargo run` a secas sea LA aplicación**. Los otros 17 son **instrumentos de medida**, no la
 aplicación.
-**Medido**: **181 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei`).
+**Medido**: **183 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei`).
 
 **2 · DECISIÓN DEL DUEÑO (2026-10-14): el aviso de la rodilla NO dice «diagnóstico».** Se le preguntó,
 porque el encargo pedía dos cosas que no caben a la vez («di que no es un diagnóstico» y «que el texto
@@ -296,6 +296,40 @@ era la correcta: falló el modelo, no la ruta.** Los informes están en
   `FolderDialog`** (búsqueda sobre los 13 crates de Slint instalados: cero coincidencias). El botón exige
   o bien **un selector escrito a mano** (sin dependencia nueva) o `rfd` (dependencia nueva, que la norma
   del proyecto no permite sin autorización). **Decisión: selector propio, sin dependencia nueva.**
+
+---
+
+## 6-sexies. La memoria INCREMENTAL: solo se lee lo nuevo (2026-10-14)
+
+**EL PROBLEMA QUE RESOLVIÓ, medido**: la memoria guardaba **solo el resultado**. Si el ciclista añadía
+la sesión de hoy, el total ya no cuadraba con los ficheros y **se releían los tres meses de histórico**
+para sumar **un** fichero. Justo lo que el dueño pidió evitar:
+
+> *«por cada activación de la aplicación, no tenga que releer de nuevo toda la información de hace meses
+> y ir sumando la información más reciente»*.
+
+**Lo que se hizo**: guardar **una ficha por fichero** (nombre, tamaño y **su aporte** al total), y al
+arrancar **leer solo las fichas nuevas o cambiadas**. El contrato se escribió ANTES:
+docs/CONTRATO-memoria-incremental.md. La decisión de reutilizar es por **nombre y tamaño** (no por
+fecha), y es una **función pura** (analisis::decidir) con sus pruebas, porque es el corazón de la pieza.
+
+**Medido** con medir-carga sobre sus 102 ficheros:
+
+| | |
+|---|---|
+| primera vez (lee todo) | **5,48 s**, 102 leídas |
+| segunda, sin cambios | **0,001 s**, **0 ficheros releídos** |
+| llega UNA sesión nueva | **0,086 s**, **1 leída**, y el total es idéntico |
+| el fichero de memoria | **40.015 bytes** (antes 9.473): se paga disco a cambio de no releer |
+
+**Y la coherencia de las FECHAS**, que es lo que pidió: la memoria deja de ser un total sin contexto.
+Cada **aporte** guarda **cuándo empezó su sesión** (inicio_s); el resultado lleva **desde** y **hasta**;
+y el fichero de memoria lleva **cuándo se calculó** (guardado_en_s). El arranque lo dice sin abrir
+ventana: el modo --texto imprime **«periodo ... <primera sesión> .. <última sesión>»**. Sin fecha
+conocida queda en «no lo sé» y se dice, no se rellena con la del fichero ni con la del equipo.
+
+**Lo que NO se cambió**: el **tamaño** (no la fecha) sigue decidiendo si un fichero se reutiliza, y una
+memoria **corrupta o de otra versión** (ahora la **2**) sigue sin poder impedir abrir.
 
 ---
 

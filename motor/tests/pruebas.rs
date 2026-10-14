@@ -1472,62 +1472,117 @@ fn carpeta_de_prueba(nombre: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn la_huella_cambia_si_aparece_o_desaparece_un_fichero() {
-    // La huella es lo unico que decide si la memoria vale. Si no cambiara, la aplicacion enseñaria
-    // los numeros de ANTES con datos nuevos -- que es el peor fallo posible: un dato viejo con
-    // aspecto de bueno.
-    let c = carpeta_de_prueba("huella-aparece");
-    assert_eq!(motor::memoria::huella(&c).len(), 0, "una carpeta vacia no tiene huella");
+fn listar_ve_los_fit_con_su_tamano_y_nada_mas() {
+    // Es la base de la memoria incremental: mirar el tamaño de 102 ficheros es instantaneo, y con eso
+    // se decide cuales hay que leer de verdad.
+    let c = carpeta_de_prueba("listar");
+    assert_eq!(motor::fit::listar(&c).len(), 0, "una carpeta vacia no tiene FIT");
 
     std::fs::write(c.join("a.fit"), b"contenido").unwrap();
-    let una = motor::memoria::huella(&c);
-    assert_eq!(una.len(), 1, "ahora hay un fichero");
-    assert_eq!(una[0].0, "a.fit");
-    assert_eq!(una[0].1, 9, "y su tamaño son 9 bytes");
+    let uno = motor::fit::listar(&c);
+    assert_eq!(uno.len(), 1, "ahora hay un fichero");
+    assert_eq!(uno[0].0, "a.fit");
+    assert_eq!(uno[0].1, 9, "y su tamaño son 9 bytes");
 
     std::fs::write(c.join("b.fit"), b"otro").unwrap();
-    assert_eq!(motor::memoria::huella(&c).len(), 2, "y ahora dos");
+    assert_eq!(motor::fit::listar(&c).len(), 2, "y ahora dos");
 
     // Y los ficheros que NO son FIT no cuentan: no se leen, asi que no cambian el resultado.
     std::fs::write(c.join("notas.txt"), b"da igual").unwrap();
-    assert_eq!(motor::memoria::huella(&c).len(), 2, "un .txt no es un FIT");
+    assert_eq!(motor::fit::listar(&c).len(), 2, "un .txt no es un FIT");
 
     let _ = std::fs::remove_dir_all(&c);
 }
 
 #[test]
-fn la_huella_cambia_si_un_fichero_cambia_de_tamaño() {
-    // EL TAMAÑO Y NO LA FECHA, y esta prueba lo fija: la fecha cambia al COPIAR un fichero aunque el
-    // contenido sea el mismo, y entonces copiar sus datos invalidaria la memoria sin motivo.
-    let c = carpeta_de_prueba("huella-tamano");
-    std::fs::write(c.join("a.fit"), b"corto").unwrap();
-    let antes = motor::memoria::huella(&c);
-
-    std::fs::write(c.join("a.fit"), b"mucho mas largo que antes").unwrap();
-    let despues = motor::memoria::huella(&c);
-
-    assert_ne!(antes, despues, "si cambia el tamaño, la huella tiene que cambiar");
-    let _ = std::fs::remove_dir_all(&c);
+fn la_decision_reutiliza_lo_que_no_cambio_y_lee_lo_nuevo() {
+    // EL CORAZON DE LA MEMORIA INCREMENTAL, y por eso es una funcion pura que se prueba sin disco.
+    use motor::analisis::{decidir, Aporte, Decision, Ficha};
+    let previas = vec![
+        Ficha::bien("a.fit".into(), 9, Aporte { muestras: 10, ..Aporte::default() }),
+        Ficha::bien("b.fit".into(), 4, Aporte::default()),
+        Ficha::bien("z.fit".into(), 8, Aporte::default()),
+    ];
+    let actual = vec![
+        ("a.fit".to_string(), 9u64), // igual: se reutiliza
+        ("b.fit".to_string(), 7u64), // cambio de tamaño: se relee
+        ("c.fit".to_string(), 1u64), // nueva: se lee
+    ];
+    let d = decidir(&actual, &previas);
+    assert!(matches!(d[0], Decision::Recordada(_)), "a.fit no cambio");
+    assert!(matches!(&d[1], Decision::Leer(n) if n == "b.fit"), "b.fit cambio de tamaño");
+    assert!(matches!(&d[2], Decision::Leer(n) if n == "c.fit"), "c.fit es nueva");
+    assert_eq!(d.len(), 3, "z.fit ya no esta: su ficha se olvida, no se arrastra");
 }
 
 #[test]
-fn la_memoria_NO_se_usa_si_los_ficheros_han_cambiado() {
-    // ESTA ES LA PRUEBA QUE IMPORTA. Sin ella, la memoria seria una forma de mentir: guardaria un
-    // resultado y lo enseñaria para siempre, aunque sus datos ya no fueran esos.
-    let c = carpeta_de_prueba("memoria-invalidada");
-    let ruta = c.join("memoria.json");
+fn combinar_es_aditivo_y_no_depende_del_orden() {
+    // El total se tiene que poder reconstruir sumando los aportes, en cualquier orden: es lo que
+    // permite reutilizar lo recordado y sumarle solo lo nuevo, sin releer nada.
+    use motor::analisis::{combinar, Aporte};
+    let a = Aporte {
+        inicio_s: Some(100),
+        muestras: 100,
+        rr: 200,
+        maxima: Some(180),
+        deriva: Some(10.0),
+        escapado: false,
+        eficiencia: Some(1.0),
+        hrv: Some(9.0),
+    };
+    let b = Aporte {
+        inicio_s: Some(300),
+        muestras: 50,
+        rr: 80,
+        maxima: Some(170),
+        deriva: Some(20.0),
+        escapado: true,
+        eficiencia: Some(0.9),
+        hrv: None,
+    };
+    let ab = combinar(&[a.clone(), b.clone()]);
+    let ba = combinar(&[b.clone(), a.clone()]);
+    assert_eq!(ab, ba, "el orden no puede cambiar el total");
+    assert_eq!(ab.sesiones, 2);
+    assert_eq!(ab.muestras, 150);
+    assert_eq!(ab.rr, 280);
+    assert_eq!(ab.maxima_vista, Some(180));
+    assert_eq!(ab.escapados, 1);
+    assert_eq!(ab.deriva_media, Some(15.0), "la media de 10 y 20");
+    assert_eq!(ab.desde, Some(100));
+    assert_eq!(ab.hasta, Some(300));
+}
 
-    // Sin ficheros FIT, el resultado esta vacio.
-    let vacio = motor::analisis::Real::default();
-    motor::memoria::guardar(&ruta, &c, &vacio);
-    assert!(motor::memoria::leer(&ruta, &c).is_some(), "recien guardada, la memoria vale");
+#[test]
+fn sin_fechas_el_periodo_queda_en_None_y_no_se_inventa() {
+    // Una sesion sin fecha no puede meter una fecha falsa en el periodo. Se dice que no se sabe.
+    use motor::analisis::{combinar, Aporte};
+    let r = combinar(&[Aporte { muestras: 10, ..Aporte::default() }]);
+    assert_eq!(r.desde, None);
+    assert_eq!(r.hasta, None);
+    assert_eq!(r.sesiones, 1, "pero la sesion SI se cuenta");
+}
 
-    // Y AHORA APARECE UN FICHERO: la memoria guardada ya no corresponde a esta carpeta.
-    std::fs::write(c.join("nuevo.fit"), b"x").unwrap();
-    assert!(
-        motor::memoria::leer(&ruta, &c).is_none(),
-        "si la carpeta cambio, la memoria NO se puede usar"
-    );
+#[test]
+fn un_fit_ilegible_se_recuerda_con_su_motivo_y_no_aborta() {
+    // Un fichero que no se puede leer NO puede tirar el analisis entero, y su fallo NO se puede
+    // reintentar en cada arranque: se guarda la ficha con el motivo y se sigue.
+    let c = carpeta_de_prueba("fit-roto");
+    std::fs::write(c.join("roto.fit"), b"esto no es un FIT").unwrap();
+
+    let (real, fichas, cuantas) = motor::analisis::actualizar(&c, &[]);
+    assert_eq!(cuantas.leidas, 1, "se intento leer");
+    assert_eq!(cuantas.no_leidas, 1, "y no se pudo");
+    assert_eq!(fichas.len(), 1);
+    assert!(fichas[0].error.is_some(), "el motivo se guarda en la ficha");
+    assert!(!real.hay_datos(), "y no se inventa ninguna sesion");
+    assert_eq!(real.no_leidos.len(), 1, "el total lo dice");
+
+    // Y al arrancar otra vez, la ficha del FALLO se reutiliza: no se reintenta.
+    let (_r2, f2, c2) = motor::analisis::actualizar(&c, &fichas);
+    assert_eq!(c2.recordadas, 1, "el fallo se recuerda");
+    assert_eq!(c2.leidas, 0, "y no se reintenta en cada arranque");
+    assert_eq!(f2, fichas);
 
     let _ = std::fs::remove_dir_all(&c);
 }
@@ -1535,51 +1590,62 @@ fn la_memoria_NO_se_usa_si_los_ficheros_han_cambiado() {
 #[test]
 fn una_memoria_corrupta_o_de_otra_version_no_rompe_nada_solo_se_recalcula() {
     // Un fichero de memoria a medias (el programa se cerro mientras escribia) o de una version vieja
-    // NO puede impedir abrir la aplicacion. La respuesta correcta es siempre la misma: recalcular.
+    // NO puede impedir abrir la aplicacion. La respuesta correcta es siempre la misma: no recordar
+    // nada y volver a leer. Aqui la memoria no es una puerta: es un atajo.
     let c = carpeta_de_prueba("memoria-corrupta");
     let ruta = c.join("memoria.json");
 
     std::fs::write(&ruta, b"esto no es json {{{").unwrap();
-    assert!(motor::memoria::leer(&ruta, &c).is_none(), "corrupta: se recalcula");
+    assert!(motor::memoria::leer_fichas(&ruta).is_empty(), "corrupta: no recuerda nada");
 
     // Y de otra version: los campos podrian significar otra cosa, asi que tampoco se usa.
     std::fs::write(
         &ruta,
-        br#"{"version": 99, "huella": [], "real": {"sesiones": 5}}"#,
+        br#"{"version": 99, "guardado_en_s": null, "fichas": []}"#,
     )
     .unwrap();
-    assert!(motor::memoria::leer(&ruta, &c).is_none(), "de otra version: se recalcula");
+    assert!(motor::memoria::leer_fichas(&ruta).is_empty(), "de otra version: no recuerda nada");
 
     // Y si no hay fichero, tampoco es un error: es la primera vez.
     let sin_nada = c.join("no-existe.json");
-    assert!(motor::memoria::leer(&sin_nada, &c).is_none(), "sin memoria: primera vez");
+    assert!(motor::memoria::leer_fichas(&sin_nada).is_empty(), "sin memoria: primera vez");
 
     let _ = std::fs::remove_dir_all(&c);
 }
 
 #[test]
-fn el_resultado_va_y_vuelve_entero_por_la_memoria() {
-    // Guardar y leer tiene que devolver LO MISMO. Si se perdiera un campo al guardar, la segunda
-    // apertura enseñaria menos que la primera, y nadie sabria por que.
+fn las_fichas_van_y_vuelven_enteras_por_la_memoria() {
+    // Guardar y leer tiene que devolver LO MISMO. Si se perdiera un campo de un aporte al guardar, la
+    // segunda apertura enseñaria menos que la primera, y nadie sabria por que.
+    use motor::analisis::{Aporte, Ficha};
     let c = carpeta_de_prueba("memoria-ida-y-vuelta");
     let ruta = c.join("memoria.json");
 
-    let original = motor::analisis::Real {
-        sesiones: 102,
-        muestras: 549_842,
-        rr: 1_259_082,
-        deriva_media: Some(9.7),
-        eficiencia_media: Some(0.98),
-        escapados: 43,
-        hrv_medio: Some(9.2),
-        maxima_vista: Some(183),
-        no_leidos: vec![("roto.fit".to_string(), "no se pudo leer".to_string())],
-    };
+    let original = vec![
+        Ficha::bien(
+            "uno.fit".into(),
+            1234,
+            Aporte {
+                inicio_s: Some(1_700_000_000),
+                muestras: 5000,
+                rr: 6000,
+                maxima: Some(180),
+                deriva: Some(9.7),
+                escapado: true,
+                eficiencia: Some(0.98),
+                hrv: Some(9.2),
+            },
+        ),
+        Ficha::mal("roto.fit".into(), 9, "no se pudo leer".into()),
+    ];
 
-    motor::memoria::guardar(&ruta, &c, &original);
-    let leido = motor::memoria::leer(&ruta, &c).expect("tiene que poder leerse");
+    motor::memoria::guardar(&ruta, &original);
+    let leido = motor::memoria::leer_fichas(&ruta);
+    assert_eq!(leido, original, "las fichas tienen que volver enteras");
 
-    assert_eq!(leido, original, "el resultado tiene que volver entero");
+    let g = motor::memoria::leer_guardado(&ruta).expect("tiene que poder leerse");
+    assert!(g.guardado_en_s.is_some(), "y con la fecha del guardado documentada");
+
     let _ = std::fs::remove_dir_all(&c);
 }
 

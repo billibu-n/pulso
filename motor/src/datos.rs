@@ -600,6 +600,14 @@ impl Fecha {
         }
         edad
     }
+
+    /// **La fecha como se escribe en el informe**: `2026-10-14`, sin barras ni nombres de mes.
+    ///
+    /// Vive en el MODELO y no en cada sitio que la formatea porque el formato es uno solo: el dia que
+    /// se cambie, se cambia aqui, y no queda un sitio mintiendo con el formato viejo.
+    pub fn a_texto(&self) -> String {
+        format!("{:04}-{:02}-{:02}", self.anio, self.mes, self.dia)
+    }
 }
 
 impl Persona {

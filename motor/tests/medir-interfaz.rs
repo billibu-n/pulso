@@ -393,3 +393,44 @@ fn el_marco_de_fuera_no_recorta_al_boton() {
         );
     }
 }
+
+// ==================================================================================================
+// EL PERIODO EN LA PANTALLA (2026-10-14)
+// ==================================================================================================
+
+#[test]
+fn el_periodo_en_pantalla_cuando_lo_hay_y_sin_hueco_cuando_no() {
+    // Punto 2 del bloque: el periodo que antes solo se veia en `--texto` ahora va a la pantalla. Y va
+    // MEDIDO, no mirado: se comprueba que existe cuando hay periodo, que tiene cuerpo, y que cabe.
+    // (`ventana_de_prueba` ya inicializa la plataforma de medida: llamarla dos veces paniquea.)
+    let v = ventana_de_prueba();
+
+    // 1) SIN periodo no existe el elemento: no se dibuja un hueco vacio (AU-07).
+    let sin = ElementQuery::from_root(&v).find_all();
+    assert!(
+        !sin.iter().any(|e| e.accessible_id().map(|s| s.to_string()) == Some("periodo".into())),
+        "sin periodo no puede quedar el hueco del periodo"
+    );
+
+    // 2) CON periodo existe, y se puede medir.
+    v.set_periodo("Análisis del 2026-05-02 al 2026-10-11".into());
+    let todos = ElementQuery::from_root(&v).find_all();
+    let p = todos
+        .iter()
+        .find(|e| e.accessible_id().map(|s| s.to_string()) == Some("periodo".into()))
+        .expect("con periodo, la linea tiene que existir");
+    let t = p.size();
+    let pos = p.absolute_position();
+    println!(
+        "  periodo: {:.0}x{:.0} en ({:.0},{:.0})   texto: {}",
+        t.width, t.height, pos.x, pos.y, v.get_periodo()
+    );
+    assert!(t.height > 0.0 && t.width > 100.0, "la linea tiene que tener cuerpo");
+
+    // 3) Y CABE: el contenido termina por encima de la navegacion (880 - 64 = 816).
+    assert!(
+        pos.y + t.height <= 816.0,
+        "la linea se sale por abajo del contenido: acaba en {:.0}",
+        pos.y + t.height
+    );
+}

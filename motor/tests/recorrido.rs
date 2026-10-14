@@ -383,3 +383,52 @@ fn Ensenado_se_puede_comparar_para_saber_si_algo_CAMBIO() {
     let c = cara::lo_que_ensena(&el_cliente_declara_lo_suyo(), None);
     assert_ne!(a, c, "y dos cosas distintas no pueden salir iguales");
 }
+
+// ==================================================================================================
+// EL PERIODO DEL ANALISIS, EN LA PANTALLA (2026-10-14)
+// ==================================================================================================
+//
+// Punto 2 del bloque: antes el periodo SOLO se veia en `--texto`. Ahora lo recibe la ventana, ya escrito
+// en una sola cadena. La ventana no calcula: recibe.
+
+#[test]
+fn el_periodo_del_analisis_va_a_la_pantalla_en_UNA_linea() {
+    let r = sus_sesiones();
+    let e = cara::lo_que_ensena(&el_cliente_declara_lo_suyo(), Some(&r));
+    assert!(!e.periodo.is_empty(), "con fechas, el periodo tiene que estar");
+    assert_eq!(e.periodo.lines().count(), 1, "y en UNA linea: {}", e.periodo);
+
+    // Las fechas salen del MISMO formateador que el resto del proyecto, no de una copia.
+    let desde = motor::avisos::fecha_de_epoch(r.desde.unwrap());
+    let hasta = motor::avisos::fecha_de_epoch(r.hasta.unwrap());
+    assert!(
+        e.periodo.contains(&desde) && e.periodo.contains(&hasta),
+        "tiene que nombrar las dos: {} (esperaba {desde} y {hasta})",
+        e.periodo
+    );
+}
+
+#[test]
+fn sin_fechas_el_periodo_dice_que_no_consta_y_NO_se_inventa() {
+    // Una sesion sin fecha no puede meter una fecha falsa. Es la regla de todo el proyecto.
+    let mut r = sus_sesiones();
+    r.desde = None;
+    r.hasta = None;
+    let e = cara::lo_que_ensena(&el_cliente_declara_lo_suyo(), Some(&r));
+    assert!(
+        e.periodo.contains("sin fechas"),
+        "sin fechas se dice, no se rellena: «{}»",
+        e.periodo
+    );
+}
+
+#[test]
+fn sin_sesiones_no_hay_linea_de_periodo_ni_hueco() {
+    // Sin datos no se anuncia nada: el recuento ya habla por si solo (AU-07).
+    for e in [
+        cara::lo_que_ensena(&el_cliente_declara_lo_suyo(), None),
+        cara::lo_que_ensena(&nadie(), None),
+    ] {
+        assert!(e.periodo.is_empty(), "sin sesiones no hay periodo: «{}»", e.periodo);
+    }
+}

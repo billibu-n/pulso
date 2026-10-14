@@ -21,6 +21,7 @@
 //! donde sale es un dato.
 
 use crate::analisis::Real;
+use crate::avisos::fecha_de_epoch;
 use crate::datos::Persona;
 use crate::umbral;
 
@@ -53,11 +54,17 @@ pub struct Ensenado {
     pub aviso: String,
     /// El recuento de lo que hay: sesiones, lecturas, intervalos.
     pub vacio: String,
+    /// **El periodo que cubre el analisis**, en UNA linea y ya escrita. Vacio si no se sabe.
+    ///
+    /// POR QUE ES UN CAMPO Y NO SE DEJA PARA LA VENTANA: porque la ventana **no calcula**. Si el
+    /// periodo se montara en Slint a partir de dos numeros, el dia que cambie el formato habria que
+    /// tocar el .slint, y la pantalla podria mentir sin que una prueba lo viera.
+    pub periodo: String,
 }
 
 impl Ensenado {
     /// **Nada que enseñar, y dicho.** Es el estado del primer arranque.
-    fn sin_nada(que_falta: String, vacio: String) -> Self {
+    fn sin_nada(que_falta: String, vacio: String, periodo: String) -> Self {
         Self {
             puede_diagnosticar: false,
             que_falta,
@@ -67,6 +74,7 @@ impl Ensenado {
             precision: String::new(),
             aviso: String::new(),
             vacio,
+            periodo,
         }
     }
 }
@@ -120,8 +128,11 @@ pub fn lo_que_ensena(p: &Persona, real: Option<&Real>) -> Ensenado {
         None => "Sin datos de entrenamiento todavía.".to_string(),
     };
 
+    // EL PERIODO: la coherencia de las fechas, calculada UNA vez y ya escrita. La ventana no calcula.
+    let periodo = periodo_de(real);
+
     if !puede {
-        return Ensenado::sin_nada(que_falta(p), recuento);
+        return Ensenado::sin_nada(que_falta(p), recuento, periodo);
     }
 
     // --- LAS CUATRO CIFRAS ---
@@ -206,6 +217,24 @@ pub fn lo_que_ensena(p: &Persona, real: Option<&Real>) -> Ensenado {
         precision: texto_precision,
         aviso: texto_aviso,
         vacio: recuento,
+        periodo,
+    }
+}
+
+/// **El periodo que cubre el analisis, en UNA linea.**
+///
+/// Recibe lo que ya se sabe (`Real.desde`/`hasta`) y devuelve el texto listo. NO inventa fechas: si hay
+/// sesiones pero ninguna trae fecha, lo dice; y si no hay sesiones, no dice nada (el recuento ya habla
+/// por si solo). Como todo lo de este modulo, es puro: los mismos datos dan el mismo texto.
+fn periodo_de(real: Option<&Real>) -> String {
+    let Some(r) = real.filter(|r| r.hay_datos()) else {
+        return String::new();
+    };
+    match (r.desde, r.hasta) {
+        (Some(desde), Some(hasta)) => {
+            format!("Análisis del {} al {}", fecha_de_epoch(desde), fecha_de_epoch(hasta))
+        }
+        _ => "Análisis sin fechas en los ficheros".to_string(),
     }
 }
 

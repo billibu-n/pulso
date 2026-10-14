@@ -342,6 +342,63 @@ memoria **corrupta o de otra versión** (ahora la **2**) sigue sin poder impedir
 
 ---
 
+## 6-septies. El agua de Huawei entra al recorrido CON SU FECHA, y el periodo va a la pantalla (2026-10-14)
+
+**Dos cosas cerradas con su contrato delante, y su evidencia medida.**
+
+**1 · El agua corporal de Huawei, con la fecha, sin que nadie la teclee.** El defecto era doble: *«que
+`Hoy::con_agua` no guarda de qué día es»* y que el dato se tecleaba aunque el ZIP ya se supiera leer.
+Contrato ANTES del código: `docs/CONTRATO-agua-en-el-recorrido.md`. Lo que cambió:
+
+- `Hoy` gana **`fecha_agua: Dato<Fecha>`**, y `Hoy::con_agua(pct, fecha)` **ahora exige la fecha**: no se
+  conserva la versión de un argumento, porque era justo la que permitía olvidar el día.
+- **`Hoy::de_composiciones(&[Composicion])`** elige, entre las que **traen agua**, la de **fecha mayor**;
+  las que no traen agua **no tapan** a las que sí; sin fecha, el valor se usa y la fecha queda `Falta`.
+  El aviso del agua y `lo_que_falta` **dicen el día** (o que no consta). Ya no dicen «la mete él a mano».
+- **La aplicación lo lee del ZIP**: `pulso --huawei <ruta>` llama a `huawei::leer` (abre el ZIP tal cual)
+  y construye el `Hoy`. `bin/avisos` acepta lo mismo.
+- **MEDIDO**, con un ZIP sintético (inventado, cero datos del cliente):
+
+  ```
+  $ cargo run -q --bin pulso -- ../datos/garmin_files/storage --huawei /tmp/salud-huawei.zip --texto
+    agua corporal 57,1 % (medida el 2023-11-15)
+    agua ...... 57,1 % (medida el 2023-11-15)
+  ```
+
+  Y sin ZIP: `agua ...... sin dato (se lee de la exportacion de Huawei)`.
+
+**2 · El PERIODO en la pantalla.** Antes `Real.desde`/`hasta` **solo** se veían en `--texto`. Ahora
+`cara::lo_que_ensena` calcula **`periodo`** (una línea, con `avisos::fecha_de_epoch`) y **la ventana lo
+recibe ya escrito**: la interfaz no calcula. `--texto` imprime **la misma cadena** (una sola fuente: si
+se formateara dos veces, un día divergirían). Sin fechas dice «Análisis sin fechas en los ficheros»; sin
+sesiones, no hay línea (no se deja hueco, AU-07).
+
+**MEDIDO** (`cargo test --test medir-interfaz el_periodo -- --nocapture`):
+
+```
+  periodo: 351x17 en (30,572)   texto: Análisis del 2026-05-02 al 2026-10-11
+```
+
+El primer intento **absorbió el hueco sobrante del reparto** (la celda salió de **116 px** con un vacío de
+98 debajo); se movió **dentro de la tarjeta del recuento**, que tiene alto fijo, y quedó en **17 px**. Es
+un ejemplo de lo que el método pide: **lo visual se mide, y la medición encontró el defecto**.
+
+**Estado medido**: **200 pruebas en verde, 0 avisos** (`cargo test`). `--ayuda`, `--texto` y `--elegir`
+siguen devolviendo antes de `run()`: **no se abrió ninguna ventana**.
+
+**LO QUE NO ESTÁ HECHO, dicho claro:**
+
+- **El ZIP REAL del cliente no ha llegado.** Cuando llegue: `pulso <carpeta> --huawei <zip> --texto`, y
+  comprobar si su báscula rellena `moistureRate`, `muscleMass` y `boneSalt` (y el rango de `boneSalt`:
+  el diccionario dice [0,5, 5] y el XLSX [1,0, 4,0]). Es el punto 3 del bloque y **está bloqueado por él**.
+- **El selector de carpeta sigue sin verse a ojo** (punto 4): abrir ventanas está prohibido en este
+  proyecto. Está **medido por geometría** (el botón llega a 48 dp) y el modo `--elegir` imprime la misma
+  vista. Comprobarlo «a ojo» **es una tarea del dueño**, no mía.
+- **El panel de avisos NO está en la ventana**: hoy enseña el resumen, las zonas y el aviso de deriva.
+  Llevar el módulo `avisos` (agua, TSS, rodilla) a la pantalla es **otro paso**, y no se ha dado por hecho.
+
+---
+
 ## 7. Lo que NO está resuelto, dicho claro
 
 - **La decisión de los controles** ya **NO** bloquea: se usan los de serie (paso 1, hecho).

@@ -12,7 +12,7 @@
 // y leer `es_PELIGRO` dice mas que `es_peligro`. Rust avisa; aqui se le dice que es a proposito.
 #![allow(non_snake_case)]
 
-use motor::datos::{Composicion, Dato, Muestra, Persona, Sesion, Sexo};
+use motor::datos::{Composicion, Dato, Fecha, Muestra, Persona, Sesion, Sexo};
 use motor::formulas::{self, Zona};
 use motor::juicio::{Confianza, Juicio};
 
@@ -2376,7 +2376,7 @@ fn el_agua_54_EXACTO_no_dispara_y_53_9_SI() {
         &Persona::desconocida(),
         &sin_real(),
         &vacio,
-        &Hoy::con_agua(54.0_f32),
+        &Hoy::con_agua(54.0_f32, Dato::Falta),
     );
     assert!(
         !en_el.iter().any(|a| a.modulo == Modulo::Combustible),
@@ -2387,7 +2387,7 @@ fn el_agua_54_EXACTO_no_dispara_y_53_9_SI() {
         &Persona::desconocida(),
         &sin_real(),
         &vacio,
-        &Hoy::con_agua(53.9_f32),
+        &Hoy::con_agua(53.9_f32, Dato::Falta),
     );
     let agua: Vec<&Aviso> = debajo.iter().filter(|a| a.modulo == Modulo::Combustible).collect();
     assert_eq!(agua.len(), 1, "53,9 SI tiene que avisar, y una sola vez");
@@ -2413,6 +2413,98 @@ fn sin_agua_corporal_NO_hay_aviso_de_agua_y_se_dice_que_falta() {
     assert!(
         faltantes.iter().any(|(q, _)| q.contains("agua corporal")),
         "y hay que decir que falta, no callarse"
+    );
+}
+
+// ==================================================================================================
+// EL AGUA QUE ENTRA DESDE LA EXPORTACION DE HUAWEI, CON SU FECHA (2026-10-14)
+// ==================================================================================================
+//
+// Contrato ANTES del codigo: docs/CONTRATO-agua-en-el-recorrido.md. La regla es una sola —la medicion
+// con agua MAS RECIENTE manda, y su dia viaja con el valor— y aqui se prueba en sus cuatro esquinas.
+
+#[test]
+fn el_agua_mas_reciente_manda_y_lleva_su_FECHA() {
+    let vieja = Composicion {
+        fecha: Dato::Hay(Fecha::nueva(2026, 6, 1)),
+        agua_corporal_pct: Dato::Hay(55.3),
+        ..Composicion::vacia()
+    };
+    let nueva = Composicion {
+        fecha: Dato::Hay(Fecha::nueva(2026, 10, 10)),
+        agua_corporal_pct: Dato::Hay(53.2),
+        ..Composicion::vacia()
+    };
+    let hoy = Hoy::de_composiciones(&[vieja, nueva]);
+    assert_eq!(hoy.agua_corporal_pct, Dato::Hay(53.2), "manda la mas reciente");
+    assert_eq!(
+        hoy.fecha_agua,
+        Dato::Hay(Fecha::nueva(2026, 10, 10)),
+        "y el dia viaja CON el valor"
+    );
+}
+
+#[test]
+fn la_medicion_mas_reciente_SIN_agua_no_tapa_a_la_anterior_con_agua() {
+    // El pesaje de hoy solo trae peso. El agua que vale es la ultima que SI se midio, no un hueco.
+    let con_agua = Composicion {
+        fecha: Dato::Hay(Fecha::nueva(2026, 10, 1)),
+        agua_corporal_pct: Dato::Hay(56.0),
+        ..Composicion::vacia()
+    };
+    let solo_peso = Composicion {
+        fecha: Dato::Hay(Fecha::nueva(2026, 10, 12)),
+        peso_kg: Dato::Hay(70.0),
+        ..Composicion::vacia()
+    };
+    let hoy = Hoy::de_composiciones(&[con_agua, solo_peso]);
+    assert_eq!(hoy.agua_corporal_pct, Dato::Hay(56.0));
+    assert_eq!(hoy.fecha_agua, Dato::Hay(Fecha::nueva(2026, 10, 1)));
+}
+
+#[test]
+fn sin_agua_en_ninguna_composicion_queda_en_FALTA_y_no_en_cero() {
+    let solo_peso = Composicion {
+        fecha: Dato::Hay(Fecha::nueva(2026, 10, 12)),
+        peso_kg: Dato::Hay(70.0),
+        ..Composicion::vacia()
+    };
+    let hoy = Hoy::de_composiciones(&[solo_peso]);
+    assert_eq!(hoy.agua_corporal_pct, Dato::Falta, "«no se midio» NO es «vale cero»");
+    assert_eq!(hoy.fecha_agua, Dato::Falta);
+}
+
+#[test]
+fn agua_sin_fecha_se_usa_pero_se_dice_que_no_consta() {
+    let sin_fecha = Composicion {
+        agua_corporal_pct: Dato::Hay(53.0),
+        ..Composicion::vacia()
+    };
+    let hoy = Hoy::de_composiciones(&[sin_fecha]);
+    assert_eq!(hoy.agua_corporal_pct, Dato::Hay(53.0), "el valor si se usa");
+    assert_eq!(hoy.fecha_agua, Dato::Falta, "pero la fecha NO se inventa");
+}
+
+#[test]
+fn el_aviso_del_agua_dice_de_que_dia_es_la_medicion() {
+    let con_fecha = Hoy::con_agua(50.0, Dato::Hay(Fecha::nueva(2026, 10, 10)));
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &Historico::default(), &con_fecha);
+    let agua: Vec<&Aviso> = salida.iter().filter(|a| a.modulo == Modulo::Combustible).collect();
+    assert_eq!(agua.len(), 1);
+    assert!(
+        agua[0].porque.contains("2026-10-10"),
+        "el aviso tiene que decir el dia: {}",
+        agua[0].porque
+    );
+
+    // Y sin fecha, lo DICE en vez de callarse: no saberlo no es un detalle.
+    let sin_fecha = Hoy::con_agua(50.0, Dato::Falta);
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &Historico::default(), &sin_fecha);
+    let agua: Vec<&Aviso> = salida.iter().filter(|a| a.modulo == Modulo::Combustible).collect();
+    assert!(
+        agua[0].porque.contains("sin fecha"),
+        "sin fecha tambien se dice: {}",
+        agua[0].porque
     );
 }
 
@@ -2609,7 +2701,7 @@ fn todos_los_avisos_posibles() -> Vec<Aviso> {
     let persona = Persona::desconocida();
 
     // a) El agua, por debajo del umbral.
-    salida.extend(avisos::avisos(&persona, &real, &Historico::default(), &Hoy::con_agua(50.0_f32)));
+    salida.extend(avisos::avisos(&persona, &real, &Historico::default(), &Hoy::con_agua(50.0_f32, Dato::Falta)));
 
     // b) El TSS, con una sesion muy por encima.
     let h_tss = historico_iguales(1, sesion_avisos("s.fit", Some(222.0), None, None));
@@ -2676,7 +2768,7 @@ fn el_INFORME_no_promete_remedios_aunque_lleva_su_aviso_de_que_no_diagnostica() 
         &Persona::desconocida(),
         &sin_real(),
         &Historico::default(),
-        &Hoy::con_agua(50.0_f32),
+        &Hoy::con_agua(50.0_f32, Dato::Falta),
     );
     let suyas = palabras(&texto);
 
@@ -2776,7 +2868,7 @@ fn el_aviso_del_agua_NO_afirma_que_el_consome_o_los_electrolitos_sirvan() {
         &Persona::desconocida(),
         &sin_real(),
         &Historico::default(),
-        &Hoy::con_agua(50.0_f32),
+        &Hoy::con_agua(50.0_f32, Dato::Falta),
     );
     let a = salida.iter().find(|a| a.modulo == Modulo::Combustible).unwrap();
 
@@ -2863,7 +2955,7 @@ fn los_avisos_salen_ordenados_con_lo_mas_urgente_PRIMERO() {
     sesiones.extend(con_fase);
     let h = Historico { total_sesiones: sesiones.len(), no_leidos: Vec::new(), sesiones };
 
-    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::con_agua(50.0_f32));
+    let salida = avisos::avisos(&Persona::desconocida(), &sin_real(), &h, &Hoy::con_agua(50.0_f32, Dato::Falta));
     assert!(salida.len() >= 3, "tienen que salir los tres modulos, y salieron {}", salida.len());
 
     for par in salida.windows(2) {

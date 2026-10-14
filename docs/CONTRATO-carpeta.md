@@ -52,6 +52,18 @@ hace el trabajo de reconocer, y el solo confirma. Cuando una carpeta no tiene fi
 3. Una carpeta que **no se puede leer** devuelve vacio y **no revienta**.
 4. `es_carpeta` distingue una carpeta de un fichero que no existe.
 
+## Donde va el panel, y por que (decision 2026-10-14)
+
+**El selector se abre como CAPA SUPERPUESTA sobre la ventana**, con un boton dentro del panel «Datos»
+(«Buscar mis ficheros»), y se cierra al usar una carpeta.
+
+- **POR QUE NO EN LA NAVEGACION**: la navegacion tiene **4 secciones y esta medida** (la prueba
+  medir-interfaz exige los 4 huecos, repartidos a 411/4). Es el **diseño aprobado**, y añadir una quinta
+  seccion por mi cuenta seria cambiar lo aprobado sin el dueño.
+- **POR QUE NO DENTRO DE DATOS**: ese panel ya lleva diez campos en dos columnas **para que quepan sin
+  desplazar**; meter la lista de carpetas ahi lo desbordaria.
+- **POR QUE SUPERPUESTA**: no reflota nada, no toca la navegacion, y es **una accion, una forma**.
+
 ## Lo que queda para despues (la capa 5)
 
 El **panel** que dibuja la lista, el boton de subir y el de "usar esta carpeta", y **conectarlo** a

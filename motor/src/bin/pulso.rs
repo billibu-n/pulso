@@ -26,7 +26,7 @@ slint::include_modules!();
 use motor::analisis::{self, Real};
 use motor::cara::{self, Ensenado};
 use motor::datos::{Dato, Persona, Sexo};
-use motor::{memoria, profile};
+use motor::{carpeta, memoria, profile};
 use std::path::{Path, PathBuf};
 
 /// Donde se guarda la memoria del analisis. **Junto al perfil**, para que las dos cosas viajen juntas.
@@ -206,6 +206,41 @@ fn pide_ayuda(argumentos: &[String]) -> bool {
         .any(|a| a == "--ayuda" || a == "-h" || a == "--help")
 }
 
+/// **La carpeta que se quiere mirar con el selector**, si se pidio el modo. La ruta va DESPUES de
+/// --elegir; sin ruta, se empieza por donde se lanzo el programa. No abre nada: solo devuelve que hay
+/// que pintar.
+fn carpeta_a_elegir(argumentos: &[String]) -> Option<PathBuf> {
+    let i = argumentos.iter().position(|a| a == "--elegir")?;
+    Some(
+        argumentos
+            .get(i + 1)
+            .filter(|a| !a.starts_with("--"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+    )
+}
+
+/// **El selector, impreso.** Es la misma vista que dibujara el panel, para poder comprobarla hoy.
+fn imprimir_selector(dir: &Path) {
+    let v = carpeta::abrir(dir);
+    println!("--- EL SELECTOR DE CARPETA (sin abrir ventana) ---");
+    match &v.ruta {
+        Some(r) => println!("  estas en ... {}", r.display()),
+        None => println!("  estas en ... (no se pudo leer)"),
+    }
+    if let Some(p) = &v.subir_a {
+        println!("  subir a .... {}", p.display());
+    }
+    println!("  FIT aqui ... {}", v.fit_aqui);
+    if let Some(a) = &v.aviso {
+        println!("  aviso ...... {a}");
+    }
+    for e in &v.entradas {
+        println!("  {:<28} {} FIT", e.nombre, e.cuantos_fit);
+    }
+    println!("  ==> las MISMAS carpetas y los MISMOS numeros que dibujara el panel.");
+}
+
 /// **Lo que el programa hace y como se usa**, SIN abrir nada.
 ///
 /// El nombre del programa sale de `CARGO_BIN_NAME` y no escrito a mano: el dia que la puerta de
@@ -215,11 +250,13 @@ fn imprimir_ayuda() {
     println!("{programa}: analiza tu entrenamiento y dice que se puede afirmar, y que no.");
     println!();
     println!("USO:");
-    println!("  {programa} [CARPETA] [--texto]");
+    println!("  {programa} [CARPETA] [--texto] [--elegir [CARPETA]]");
     println!();
     println!("  CARPETA    la carpeta con tus ficheros (FIT de Garmin). Si no se indica, se usa la");
-    println!("             de por defecto. Elegirla con un boton es el paso siguiente.");
+    println!("             de por defecto.");
     println!("  --texto    imprime lo MISMO que va a la pantalla y NO abre ninguna ventana.");
+    println!("  --elegir   el SELECTOR de carpeta, impreso y SIN abrir ventana: enseña las");
+    println!("             subcarpetas y cuantos FIT tiene cada una. Es la intuicion.");
     println!("  --ayuda    esto.");
     println!();
     println!("SIN TUS DATOS (edad, peso, umbral) NO SE ENSEÑA NINGUN NUMERO: lo dice y para.");
@@ -236,6 +273,13 @@ fn main() -> Result<(), slint::PlatformError> {
     let argumentos: Vec<String> = std::env::args().collect();
     if pide_ayuda(&argumentos) {
         imprimir_ayuda();
+        return Ok(());
+    }
+    // EL SELECTOR, EN TEXTO, SIN ABRIR VENTANA. Es la misma vista que dibujara el panel (carpeta::abrir),
+    // asi que lo que se comprueba aqui es exactamente lo que el cliente vera. Un modo que SOLO MIRA no
+    // puede tener un efecto que se vea.
+    if let Some(dir) = carpeta_a_elegir(&argumentos) {
+        imprimir_selector(&dir);
         return Ok(());
     }
     let ventana = Ventana::new()?;

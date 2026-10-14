@@ -300,6 +300,10 @@ era la correcta: falló el modelo, no la ruta.** Los informes están en
   ilegible, y **calcula lo que el panel tiene que dibujar** (`abrir` devuelve la lista con **cuántos FIT
   tiene cada carpeta**, que es la intuición). **FALTA la capa 5**: el panel que lo dibuja y su conexión
   a `pulso.rs` para que al elegir se vuelva a analizar.
+  **Y el selector YA SE PUEDE VER SIN VENTANA**: `cargo run -q --bin pulso -- --elegir <carpeta>`
+  imprime **la misma vista** que dibujara el panel (`carpeta::abrir`), con cuantos FIT tiene cada
+  carpeta; medido sobre su carpeta de datos: «FIT aqui ... 102». **Donde va el panel, decidido y escrito**
+  en el contrato: **capa superpuesta**, no una seccion nueva (la navegacion de 4 esta aprobada y medida).
 
 ---
 

@@ -514,6 +514,25 @@ mod flujo {
     /// `matin/garth` —deprecada—, en su fork mantenido `cyberfossa/garth-ng` y en
     /// `cyberjunky/python-garminconnect`): las tres miran `mfaMethod`/`loginEnterMfaCode`. Lo cuenta
     /// el informe `datos/trabajo-ui/flujo-nuevo-informe.md`.
+    ///
+    /// **AVISO MEDIDO (2026-10-14): estos tres nombres NO bastan para declarar la página del OTP,
+    /// porque la PÁGINA DE ACCESO los trae también, por casualidad.** Reproducido **sin credenciales**
+    /// contra `https://sso.garmin.com/sso/signin` (y contra la misma con los parámetros del widget,
+    /// `?id=gauth-widget&embedWidget=true&…`), donde:
+    /// - `otp` sale de `forgotpassword` —`<a id="loginforgotpassword" class="login-forgot-password"`,
+    ///   desplazamiento **7069** en la página sin sesión y **9617** en la del widget—;
+    /// - `challenge` sale del script que inyecta Cloudflare
+    ///   —`a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js'`, desplazamiento **9925** y
+    ///   **12573**—; el portal de Garmin (`/portal/sso/…/sign-in`) contesta 403 tras Cloudflare y su
+    ///   «Just a moment…» trae **ocho** `challenge`;
+    /// - `device` sale del `meta` de la ventana —`content="width=device-width"`, desplazamiento
+    ///   **136** y **141**—.
+    ///
+    /// Las tres son palabras de andar por casa: dos las mete Cloudflare y la tercera es un `meta` del
+    /// propio HTML. Por eso la regla que DECIDE ([`es_pagina_otp`]) exige, además de los tres
+    /// marcadores y el título, que la página declare un campo donde va el CÓDIGO: sin campo no hay
+    /// página de OTP, y sin página de OTP no hay nada que pedirle al dueño. Lo medido, con las URLs y
+    /// los fragmentos: `datos/trabajo-ui/js-otp-informe.md`.
     pub const MARCADORES_DEL_OTP: [&str; 3] = ["otp", "challenge", "device"];
 
     /// El TÍTULO de la página OTP medida. Se exige **junto con** los tres marcadores, nunca solo: la
@@ -532,14 +551,25 @@ mod flujo {
     }
 
     /// **`true` cuando la página es la verificación por código de un solo uso**, la nueva: el título
-    /// de la aplicación de autenticación **y** los tres marcadores de [`MARCADORES_DEL_OTP`].
+    /// de la aplicación de autenticación, los tres marcadores de [`MARCADORES_DEL_OTP`] **y un campo
+    /// donde va el código** ([`campo_del_codigo`]).
     ///
     /// Es una sola regla con dos consumidores —la clasificación, que la convierte en
     /// [`Fallo::VerificacionOtpRequerida`], y el paso de la red, que necesita el cuerpo para derivar
     /// el POST—, escrita una vez para que no puedan separarse.
+    ///
+    /// **La tercera condición es un arreglo MEDIDO, no un gusto** (2026-10-14): la página de acceso
+    /// pública trae el título y los tres marcadores por casualidad (`forgotpassword`, el script de
+    /// Cloudflare y `device-width`; los desplazamientos y las URLs están en [`MARCADORES_DEL_OTP`]),
+    /// así que sin ella este instrumento le pedía el código al dueño por una página donde **no hay
+    /// ningún código que teclear**. Un campo del código es lo único que dice que la página es de
+    /// verdad la del OTP —y es, además, justo lo que el paso necesita para construir el POST: si no
+    /// hay campo, no hay POST posible—. Las dos orillas se prueban: la página de acceso medida NO se
+    /// declara OTP (sigue el código 7, que la describe), y la del OTP medida SÍ (código 5).
     pub fn es_pagina_otp(html: &str) -> bool {
         titulo(html).eq_ignore_ascii_case(TITULO_DEL_OTP)
             && marcadores_del_otp(html).len() == MARCADORES_DEL_OTP.len()
+            && campo_del_codigo(html).is_some()
     }
 
     /// **Los nombres con los que la página puede llamar al campo del código**, en orden de
@@ -744,6 +774,22 @@ mod flujo {
         rutas
     }
 
+    /// **¿La respuesta es la PÁGINA DE ACCESO servida otra vez?** Se sabe por el CONTRATO de su
+    /// formulario, no por su texto: la página de acceso declara `username` **y** `password` —medido el
+    /// 2026-10-14 en las dos páginas públicas de acceso, la de sin sesión y la del widget, que
+    /// declaran exactamente `username`, `password`, `embed` y `_csrf`—, y ninguna otra página medida
+    /// declara las dos.
+    ///
+    /// Sirve para DIAGNOSTICAR sin volcar el cuerpo: cuando el acceso contesta 200 y lo que vuelve es
+    /// esta página, lo que ha pasado no es «un segundo factor con otra forma»: es que Garmin ha
+    /// devuelto el formulario de acceso. Decirlo evita que el dueño busque un código que no existe.
+    pub fn es_la_pagina_de_acceso(html: &str) -> bool {
+        let nombres = nombres_de_campos(html);
+        ["username", "password"]
+            .iter()
+            .all(|n| nombres.iter().any(|c| c == n))
+    }
+
     /// **El resumen que acompaña al código 7**: los NOMBRES de los marcadores, la RUTA a la que apunta
     /// el formulario, los NOMBRES de sus campos, si trae un ticket y si la respuesta era una
     /// redirección. Nunca un valor del cuerpo.
@@ -780,6 +826,18 @@ mod flujo {
             if campos.len() > TOPE_DE_CAMPOS {
                 s.push_str(&format!(" y {} más", campos.len() - TOPE_DE_CAMPOS));
             }
+        }
+        // Y, cuando el contrato del formulario lo delata, se dice QUÉ página es: la de acceso otra
+        // vez. Es la diferencia entre «Garmin pide un código» (que el dueño no puede dar si no hay
+        // dónde teclearlo) y «Garmin ha devuelto el formulario de acceso» (que se arregla repitiendo,
+        // no buscando un código). Medido el 2026-10-14: es exactamente lo que pasa en las dos páginas
+        // de acceso públicas, así que el caso no es hipotético.
+        if es_la_pagina_de_acceso(html) {
+            s.push_str(
+                "; y esos son los campos del FORMULARIO DE ACCESO (username, password): lo que ha \
+                 llegado es la página de acceso servida otra vez, no una pantalla donde se teclee un \
+                 código",
+            );
         }
         // El ticket, por su PRESENCIA: si la página trae uno, el acceso salió bien y lo que cambió es
         // la página. El valor no se copia —es una credencial de un solo uso—: se usa la misma puerta
@@ -1446,7 +1504,10 @@ impl Fallo {
                  EL POST DEL CÓDIGO: va a la ruta que declare el `action` de la página y, si no la \
                  trae —la medición no la traía, lo monta JavaScript—, a {} (garth-ng \
                  src/garth/sso/widget_strategy.py:102), con los nombres que declare la página \
-                 (widget_strategy.py:142-147).\n  {}",
+                 (widget_strategy.py:142-147). OJO: ese destino es el del MFA CLÁSICO; **el destino \
+                 propio del OTP no lo conoce ninguna fuente pública** —ni los bundles de \
+                 `sso.garmin.com/sso/js/`, que no nombran el OTP, ni las librerías mantenidas—, así \
+                 que se dice cuál se usó (lo medido: datos/trabajo-ui/js-otp-informe.md).\n  {}",
                 flujo::MARCADORES_DEL_OTP.join("+"),
                 flujo::MARCADORES_DEL_OTP,
                 if campos.is_empty() {
@@ -4581,16 +4642,26 @@ mod pruebas {
         // de acceso se titula igual, medido).
         let otro_titulo = r#"<html><title>Otra cosa</title><p>otp challenge device</p></html>"#;
         assert!(!flujo::es_pagina_otp(otro_titulo));
-        // Y con el título y los tres: sí, y **sin mirar mayúsculas** ni en el título ni en los
-        // marcadores (los nombres de atributo del HTML no las distinguen).
+        // Y con el título y los tres: sí (el caso medido, que sí declara el campo del código).
         assert!(flujo::es_pagina_otp(HTML_OTP_MEDIDA));
+        // **Sin campo del código, el título y los tres marcadores NO bastan** —medido el 2026-10-14:
+        // la página de acceso los trae por casualidad—, aunque el título sea el de la aplicación de
+        // autenticación.
         let en_mayusculas = r#"<html><title>GARMIN AUTHENTICATION APPLICATION</title>
 <body>OTP CHALLENGE DEVICE</body></html>"#;
-        assert!(flujo::es_pagina_otp(en_mayusculas));
+        assert!(
+            !flujo::es_pagina_otp(en_mayusculas),
+            "sin campo donde vaya el código no hay página de OTP"
+        );
         assert_eq!(
             flujo::marcadores_del_otp(en_mayusculas),
             flujo::MARCADORES_DEL_OTP.to_vec()
         );
+        // Y con el campo del código, sí: **sin mirar mayúsculas** ni en el título ni en los
+        // marcadores (los nombres de atributo del HTML no las distinguen).
+        let en_mayusculas_con_campo = r#"<html><title>GARMIN AUTHENTICATION APPLICATION</title>
+<body>OTP CHALLENGE DEVICE<input name="otp"></body></html>"#;
+        assert!(flujo::es_pagina_otp(en_mayusculas_con_campo));
     }
 
     #[test]
@@ -5257,5 +5328,112 @@ mod pruebas {
         );
         assert!(!dicho.contains(CODIGO_MFA_FALSO), "salió el código: {dicho}");
         assert!(!dicho.contains("CSRF-DEL-MFA"), "salió el _csrf del MFA: {dicho}");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // LA PÁGINA DE ACCESO PÚBLICA NO ES LA DEL OTP (medido el 2026-10-14, SIN credenciales)
+    //
+    // Se bajó la página de acceso tal cual la sirve Garmin (`GET https://sso.garmin.com/sso/signin`,
+    // 200, 10.650 bytes; y la misma con los parámetros del widget, 200, 13.293 bytes) y se buscaron
+    // en ella los tres marcadores del OTP. Están los tres, y ninguno es de Garmin:
+    //   · `otp`       → dentro de `forgotpassword` (desplazamiento 7069 / 9617)
+    //   · `challenge` → el script que inyecta Cloudflare (desplazamiento 9925 / 12573)
+    //   · `device`    → `content="width=device-width"` (desplazamiento 136 / 141)
+    // Las líneas de abajo son LITERALES de esa respuesta. El `_csrf` va con un valor señuelo: si sale
+    // en un mensaje, es que se volcó el cuerpo.
+    // -----------------------------------------------------------------------------------------
+
+    /// La página de acceso, con los tres contextos accidentales **en su sitio** y el formulario de
+    /// acceso con sus cuatro campos (`username`, `password`, `embed`, `_csrf`), que es lo que la
+    /// delata: dos de ellos —`username` y `password`— son los del FORMULARIO DE ACCESO.
+    const HTML_ACCESO_PUBLICA: &str = r#"<html><head>
+    <meta name="viewport" content="width=device-width" />
+<title>GARMIN Authentication Application</title>
+</head><body>
+                            <a id="loginforgotpassword" class="login-forgot-password" style="cursor:pointer">(Forgot?)</a>
+<form method="post" id="login-form">
+<input class="login_email" name="username" id="username" value="" type="email" spellcheck="false" autocorrect="off" autocapitalize="off"/>
+<input type="password" name="password" id="password" spellcheck="false" autocorrect="off" autocapitalize="off" />
+<input type="hidden" name="embed" value="true"/>
+<input type="hidden" name="_csrf" value="VALOR-QUE-NO-SALE" />
+</form>
+<script>(function(){function c(){var b=a.contentDocument;var d=b.createElement('script');d.innerHTML="a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js'";}})()</script>
+</body></html>"#;
+
+    #[test]
+    fn la_pagina_de_acceso_trae_los_tres_marcadores_y_no_por_eso_es_la_del_otp() {
+        // 1. Los tres marcadores ESTÁN: `otp` en `forgotpassword`, `challenge` en el script de
+        //    Cloudflare y `device` en `device-width`. O sea: **los marcadores solos no distinguen**,
+        //    y por eso la regla no puede decidir con ellos.
+        assert_eq!(
+            flujo::marcadores_del_otp(HTML_ACCESO_PUBLICA),
+            flujo::MARCADORES_DEL_OTP.to_vec()
+        );
+        // 2. Y sin embargo NO es la página del OTP: no declara ningún campo donde vaya un código.
+        assert_eq!(flujo::campo_del_codigo(HTML_ACCESO_PUBLICA), None);
+        assert!(
+            !flujo::es_pagina_otp(HTML_ACCESO_PUBLICA),
+            "la página de acceso no puede declararse OTP: no hay código que teclear"
+        );
+        // 3. Para el dueño: NO sale el código 5 (que le pediría un código inexistente); sale el 7,
+        //    que describe lo que ha llegado.
+        let fallo = flujo::clasificar_login(HTML_ACCESO_PUBLICA).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        // 4. Y el aviso DICE qué página es, para que no se busque un código que no existe.
+        assert!(m.contains("FORMULARIO DE ACCESO"), "{m}");
+        assert!(m.contains("username, password"), "{m}");
+        assert!(m.contains("servida otra vez"), "{m}");
+        // 5. Sin volcar ni un valor del cuerpo (ni el `_csrf` señuelo).
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
+    }
+
+    #[test]
+    fn con_la_pagina_de_acceso_y_codigo_puesto_no_se_manda_el_post_del_codigo() {
+        // El caso que el arreglo evita: si la página de acceso se declarara OTP, el instrumento
+        // mandaría el código de un solo uso a un endpoint que no es el suyo —quemándolo— por una
+        // página donde no hay ningún código que teclear. Aquí se comprueba que NO se manda nada.
+        let t = con_otp(HTML_ACCESO_PUBLICA);
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let fallo = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("FORMULARIO DE ACCESO"), "{m}");
+        assert!(!m.contains("GARMIN_CODIGO_MFA"), "no hay código que pedir: {m}");
+        // Ni una petición al endpoint del código, y los 3 pasos de antes (embed, signin GET, POST).
+        assert_eq!(t.veces_pedido("verifyMFA"), 0, "no se puede mandar el POST a ciegas");
+        assert_eq!(t.pedidas().len(), 3, "pasos de red");
+        // Y el código tampoco sale por aquí.
+        assert!(!m.contains(CODIGO_MFA_FALSO), "salió el código: {m}");
+    }
+
+    #[test]
+    fn los_marcadores_sin_campo_del_codigo_no_declaran_el_otp() {
+        // La otra orilla de la regla: título y tres marcadores, pero los campos que declara NO son el
+        // del código. Tampoco es la página del OTP, y el 7 lo describe con sus nombres.
+        const SIN_CODIGO: &str = r#"<html><head><title>GARMIN Authentication Application</title></head>
+<body><form method="post">
+<input type="hidden" name="deviceId" value="VALOR-QUE-NO-SALE">
+<input type="hidden" name="challenge" value="VALOR-QUE-NO-SALE">
+</form><p>otp y device, y Success, en el texto</p></body></html>"#;
+        assert_eq!(
+            flujo::marcadores_del_otp(SIN_CODIGO),
+            flujo::MARCADORES_DEL_OTP.to_vec()
+        );
+        assert!(!flujo::es_pagina_otp(SIN_CODIGO));
+        let fallo = flujo::clasificar_login(SIN_CODIGO).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("deviceId, challenge"), "{m}");
+        // No es la página de acceso (no declara `username`/`password`), así que NO se añade esa
+        // frase: el diagnóstico dice lo que hay, no lo que uno espera.
+        assert!(!m.contains("FORMULARIO DE ACCESO"), "{m}");
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
     }
 }

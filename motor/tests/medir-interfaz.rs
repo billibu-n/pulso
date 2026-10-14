@@ -105,6 +105,9 @@ mod doc {
     /// doc:130 · el riel del armazon de ESCRITORIO: 176. Y el corte que elige armazon: 900.
     pub const RIEL: f64 = 176.0;
     pub const CORTE: f64 = 900.0;
+    /// `LA-CARA-tema-y-reparto.md:51` · en ESCRITORIO el area de raton: «32 px basta — el puntero
+    /// apunta fino» (en el movil es 48, doc:50, «el dedo no es un raton»). Es `Medidas.toque_raton`.
+    pub const TOQUE_RATON: f64 = 32.0;
     /// doc:161 · el reparto del contrato: 411 / 4 = **102,75** por hueco. Es el numero que manda el
     /// contrato; con el aire que el propio contrato pide (doc:169), cada hueco queda en 97,75 (ver
     /// `HUECO_NAV_REAL`), y las dos cifras se comprueban.
@@ -1141,6 +1144,320 @@ fn el_armazon_de_escritorio_ocupa_la_ventana_y_sus_bloques_llevan_el_margen() {
 }
 
 // ==================================================================================================
+// FASE 1 · LA VENTANA DE ESCRITORIO: ANCHA Y NAVEGABLE (encargo del dueño, 2026-10-14)
+// ==================================================================================================
+//
+// LAS DOS COSAS QUE SE DECIDIERON ESE DIA, y que hasta hoy no eran ciertas en el uso normal:
+//   (1) la aplicacion **abre en una ventana de ESCRITORIO** (ancha), y
+//   (2) esa ventana es **NAVEGABLE**: las cuatro secciones se cambian desde el riel y el contenido
+//       largo se recorre.
+//
+// POR QUE HACIA FALTA MEDIRLO: el armazon de escritorio ya existia, con su riel y su prueba de
+// geometria, pero `cargo run` abria 411 x 880 -- o sea que `es_movil` era cierto SIEMPRE y **el riel
+// no se dibujaba nunca**. Una pieza construida, probada y que no llega a la pantalla es una pieza
+// que no existe: se mide la RAMA DE VERDAD (la que usa la aplicacion), no una copia.
+
+/// EL TAMANO CON EL QUE ABRE LA APLICACION (encargo del dueño, 2026-10-14): **1280 x 800**.
+///
+/// Y NO VIVE AQUI: vive en `motor/src/bin/pulso.rs` (`VENTANA_ESCRITORIO`), que es quien abre la
+/// ventana. Esta prueba lo LEE de alli (mas abajo) para que cambiar el tamano del programa sin tocar
+/// esta prueba **no pueda pasar en silencio**. Aqui solo se declara lo que el encargo pide, para
+/// poder medirlo contra algo.
+const ESCRITORIO: (f64, f64) = (1280.0, 800.0);
+
+#[test]
+fn la_ventana_de_escritorio_mide_lo_que_se_le_fija() {
+    // (1) LA VENTANA ANCHA. Son TRES cosas distintas y las tres hacen falta:
+    //   a) que la VENTANA tome el tamano que se le fija (medido en la raiz, no en un comentario);
+    //   b) que con ese tamano se dibuje el ARMAZON DE ESCRITORIO y no el del telefono;
+    //   c) que el PROGRAMA lo fije de verdad, que es lo que hace que (a) y (b) le pasen al dueño.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = otra_ventana();
+    v.set_ancho_ventana(ESCRITORIO.0 as f32);
+    v.set_alto_ventana(ESCRITORIO.1 as f32);
+
+    let raiz = ElementQuery::from_root(&v).find_first().expect("hay raiz");
+    let tam = raiz.size();
+    let (ancho, alto) = (f64::from(tam.width), f64::from(tam.height));
+    println!(
+        "  ventana de escritorio: {ancho:.0} x {alto:.0}   (el encargo pide {:.0} x {:.0})",
+        ESCRITORIO.0, ESCRITORIO.1
+    );
+    assert_eq!(
+        ancho.round() as i32,
+        ESCRITORIO.0 as i32,
+        "la ventana de escritorio tiene que medir {:.0} de ancho",
+        ESCRITORIO.0
+    );
+    assert_eq!(
+        alto.round() as i32,
+        ESCRITORIO.1 as i32,
+        "la ventana de escritorio tiene que medir {:.0} de alto",
+        ESCRITORIO.1
+    );
+    // Y EL ANCHO PASA EL CORTE, que es lo unico que compra este numero: por debajo de 900 el reparto
+    // que se dibuja es el del TELEFONO (doc:130) y volveriamos a tener un riel que no se ve.
+    assert!(
+        ESCRITORIO.0 >= doc::CORTE,
+        "el ancho de la ventana de escritorio ({:.0}) tiene que pasar el corte de {:.0} (doc:130)",
+        ESCRITORIO.0,
+        doc::CORTE
+    );
+
+    // b) CON ESE ANCHO, EL ARMAZON ES EL DE ESCRITORIO.
+    let todos = ElementQuery::from_root(&v).find_all();
+    let tipos: Vec<String> = todos
+        .iter()
+        .filter_map(|e| e.type_name().map(|s| s.to_string()))
+        .collect();
+    assert!(
+        tipos.iter().any(|t| t == "ArmazonEscritorio"),
+        "con {:.0} de ancho tiene que dibujarse el armazon de ESCRITORIO (el del riel)",
+        ESCRITORIO.0
+    );
+    assert!(
+        !tipos.iter().any(|t| t == "ArmazonMovil"),
+        "con {:.0} de ancho NO puede dibujarse el armazon de movil: la barra de abajo y su \
+         `ScrollView` son del telefono",
+        ESCRITORIO.0
+    );
+
+    // c) Y EL PROGRAMA LO FIJA AL ARRANCAR. Se lee la FUENTE de `pulso.rs`, que es la misma tecnica
+    // que ya usan las pruebas del hueco de 14 y del `padding`: sin esto, esta prueba mediria una
+    // ventana que el programa nunca abre -- el falso OK clasico.
+    let fuente = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bin/pulso.rs"))
+        .expect("el arranque del programa tiene que poder leerse");
+    for exigido in ["set_ancho_ventana", "set_alto_ventana", "VENTANA_ESCRITORIO"] {
+        assert!(
+            fuente.contains(exigido),
+            "`src/bin/pulso.rs` tiene que fijar el tamano de la ventana al arrancar: falta `{exigido}`"
+        );
+    }
+    assert!(
+        fuente.contains(&format!("({:.1}, {:.1})", ESCRITORIO.0, ESCRITORIO.1)),
+        "el tamano de la ventana en `pulso.rs` tiene que ser {:.0} x {:.0} (`VENTANA_ESCRITORIO`); \
+         si se cambia alli, se cambia tambien el encargo",
+        ESCRITORIO.0,
+        ESCRITORIO.1
+    );
+}
+
+#[test]
+fn el_riel_de_escritorio_tiene_las_cuatro_secciones_con_su_icono_y_su_etiqueta() {
+    // (2) LA VENTANA ES NAVEGABLE. El riel (176 a la izquierda, `LA-CARA-tema-y-reparto.md:46`)
+    // tiene que tener LAS CUATRO SECCIONES de `las_secciones` -- la MISMA lista que la barra del
+    // movil (AU-10) --, cada una con **su icono y su etiqueta**, el activo resaltado, y el titulo de
+    // la cabecera diciendo en que seccion estas.
+    //
+    // Y SE MIDE POR `accessible-id` (AU-63), que es la forma oficial de nombrar algo para medirlo:
+    // nada de deducir «cual es la entrada» por su tamano, que se rompe solo con añadir un elemento
+    // (fue exactamente el fallo de la primera version de la prueba de la barra del movil).
+    i_slint_backend_testing::init_no_event_loop();
+    const NOMBRES: [&str; 4] = ["Resumen", "Zonas", "Sesiones", "Datos"];
+
+    for (cual, nombre) in NOMBRES.iter().enumerate() {
+        let v = otra_ventana();
+        v.set_ancho_ventana(ESCRITORIO.0 as f32);
+        v.set_alto_ventana(ESCRITORIO.1 as f32);
+        v.set_seccion_activa(cual as i32);
+        let todos = ElementQuery::from_root(&v).find_all();
+
+        // 1 · LAS CUATRO ENTRADAS: dentro del riel, apiladas en el orden de la lista, y con su area
+        //     de raton (en escritorio 32 basta: `LA-CARA-tema-y-reparto.md:51`).
+        let mut activas = 0usize;
+        let mut anterior: Option<f64> = None;
+        for i in 0..NOMBRES.len() {
+            let entrada = buscar(&todos, &format!("riel-hueco-{i}"))
+                .unwrap_or_else(|| panic!("falta la entrada {i} del riel de escritorio"));
+            let p = entrada.absolute_position();
+            let t = entrada.size();
+            let (x, y, w, h) = (
+                f64::from(p.x),
+                f64::from(p.y),
+                f64::from(t.width),
+                f64::from(t.height),
+            );
+            println!("  riel · entrada {i} «{}»: ({x:.0},{y:.0}) {w:.0}x{h:.0}", NOMBRES[i]);
+            assert!(
+                x + w <= doc::RIEL + 0.5,
+                "la entrada {i} del riel se sale del riel ({}): acaba en {:.1}",
+                doc::RIEL,
+                x + w
+            );
+            assert!(
+                h >= doc::TOQUE_RATON - 0.5,
+                "el area de raton de la entrada {i} tiene que llegar a {} \
+                 (`LA-CARA-tema-y-reparto.md:51`), y mide {h:.1}",
+                doc::TOQUE_RATON
+            );
+            if let Some(ya) = anterior {
+                assert!(
+                    y > ya,
+                    "las entradas del riel van APILADAS en el orden de la lista: la {i} esta en \
+                     {y:.1} y la de antes en {ya:.1}"
+                );
+            }
+            anterior = Some(y);
+
+            // EL ICONO, DENTRO DE LA ENTRADA: 24, como el de la barra del movil (doc:162), y del
+            // catalogo de verdad (AU-90: un cuadrado de color no vale). `estudio:86` decia, literal,
+            // que «el icono del riel de escritorio ... se puede añadir despues»: esto es ese despues.
+            let iconos = entrada
+                .query_descendants()
+                .find_all()
+                .into_iter()
+                .filter(|e| {
+                    let s = e.size();
+                    (f64::from(s.width) - doc::ICONO).abs() < 1.0
+                        && (f64::from(s.height) - doc::ICONO).abs() < 1.0
+                })
+                .count();
+            assert_eq!(
+                iconos,
+                1,
+                "la entrada {i} del riel tiene que llevar UN icono de {} (doc:162), y lleva {iconos}",
+                doc::ICONO
+            );
+
+            // LA ETIQUETA: dice el nombre de la seccion, y sale de `las_secciones` (la MISMA lista
+            // que la barra del movil), no de una tabla aparte que se desincronice (AU-10).
+            let etiquetas: Vec<String> = entrada
+                .query_descendants()
+                .find_all()
+                .iter()
+                .filter_map(|e| e.accessible_label().map(|s| s.to_string()))
+                .collect();
+            assert!(
+                etiquetas.iter().any(|t| t == NOMBRES[i]),
+                "la entrada {i} del riel tiene que decir «{}», y dice {etiquetas:?}",
+                NOMBRES[i]
+            );
+
+            // EL ACTIVO: UNO, y su marca lleva el estado EN EL NOMBRE. Es la misma solucion que la
+            // pildora del movil (`nav-pildora-i-activa/-apagada`) y por el mismo motivo medido: el
+            // fondo de una capa transparente NO se puede consultar desde una prueba, y el tamano
+            // tampoco distingue la encendida de la apagada.
+            let marcada = buscar(&todos, &format!("riel-activo-{i}-si")).is_some();
+            if i == cual {
+                assert!(
+                    marcada,
+                    "la entrada {i} es la activa y su resaltado no lo dice"
+                );
+                activas += 1;
+            } else {
+                assert!(
+                    !marcada,
+                    "la entrada {i} NO es la activa y su resaltado dice que si"
+                );
+            }
+        }
+        assert_eq!(activas, 1, "el activo es UNO, y hay {activas} entradas marcadas");
+
+        // 2 · Y LA CABECERA DE ESCRITORIO DICE LA SECCION, **igual que la del movil** (doc:145: el
+        //     cromo de arriba dice DONDE ESTAS). Se busca el titulo por su CAJA (22 px de tipografia
+        //     = 30 de caja, doc:146), que es la misma forma en que lo busca la prueba del movil.
+        let cab = buscar(&todos, "cabecera")
+            .expect("el escritorio tiene que tener su cabecera (doc:151-152)");
+        let c_pos = cab.absolute_position();
+        let c_tam = cab.size();
+        assert_eq!(
+            f64::from(c_tam.height).round() as i32,
+            doc::CABECERA as i32,
+            "la cabecera del escritorio mide 64, como la del movil (doc:143)"
+        );
+        let titulo = todos
+            .iter()
+            .find(|e| {
+                let p = e.absolute_position();
+                let t = e.size();
+                f64::from(t.height) > 0.0
+                    && f64::from(p.y) >= f64::from(c_pos.y) - 0.5
+                    && f64::from(p.y) + f64::from(t.height)
+                        <= f64::from(c_pos.y) + f64::from(c_tam.height) + 0.5
+                    && (f64::from(t.height) - doc::CAJA_TITULO).abs() < 1.5
+            })
+            .expect("la cabecera del escritorio tiene que tener su titulo");
+        let dice = titulo
+            .accessible_label()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        println!("  escritorio · seccion_activa = {cual} · la cabecera dice «{dice}»");
+        assert_eq!(
+            dice, *nombre,
+            "con `seccion_activa` = {cual} el titulo de la cabecera tiene que decir «{nombre}» \
+             (doc:145), y dice «{dice}»"
+        );
+    }
+}
+
+#[test]
+fn el_contenido_del_escritorio_se_desplaza_cuando_es_largo() {
+    // (3) EL RECORRIDO. El contenido del escritorio tiene que poder RECORRERSE cuando es mas alto que
+    // la ventana. Y se comprueba de DOS maneras, porque son dos cosas distintas: que el armazon lo
+    // DIBUJE (geometria) y que lo declare con el arrastre puesto (fuente). Una caja sin
+    // `mouse-drag-pan-enabled` se ve exactamente igual en una captura y no se recorre.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = otra_ventana();
+    v.set_ancho_ventana(ESCRITORIO.0 as f32);
+    v.set_alto_ventana(ESCRITORIO.1 as f32);
+    let todos = ElementQuery::from_root(&v).find_all();
+
+    let cont = buscar(&todos, "contenido").expect("el contenido del escritorio");
+    let t = cont.size();
+    let (cancho, calto) = (f64::from(t.width), f64::from(t.height));
+    let desplazables: Vec<_> = cont
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .filter(|e| e.type_name().map(|t| t.to_string()).as_deref() == Some("ScrollView"))
+        .collect();
+    assert_eq!(
+        desplazables.len(),
+        1,
+        "el contenido del escritorio tiene que tener su `ScrollView` (AU-05), y tiene {}",
+        desplazables.len()
+    );
+    let z = desplazables[0].size();
+    println!(
+        "  escritorio · ScrollView del contenido: {:.0}x{:.0} dentro de {cancho:.0}x{calto:.0}",
+        f64::from(z.width),
+        f64::from(z.height)
+    );
+    assert!(
+        (f64::from(z.width) - cancho).abs() < 1.0 && (f64::from(z.height) - calto).abs() < 1.0,
+        "el `ScrollView` tiene que ocupar el contenido entero ({cancho:.0}x{calto:.0}), y mide \
+         {:.0}x{:.0}",
+        f64::from(z.width),
+        f64::from(z.height)
+    );
+
+    // Y EL ARRASTRE, EN LA FUENTE, para TODOS los `ScrollView` del armazon: el del movil ya lo tenia
+    // y el de escritorio es el que hay que vigilar.
+    let fuente = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/ui/armazon.slint"))
+        .expect("el armazon tiene que leerse");
+    let tramos: Vec<&str> = fuente.split("ScrollView {").skip(1).collect();
+    assert!(!tramos.is_empty(), "el armazon tiene que tener su `ScrollView` (AU-05)");
+    for (cual, tramo) in tramos.iter().enumerate() {
+        let cuerpo = tramo.split("@children").next().unwrap_or_default();
+        let codigo: String = cuerpo
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            codigo.contains("mouse-drag-pan-enabled: true;"),
+            "el `ScrollView` {cual} del armazon tiene que permitir RECORRER con el raton \
+             (`mouse-drag-pan-enabled: true`, AU-05): sin eso el contenido largo no se puede ver \
+             entero"
+        );
+    }
+    println!(
+        "  los {} ScrollView del armazon llevan el arrastre puesto (AU-05)",
+        tramos.len()
+    );
+}
+
+// ==================================================================================================
 // §3.8 · EL RECUENTO DENTRO DE LOS 52 DE LA TARJETA (2026-10-14)
 // ==================================================================================================
 //
@@ -1250,25 +1567,40 @@ fn el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza() {
     // y esa decision es del orquestador, no de la prueba.
     let fuente = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/ui/armazon.slint"))
         .expect("el armazon tiene que leerse");
-    let dentro_del_scroll = fuente
-        .split("ScrollView {")
-        .nth(1)
-        .and_then(|t| t.split("@children").next())
-        .expect("el armazon tiene que tener el ScrollView con sus hijos");
-    // SOLO EL CODIGO: los comentarios de ese tramo EXPLICAN por que no hay `padding`, y nombrarlo
-    // para explicarlo no es ponerlo.
-    let codigo: String = dentro_del_scroll
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Y SE COMPRUEBAN **TODOS** LOS `ScrollView` DEL ARMAZON, NO SOLO UNO. Y esto hay que explicarlo,
+    // porque el 2026-10-14 esta prueba cambio de sentido SIN QUE NADIE LA TOCARA: hay DOS armazones
+    // (movil y escritorio) y el de ESCRITORIO se declara ANTES en el fichero, asi que el
+    // `split("ScrollView {").nth(1)` que habia -- que devuelve el tramo del PRIMER `ScrollView` --
+    // habria pasado a mirar el de escritorio y habria DEJADO DE MIRAR EL DEL MOVIL **en silencio**.
+    // Con el bucle, la regla vale para los dos y no depende de cual este escrito primero.
+    let tramos: Vec<&str> = fuente.split("ScrollView {").skip(1).collect();
     assert!(
-        !codigo.contains("padding"),
-        "el layout que esta DENTRO del ScrollView no puede llevar `padding`: hace que el ScrollView \
-         pinte su barra horizontal (medido: una linea gris de 370 px en y = 794). El margen de 16 lo \
-         lleva cada bloque."
+        !tramos.is_empty(),
+        "el armazon tiene que tener su `ScrollView` (AU-05): no hay ninguno que comprobar"
     );
-    println!("  el margen de 16 lo lleva cada bloque: el layout del ScrollView no declara padding");
+    for (cual, tramo) in tramos.iter().enumerate() {
+        let dentro_del_scroll = tramo
+            .split("@children")
+            .next()
+            .expect("el armazon tiene que tener el ScrollView con sus hijos");
+        // SOLO EL CODIGO: los comentarios de ese tramo EXPLICAN por que no hay `padding`, y nombrarlo
+        // para explicarlo no es ponerlo.
+        let codigo: String = dentro_del_scroll
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !codigo.contains("padding"),
+            "el layout que esta DENTRO del ScrollView {cual} no puede llevar `padding`: hace que el \
+             ScrollView pinte su barra horizontal (medido: una linea gris de 370 px en y = 794). El \
+             margen de 16 lo lleva cada bloque."
+        );
+    }
+    println!(
+        "  el margen de 16 lo lleva cada bloque: los {} ScrollView del armazon no declaran padding",
+        tramos.len()
+    );
 }
 
 #[test]

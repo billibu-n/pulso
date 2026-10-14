@@ -309,6 +309,28 @@ fn imprimir_ayuda() {
     println!("Tus datos se guardan junto al programa, en un fichero que viaja con la aplicacion.");
 }
 
+/// **EL TAMANO CON EL QUE ABRE LA APLICACION: LA VENTANA DE ESCRITORIO** (decision del dueño,
+/// 2026-10-14).
+///
+/// POR QUE 1280 X 800: porque 1280 **pasa el corte de 900** de `Medidas.corte`, que es lo unico que
+/// decide el reparto (`es_movil: root.width < Medidas.corte`), asi que fijar el tamano es lo que hace
+/// que se dibuje **el armazon de ESCRITORIO**, el del riel. Con los 411 x 880 que abria,
+/// `es_movil` era cierto SIEMPRE: el riel estaba construido, medido y probado, y **no se dibujaba
+/// nunca** en el uso normal. Eso es lo que arregla esta linea.
+///
+/// POR QUE ES UNA CONSTANTE DE AQUI Y NO UNA MEDIDA DE `Medidas` (AU-67): porque **Rust tiene que
+/// saberlo para abrir la ventana**, y un `export global` de Slint **no se puede leer desde Rust**
+/// (medido el 2026-10-14: `Medidas` no aparece en el codigo generado, y exportarlo por `raiz.slint`
+/// esta obsoleto y **avisa** -- y en este proyecto los avisos son cero). El unico puente seria una
+/// propiedad de mas en la raiz, para un valor que se usa UNA vez. `Medidas` sigue siendo el unico
+/// sitio de las medidas que DIBUJA el armazon (411, 880, 64, 80, 176, 900, 16, 14); esto es el
+/// tamano de la VENTANA, y lo pone quien la crea.
+///
+/// Y NO SE QUEDA EN UN COMENTARIO: lo vigilan dos pruebas -- la de aqui abajo (contra el corte) y
+/// `la_ventana_de_escritorio_mide_lo_que_se_le_fija`, en `tests/medir-interfaz.rs`, que ademas lee
+/// este fichero para que cambiar el tamano **no pueda pasar en silencio**.
+const VENTANA_ESCRITORIO: (f32, f32) = (1280.0, 800.0);
+
 fn main() -> Result<(), slint::PlatformError> {
     // ---- LA AYUDA, LO PRIMERO DE TODO ----
     //
@@ -329,6 +351,14 @@ fn main() -> Result<(), slint::PlatformError> {
         return Ok(());
     }
     let ventana = Ventana::new()?;
+    // ---- LA VENTANA ES DE ESCRITORIO (decision del dueño, 2026-10-14) ----
+    //
+    // SE FIJA AQUI, EN CUANTO LA VENTANA EXISTE Y ANTES DE NADA MAS, porque el tamano es lo que
+    // decide el reparto: de estas dos lineas depende que se dibuje el RIEL o la barra de abajo.
+    // Y va DESPUES de la ayuda y del selector, que **retornan antes**: un modo que solo explica o
+    // que solo mira no puede acabar abriendo nada -- es el defecto que ya se cazo dos veces.
+    ventana.set_ancho_ventana(VENTANA_ESCRITORIO.0);
+    ventana.set_alto_ventana(VENTANA_ESCRITORIO.1);
 
     // ---- EL PERFIL: SUS DATOS, Y DE DONDE SE LEYERON ----
     let (ruta_perfil, junto_al_programa) = profile::ruta_del_perfil();
@@ -585,6 +615,27 @@ mod pruebas {
             "../datos".to_string(),
             "--texto".to_string()
         ]));
+    }
+
+    #[test]
+    fn la_ventana_abre_en_escritorio_y_no_en_el_telefono() {
+        // LA DECISION DEL DUEÑO DEL 2026-10-14, comprobada donde vive: el programa abre en una
+        // ventana de ESCRITORIO. Antes abria 411 x 880 y el riel no llegaba a dibujarse.
+        use super::VENTANA_ESCRITORIO;
+        assert_eq!(
+            VENTANA_ESCRITORIO,
+            (1280.0, 800.0),
+            "el tamano de la ventana de escritorio"
+        );
+        // Y LO QUE DE VERDAD IMPORTA NO ES EL NUMERO, ES QUE PASE EL CORTE: por debajo de 900
+        // (`Medidas.corte`) el reparto que se dibuja es el del TELEFONO, o sea el riel otra vez sin
+        // existir. Es la unica razon por la que este numero vale.
+        assert!(
+            VENTANA_ESCRITORIO.0 >= 900.0,
+            "con {} de ancho (el corte esta en 900) la aplicacion abriria la pantalla de movil \
+             y volveriamos a tener un riel que no se ve",
+            VENTANA_ESCRITORIO.0
+        );
     }
 
     #[test]

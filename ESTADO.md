@@ -564,6 +564,7 @@ respuesta, para saber en qué paso nos plantan el `_cfuvid` en la próxima corri
 | `d37b33e` | estado: la pista `_cfuvid` y el protocolo de la ventana |
 | `6b52c0f` | **hito B**: `motor/src/sincronizar.rs` (tipos `Actividad`/`Diario` con la forma REAL de la API citada a la librería, `que_es_nuevo` por id, `diarios_nuevos` por fecha, `resumen_de_nuevo`; 36 pruebas; sin red ni dependencias) |
 | `458f803` | **Fase 2 de la interfaz**: tarjetas solo-con-dato, bandas de zona sobre el eje ppm, frases de UNA línea con icono, pintado unificado en `bin/compartido/pintar.rs` (suite completa **394 pruebas, 0 avisos**) |
+| `…` | **hito C**: bloque «Garmin» en la sección Datos (estado/vía/botón Sincronizar 48px/resumen de UNA línea con `texto_del_resumen` pura en `cara.rs`); la callback queda declarada SIN conectar a propósito (la red y la integración del flujo son decisión del dueño). Suite completa **398 pruebas, 0 avisos** |
 
 **Dictamen wreq** (para la decisión del dueño tras la ventana): `datos/trabajo-ui/wreq-informe.md`.
 Medido, no citado: `ureq` es **HTTP/1.1 puro** (JA4 `t13d1010`) y `wreq 0.16.1` Chrome137 da **h2 con
@@ -572,9 +573,8 @@ Tokio, y dos issues abiertos (#1299: no responde `Critical-CH`, los retos de Clo
 403; #1320: peso HEADERS). Experimento previo sugerido antes de pagarlo: el mismo POST con
 `curl_cffi` vs `curl` de serie.
 
-**Al retomar**: (1) recoger el hito C (subagente en vuelo: bloque Garmin en la sección Datos —
-estado/vía/botón Sincronizar/resumen de UNA línea, sin red; su informe y diff quedan en el árbol),
-revisarlo, correr `cargo test` y commitear; (2) Fase 3 (Zonas/Sesiones/Datos completas, §3.9-3.12);
-(3) dos dudas para el dueño anotadas: el `0` de `sleepTimeSeconds` (`Some(0.0)` aquí vs «sin dato» en
-el instrumento: decidir en un solo sitio) y la deuda de los campos viejos de `cara.rs` (los usa
-`recorrido.rs`); (4) tras la ventana, la corrida real con el instrumento (una sola).
+**Al retomar**: (1) Fase 3 (Zonas/Sesiones/Datos completas, §3.9-3.12); (2) dos dudas para el dueño
+anotadas: el `0` de `sleepTimeSeconds` (`Some(0.0)` aquí vs «sin dato» en el instrumento: decidir en un
+solo sitio) y la deuda de los campos viejos de `cara.rs` (los usa `recorrido.rs`); (3) conectar la
+callback `sincronizar-garmin` cuando el dueño decida la integración del flujo en la app; (4) tras la
+ventana, la corrida real con el instrumento (una sola).

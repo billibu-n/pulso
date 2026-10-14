@@ -22,6 +22,10 @@
 //! Y ESTAS PRUEBAS NO ABREN VENTANA NUNCA. Es una regla del proyecto y tiene un motivo que ya costo
 //! caro: una vez se abrio, sin querer, en la pantalla del dueño.
 
+// Los nombres de estas pruebas llevan Mayusculas a proposito, para que se lea QUE comprueban cuando
+// fallan. `pruebas.rs` ya tiene esta misma excepcion, y sin ella el compilador da 8 avisos.
+#![allow(non_snake_case)]
+
 use motor::analisis::Real;
 use motor::cara::{self, Ensenado};
 use motor::datos::{Dato, Persona, Sexo};

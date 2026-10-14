@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **144 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **158 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -59,7 +59,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/bin/          18: ventana (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs  101 pruebas · medir-interfaz.rs  8 · recorrido.rs  11
+│   ├── tests/pruebas.rs  139 pruebas · medir-interfaz.rs  8 · recorrido.rs  11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 144 pruebas, en verde, 0 avisos
+cargo test                              # 158 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -201,6 +201,35 @@ comprobó **punto por punto contra sus datos**, y está todo en `docs/ENCARGO-fa
 **Y lo que NO se construye**: el «agente de IA en bucle». Ninguna de sus tres reglas lo necesita (son
 «si X, entonces Y»), y esto decide sobre el cuerpo de una persona. Sus pautas se implementan **como
 suyas**, no como hallazgos médicos.
+
+---
+
+## 6-quater. Tres deudas medidas, con su número (2026-10-13)
+
+Salieron del módulo de potencia, y las tres están **medidas**, no supuestas. **Ninguna rompe nada hoy**;
+las tres harían daño el día que se use el dato para lo que no es.
+
+**1 · `fit::Declarado.duracion_s` guarda el tiempo EQUIVOCADO, y de forma NO DETERMINISTA.**
+El código acepta `total_elapsed_time` **o** `total_timer_time`, **el que llegue primero** (`fit.rs:193`).
+O sea: **el valor depende del orden de los campos dentro del fichero**, no de una decisión. Y la cuenta
+del TSS de Coggan usa el **tiempo en movimiento**, no el transcurrido. Medido: con la transcurrida la
+comprobación cuadra en **31 de 83** sesiones; con la de movimiento, en **55**. *Arreglo*: que `Declarado`
+lleve **las dos**, con dos nombres distintos (AU-88).
+
+**2 · `TimeInZone` viene uno por VUELTA y uno por SESIÓN.** Si se coge el primero —el de la vuelta 0, que
+es lo natural— **el reparto suma de mediana un 84,7 % MENOS que la sesión, y el número sigue pareciendo
+bueno**. Hay que filtrar por `reference_mesg == "session"`. *Y esta es la lección*: el fallo no da error,
+da **un número plausible y falso** (AU-85).
+
+**3 · `TimeInZone` trae DIEZ posiciones y Coggan define SIETE.** 28 de las 83 sesiones con potencia tienen
+tiempo en las posiciones 8 a 10 (**1.322 s**). **No se reparten a ojo**: se cuentan aparte. La
+comprobación de que las zonas suman la sesión cuadra en **69 de 83** con las siete, y en **79 de 83**
+sumando las diez.
+
+**Y un dato de su forma física que el encargo va a necesitar**: la **carga semanal BAJA un 58,8 %**
+(377 → 155 TSS) entre el 2026-04-27 y el 2026-10-05, con el fondo en **84** la semana del 8 de junio.
+Con **47 días** para Farellones, eso **no es un detalle**: es la diferencia entre llegar y no llegar, y
+es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye** las 19 sesiones sin TSS.
 
 ---
 

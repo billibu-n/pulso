@@ -42,6 +42,8 @@ fn ventana_de_prueba() -> Ventana {
     v.set_precision("precision alta".into());
     v.set_aviso("deriva +9,7 %".into());
     v.set_vacio("102 sesiones".into());
+    // La ventana de prueba representa el estado CON datos. Su contrario se prueba aparte.
+    v.set_puede(true);
     v
 }
 
@@ -89,7 +91,9 @@ fn la_ventana_mide_lo_que_dice_el_diseno() {
     // Y los sitios del armazon, uno a uno.
     // OJO AL NOMBRE: el id lleva el COMPONENTE delante -- `ArmazonMovil::cabecera`, no `cabecera`.
     // Se aprendio MIDIENDO: la primera version buscaba `cabecera` y no encontraba nada.
-    for (nombre, esperado) in [("ArmazonMovil::cabecera", 56.0), ("ArmazonMovil::nav", 64.0)] {
+    // MEDIDAS DE ANDROID (Material 3): top app bar 64, barra de navegacion 80. Antes 56/64, que era
+    // el boceto. El estudio: docs/ESTUDIO-interfaz-android-2026-10-14.md.
+    for (nombre, esperado) in [("ArmazonMovil::cabecera", 64.0), ("ArmazonMovil::nav", 80.0)] {
         let e = ElementQuery::from_root(&v)
             .match_id(nombre)
             .find_first()
@@ -107,7 +111,7 @@ fn la_barra_de_abajo_esta_repartida_y_no_pegada() {
     // El ancho de cada hueco lo decidia el TEXTO (32, 46, 31 px), asi que se pegaban unos a otros.
     // En el diseno cada hueco mide 411/4 = 102,75, y por eso se leen.
     //
-    // LA PRUEBA: los cuatro huecos tienen que medir LO MISMO, y el activo tiene que llevar la linea.
+    // LA PRUEBA: los cuatro huecos tienen que medir LO MISMO, y el activo lleva su indicador.
     let v = ventana_de_prueba();
     let todos = ElementQuery::from_root(&v).find_all();
 
@@ -119,7 +123,7 @@ fn la_barra_de_abajo_esta_repartida_y_no_pegada() {
         .filter(|e| {
             let p = e.absolute_position();
             let t = e.size();
-            p.y >= 688.0 && p.y < 756.0 && (f64::from(t.height) - 64.0).abs() < 1.0
+            p.y >= 800.0 && p.y < 880.0 && (f64::from(t.height) - 80.0).abs() < 1.0
         })
         .map(|e| (f64::from(e.absolute_position().x), f64::from(e.size().width)))
         .collect();
@@ -429,8 +433,62 @@ fn el_periodo_en_pantalla_cuando_lo_hay_y_sin_hueco_cuando_no() {
 
     // 3) Y CABE: el contenido termina por encima de la navegacion (880 - 64 = 816).
     assert!(
-        pos.y + t.height <= 816.0,
+        pos.y + t.height <= 800.0,
         "la linea se sale por abajo del contenido: acaba en {:.0}",
         pos.y + t.height
     );
+}
+
+// ==================================================================================================
+// EL PORTERO DE ICONOS DE LA BARRA (2026-10-14)
+// ==================================================================================================
+
+#[test]
+fn sin_poder_diagnosticar_la_pantalla_no_dibuja_tarjetas_vacias() {
+    // EL FALLO QUE VIO EL DUEÑO: con la persona sin datos, la pantalla enseñaba CUATRO tarjetas de
+    // cifras vacias y CINCO barras de zona sin nombre. No es que faltara el dato: es que se dibujaba
+    // el marco. Aqui se comprueba que, sin poder diagnosticar, NO hay tarjetas ni filas de zona.
+    let v = ventana_de_prueba();
+    let con_datos = ElementQuery::from_root(&v).find_all();
+    let tarjetas_con = con_datos
+        .iter()
+        .filter(|e| (f64::from(e.size().height) - 66.0).abs() < 1.0)
+        .count();
+    assert!(tarjetas_con >= 4, "con datos hay tarjetas de cifras: {tarjetas_con}");
+
+    v.set_puede(false);
+    let sin_datos = ElementQuery::from_root(&v).find_all();
+    for (alto, que) in [(66.0, "tarjetas de cifras"), (40.0, "filas de zona")] {
+        let cuantas = sin_datos
+            .iter()
+            .filter(|e| (f64::from(e.size().height) - alto).abs() < 1.0)
+            .count();
+        assert_eq!(cuantas, 0, "sin poder diagnosticar NO puede haber {que} vacias: {cuantas}");
+    }
+}
+
+#[test]
+fn los_iconos_de_la_barra_existen_todos_en_el_catalogo() {
+    // POR QUE EXISTE: la barra tenia CUATRO CUADRADOS en vez de iconos, y al ponerle iconos de verdad
+    // el riesgo cambia de sitio: si una seccion pide un nombre que no esta en `iconos.slint`, el
+    // trazado sale VACIO y **el icono es invisible** -- y ni el compilador ni el ojo lo cazan facil.
+    // Se caza cruzando los `icono:` de la ventana contra el catalogo (AU-42 y AU-54).
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/ui");
+    let catalogo = std::fs::read_to_string(format!("{dir}/iconos.slint")).expect("catalogo de iconos");
+    let ventana = std::fs::read_to_string(format!("{dir}/ventana.slint")).expect("ventana");
+
+    let mut cuantos = 0;
+    for trozo in ventana.split("icono: \"").skip(1) {
+        let nombre = trozo.split('"').next().unwrap_or("");
+        assert!(!nombre.is_empty(), "un «icono:» sin nombre en ventana.slint");
+        assert!(
+            catalogo.contains(&format!("\"{nombre}\"")),
+            "el icono «{nombre}» de la barra NO esta en iconos.slint: saldria invisible"
+        );
+        cuantos += 1;
+    }
+    assert_eq!(cuantos, 4, "la barra tiene CUATRO secciones, cada una con su icono: {cuantos}");
+    for n in ["casa", "grafico-linea", "bicicleta", "ajustes"] {
+        assert!(ventana.contains(&format!("icono: \"{n}\"")), "falta el icono {n} en la barra");
+    }
 }

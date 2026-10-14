@@ -19,6 +19,9 @@
 // LAS AREAS TOCABLES: 48 dp como minimo en el movil. **El dedo no es un raton.**
 
 import { Claro, Oscuro } from "temas.slint";
+// LOS ICONOS DE VERDAD. Existian 187 y la barra dibujaba cuadrados: el boceto dibujo un cuadrado
+// como marcador y el marcador llego a produccion. Lo cazo el estudio del 2026-10-14.
+import { Icono } from "iconos.slint";
 
 // ---- Las medidas, declaradas una sola vez (AU-10: un valor vive en UN sitio) ----
 export global Medidas {
@@ -28,22 +31,32 @@ export global Medidas {
     // que nadie se enterara. **Si un valor del diseno no cuadra, se corrige el DISENO, y entonces
     // cambian los dos.** Hay una prueba que lo comprueba: `tests/medir-interfaz.rs`.
 
+    // EL TAMANO DE LA VENTANA, declarado UNA vez (AU-67). La ventana no se redimensiona: es un
+    // telefono de 411x880 dp. Antes estaba en dos sitios (aqui y en ventana.slint).
+    out property <length> ancho: 411px;
+    out property <length> alto: 880px;
     // El corte entre movil y escritorio, en pixeles logicos.
     out property <length> corte: 900px;
     out property <length> riel: 176px;
     out property <length> panel: 320px;
-    out property <length> cabecera: 56px;
-    out property <length> nav_movil: 64px;
+    // MEDIDAS DE ANDROID (Material 3), no del boceto: top app bar 64 y barra de navegacion 80.
+    // El estudio y sus fuentes: docs/ESTUDIO-interfaz-android-2026-10-14.md.
+    out property <length> cabecera: 64px;
+    out property <length> nav_movil: 80px;
     // Las areas tocables, y son DOS medidas distintas a proposito.
     out property <length> toque_movil: 48px;   // el dedo
     out property <length> toque_raton: 32px;   // el puntero puede apuntar fino
     out property <length> margen: 16px;
-    out property <length> radio: 10px;
+    // 12 es el radio de tarjeta de Material 3 (antes 10, que era del boceto).
+    out property <length> radio: 12px;
 }
 
 // ---- Una seccion del riel o de la navegacion ----
 export struct Seccion {
     nombre: string,
+    // El NOMBRE del icono de Lucide. Es DATO, no decoracion: la seccion dice con que icono se dibuja,
+    // y asi el armazon no tiene una lista aparte que se desincronice (AU-10).
+    icono: string,
     activa: bool,
 }
 
@@ -58,6 +71,10 @@ export component ArmazonEscritorio inherits Rectangle {
     in property <string> titulo;
     callback elegir(int);
 
+    // EL TAMANO DE LA VENTANA, no el que pida el contenido: al ocultar las tarjetas vacias el armazon
+    // encogia y la barra de abajo SUBIA al centro. Se cazo midiendo, no mirando.
+    width: Medidas.ancho;
+    height: Medidas.alto;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
     HorizontalLayout {
         // --- EL RIEL: limite declarado, no crece (AU-04) ---
@@ -115,6 +132,9 @@ export component ArmazonMovil inherits Rectangle {
     in property <string> titulo;
     callback elegir(int);
 
+    // EL TAMANO DE LA VENTANA (ver el otro armazon): mantiene la barra ABAJO aunque no haya datos.
+    width: Medidas.ancho;
+    height: Medidas.alto;
     background: root.oscuro ? Oscuro.bg : Claro.bg;
     VerticalLayout {
         // --- La cabecera: el cromo de arriba ---
@@ -134,7 +154,8 @@ export component ArmazonMovil inherits Rectangle {
             background: root.oscuro ? Oscuro.sup : Claro.sup;
             Text {
                 text: root.titulo;
-                font-size: 20px; font-weight: 700;
+                // 22 px: title-large de Material 3 para el top app bar.
+                font-size: 22px; font-weight: 700;
                 color: root.oscuro ? Oscuro.fg : Claro.fg;
                 x: Medidas.margen; vertical-alignment: center;
             }
@@ -146,6 +167,9 @@ export component ArmazonMovil inherits Rectangle {
             accessible-role: main;
             accessible-id: "contenido";
             vertical-stretch: 1;
+            // ALTURA MINIMA DECLARADA: es lo que mantiene la barra de abajo PEGADA ABAJO aunque el
+            // contenido sea corto (estado sin datos). Medido: sin esto la barra subia al centro.
+            min-height: Medidas.alto - Medidas.cabecera - Medidas.nav_movil;
             background: transparent;
             VerticalLayout {
                 padding: Medidas.margen;
@@ -168,35 +192,36 @@ export component ArmazonMovil inherits Rectangle {
                 padding-left: 4px;
                 padding-right: 4px;
                 for s[i] in root.secciones : Rectangle {
-                    // REPARTIDA POR IGUAL, no al tamano del texto.
-                    //
-                    // ESTE ERA EL FALLO de la barra de abajo, y medido: «Resumen» salia de 32 px,
-                    // «Sesiones» de 46 y «Datos» de 31 -- porque **el ancho lo decidia el TEXTO**.
-                    // En el diseno cada hueco mide 411/4 = 102,75. Con el texto mandando, los
-                    // rotulos se PEGAN unos a otros, y eso es lo que se veia en pantalla:
-                    // «ResumenZonasSesionesDatos».
+                    // REPARTIDA POR IGUAL, no al tamano del texto (AU-68).
                     width: parent.width / 4;
                     background: transparent;
                     // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.**
                     TouchArea { clicked => { root.elegir(i); } }
                     VerticalLayout {
                         alignment: center;
-                        spacing: 3px;
-                        // LA LINEA DEL ACTIVO, arriba del icono: es lo que hace que se distinga
-                        // de un vistazo cual esta elegido, sin leer el texto.
+                        spacing: 2px;
+                        // EL INDICADOR DEL ACTIVO: una PILDE tras el icono, que es el patron de la
+                        // barra de navegacion de Android (Material 3), NO la linea de 2 px de antes.
                         Rectangle {
-                            width: 20px; height: 2px; border-radius: 1px;
-                            background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac) : transparent;
-                        }
-                        Rectangle {
-                            width: 18px; height: 18px; border-radius: 5px;
-                            background: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
-                                                 : (root.oscuro ? Oscuro.muted : Claro.muted);
+                            width: 64px; height: 32px; border-radius: 16px;
+                            background: s.activa
+                                ? (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.18)
+                                : transparent;
+                            VerticalLayout {
+                                alignment: center;
+                                Icono {
+                                    // 24 dp: el tamano del icono en la barra de Android.
+                                    nombre: s.icono;
+                                    tamano: 24px;
+                                    tono: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
+                                                   : (root.oscuro ? Oscuro.muted : Claro.muted);
+                                }
+                            }
                         }
                         Text {
                             text: s.nombre;
-                            font-size: 11px;
-                            // Y el texto, CENTRADO en su hueco: sin esto se pega al de al lado.
+                            // 12 px: label-medium de Material 3 (antes 11).
+                            font-size: 12px;
                             horizontal-alignment: center;
                             color: s.activa ? (root.oscuro ? Oscuro.ac : Claro.ac)
                                             : (root.oscuro ? Oscuro.muted : Claro.muted);

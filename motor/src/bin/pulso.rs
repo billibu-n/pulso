@@ -220,6 +220,8 @@ fn pintar(ventana: &Ventana, e: &Ensenado) {
     ventana.set_zonas_niveles(niveles.as_slice().into());
     ventana.set_precision(e.precision.as_str().into());
     ventana.set_periodo(e.periodo.as_str().into());
+    // ¿Hay algo que diagnosticar? Si no, la ventana NO dibuja cifras ni zonas (nada de tarjetas vacias).
+    ventana.set_puede(e.puede_diagnosticar);
     // El aviso: si no se puede diagnosticar, **lo que falta, y donde se rellena**.
     let aviso = if e.puede_diagnosticar { &e.aviso } else { &e.que_falta };
     ventana.set_aviso(aviso.as_str().into());

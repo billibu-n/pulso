@@ -140,7 +140,12 @@ pub fn lo_que_ensena(p: &Persona, real: Option<&Real>) -> Ensenado {
     let eficiencia = real.and_then(|r| r.eficiencia_media);
     let las_cifras: Vec<String> = vec![
         format!("{:.0}±{:.0}", u.rango.valor, u.rango.margen),
-        format!("{:.0}", p.pulso_maximo_medido.valor().unwrap_or(0)),
+        // SIN MAXIMA MEDIDA, UN GUION. NO un cero: lo cazo la captura de pantalla del 2026-10-14 —
+        // con umbral de lactato pero sin maxima, la tarjeta ensenaba «0», que es un dato FALSO. Es la
+        // misma regla que ya seguian las dos cifras de abajo, y esta se habia quedado atras.
+        p.pulso_maximo_medido
+            .valor()
+            .map_or("—".to_string(), |v| format!("{v:.0}")),
         eficiencia.map_or("—".to_string(), |e| num(e, 2)),
         deriva.map_or("—".to_string(), |d| {
             format!("{}{}", if d >= 0.0 { "+" } else { "-" }, num(d.abs(), 1))

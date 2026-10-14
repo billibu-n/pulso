@@ -427,6 +427,30 @@ siguen devolviendo antes de `run()`: **no se abrió ninguna ventana**.
 
 ---
 
+## 6-octies. VER la aplicación sin abrir ventana, y el fallo que la captura destapó (2026-10-14)
+
+**Lo pidió el dueño**: *«quisiera poder visualizar la aplicación, actualmente estoy ciegamente confiando
+en lo que dices»*. Tenía razón: hasta hoy lo visual se **medía** (geometría), pero **nadie lo había
+visto**, y abrir una ventana en su equipo está prohibido.
+
+**La salida**: `motor/src/bin/capturar-ui.rs` renderiza la UI **fuera de pantalla** con el
+`MinimalSoftwareWindow` de Slint (el mismo que usan sus pruebas) y escribe un PPM, que `magick`/`convert`
+(ImageMagick, ya instalado) pasa a PNG. **No abre ninguna ventana.** Se ve el armazón, la navegación, las
+zonas y la línea del periodo. Las capturas **NO al repositorio** (llevan el recuento y el periodo de sus
+ficheros): van a `datos/capturas/`, ignorado por git (`.gitignore:13 **/datos/`).
+
+**Y LA CAPTURA DESTAPÓ UN FALLO REAL, que las pruebas no veían**: con el umbral de lactato pero **sin**
+frecuencia máxima medida, la tarjeta enseñaba **«0»**. No se midió 0: no se midió nada, y es justo lo que
+el proyecto prohíbe («`Falta` no es `0`»). Las otras dos cifras (vatios/pulso y deriva) ya usaban «—»;
+esta se había quedado atrás. Arreglado en `cara.rs`, con su prueba en `recorrido.rs`. **205 pruebas,
+0 avisos.**
+
+**Lo que NO se ha hecho**: no se ha integrado la captura en `pulso` — `capturar-ui` **duplica** el
+`pintar` de `pulso.rs`, y conviene unificarlo para que no diverjan. Y las tarjetas vacías del estado sin
+datos son el estado real de hoy, no un defecto de la captura.
+
+---
+
 ## 7. Lo que NO está resuelto, dicho claro
 
 - **La decisión de los controles** ya **NO** bloquea: se usan los de serie (paso 1, hecho).

@@ -61,7 +61,7 @@
 //! contradecir a la del flujo.
 
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // =============================================================================================
@@ -421,6 +421,30 @@ pub struct Transporte {
     /// transporte siga siendo `Sync`, como el `Agent` que envuelve: no se comparte entre hilos hoy,
     /// pero no hay razón para cerrarle la puerta.
     ultima: Mutex<Option<Instant>>,
+    /// **Lo que llevaba la última petición al salir**, medido dentro del propio cliente: lo llena el
+    /// `middleware` de `ureq`, que corre justo ANTES de que el cliente añada por su cuenta el
+    /// `User-Agent`, la `Cookie` de la jarra, el `Accept`, el `Accept-Encoding` y el
+    /// `Content-Length` (`ureq` `src/run.rs:272-350`, dentro de `add_headers`).
+    ///
+    /// Existe porque hay cosas que **no se pueden suponer leyendo el flujo**: un `Content-Type` que
+    /// no sale no se nota en el código del paso —lo puso otro, y otro lo puede haber borrado—, y el
+    /// 500 medido contra Garmin el 2026-10-14 salió exactamente de ahí. Se mide donde se pone.
+    salida: Arc<Mutex<Salida>>,
+}
+
+/// **Lo que llevaba una petición al salir de aquí.** Los NOMBRES de sus cabeceras y, aparte, el
+/// `Content-Type`: es el único valor de cabecera que este proyecto necesita poder decir, y decirlo no
+/// es un riesgo —es una constante pública del protocolo, no un dato del cliente—.
+///
+/// `medido` existe por una razón medida: **«no lo he mirado» y «lo he mirado y venía vacío» no son lo
+/// mismo**, y confundirlos hace que un informe diga «este transporte no mide las cabeceras» sobre un
+/// transporte que sí las mide (le pasó al primer rastreo, el 2026-10-14: los dos GET del SSO no
+/// llevan cabeceras propias y el rastro lo contó como que no se habían medido).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Salida {
+    pub medido: bool,
+    pub nombres: Vec<String>,
+    pub content_type: Option<String>,
 }
 
 impl fmt::Debug for Transporte {
@@ -438,6 +462,8 @@ impl Transporte {
     /// Un transporte nuevo, con la jarra **vacía y en memoria**. No toca la red: se puede construir
     /// sin credenciales y sin conexión (lo hacen las pruebas).
     pub fn nuevo() -> Self {
+        let salida: Arc<Mutex<Salida>> = Arc::new(Mutex::new(Salida::default()));
+        let visto = Arc::clone(&salida);
         let config = ureq::Agent::config_builder()
             // Un 4xx/5xx NO es un error: se lee. El flujo tiene que distinguir 403 de 429.
             .http_status_as_error(false)
@@ -450,11 +476,50 @@ impl Transporte {
             .timeout_send_body(Some(ESPERA_MAXIMA))
             .timeout_recv_response(Some(ESPERA_MAXIMA))
             .timeout_recv_body(Some(ESPERA_MAXIMA))
+            // El mirón: **no cambia la petición**, solo apunta sus cabeceras antes de que el cliente
+            // añada las suyas. Es de solo lectura a propósito —un middleware puede modificar la
+            // petición, y este no lo hace: si algún día lo hiciera, dejaría de medir lo que el flujo
+            // manda y pasaría a mandar él—.
+            .middleware(
+                move |peticion: ureq::http::Request<ureq::SendBody>,
+                      siguiente: ureq::middleware::MiddlewareNext| {
+                    let mut nombres = Vec::new();
+                    let mut content_type = None;
+                    for (nombre, valor) in peticion.headers() {
+                        let nombre = nombre.as_str().to_ascii_lowercase();
+                        if nombre == "content-type" {
+                            content_type = valor.to_str().ok().map(|v| v.to_string());
+                        }
+                        nombres.push(nombre);
+                    }
+                    nombres.sort();
+                    nombres.dedup();
+                    if let Ok(mut sitio) = visto.lock() {
+                        *sitio = Salida {
+                            medido: true,
+                            nombres,
+                            content_type,
+                        };
+                    }
+                    siguiente.handle(peticion)
+                },
+            )
             .build();
         Transporte {
             agente: ureq::Agent::new_with_config(config),
             ultima: Mutex::new(None),
+            salida,
         }
+    }
+
+    /// **Los nombres de las cabeceras que llevaba la última petición, y su `Content-Type` si lo
+    /// llevaba.** Es lo que el instrumento necesita para poder decir «el `Content-Type` no salió»
+    /// como un hecho medido y no como una lectura del código.
+    pub fn salida(&self) -> Salida {
+        self.salida
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_else(|e| e.into_inner().clone())
     }
 
     /// Cuántas cookies hay en la jarra. **Para poder afirmar que la sesión se sostiene**: es la
@@ -537,11 +602,17 @@ impl Transporte {
     }
 }
 
-/// **El transporte que NO hay: el hueco, declarado.** Lo usa el instrumento si algún día el cliente
-/// no se puede construir, y existe para que ese caso —que antes era el error 8— tenga una salida
-/// tipada y no un pánico. `get` con él devuelve el fallo, nunca una respuesta inventada.
+/// **El transporte que NO hay: el hueco, declarado.** Existe para que el caso «no hay cliente HTTP»
+/// —que antes era el error 8— tenga una salida tipada y no un pánico. `get` con él devuelve el
+/// fallo, nunca una respuesta inventada.
+///
+/// Está `#[cfg(test)]` porque **hoy solo lo usa la prueba** de abajo: en el camino de red el
+/// instrumento se queda con el fallo tipado de `Cliente`, no con este hueco. Medido al limpiar los
+/// avisos (2026-10-14): fuera de las pruebas, nadie lo construía.
+#[cfg(test)]
 pub struct SinTransporte;
 
+#[cfg(test)]
 impl SinTransporte {
     pub fn get(
         &self,

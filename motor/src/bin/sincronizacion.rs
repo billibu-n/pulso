@@ -41,6 +41,7 @@ mod sincronizacion;
 
 pub use sincronizacion::Secreto;
 
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -104,6 +105,20 @@ fn uso() -> String {
     ));
     s.push_str(&format!(
         "  {p} --probar           pide las actividades y los diarios, y cuenta lo que hay.\n"
+    ));
+    s.push_str(&format!(
+        "  {p} --rastrear         EL MISMO flujo que --probar, pero paso a paso: por cada paso, su\n\
+         \x20                       número y su nombre, la URL de destino (es pública), los NOMBRES de\n\
+         \x20                       los parámetros que envía (nunca sus valores), el `content-type`,\n\
+         \x20                       el estado HTTP, el tamaño del cuerpo en bytes, cuántas cookies lleva\n\
+         \x20                       la jarra de sesión y si la respuesta trae `set-cookie` o `location`\n\
+         \x20                       (sí/no, nunca su valor).\n\
+         \x20                       NUNCA imprime usuario, clave, `_csrf`, ticket, token ni valores de\n\
+         \x20                       cookies. Con credenciales falsas llega al MISMO paso y muestra el\n\
+         \x20                       mismo estado que con las buenas: el 500 del backend (medido el\n\
+         \x20                       2026-10-14) no depende de las credenciales, sino de la forma de la\n\
+         \x20                       petición — un POST de formulario sin `content-type` no da 401.\n\
+         \x20                       Faltar las variables da el mismo código 3 que `--probar`.\n"
     ));
     s.push_str("\nCREDENCIALES: se leen de las variables de entorno GARMIN_USUARIO y GARMIN_CLAVE, que\n");
     s.push_str("  exporta el dueño en SU terminal. No se imprimen, no se registran y no se guardan: no\n");
@@ -181,7 +196,7 @@ mod flujo {
     pub const URL_MFA_PEDIR_CODIGO: &str = "https://sso.garmin.com/sso/verifyMFA/mfaCode";
     /// `client.py:170` — `DI_TOKEN_URL`.
     pub const URL_TOKEN_DI: &str = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
-    /// `client.py:171-173` — `DI_GRANT_TYPE`: se envía como `grant_type` y es a su vez una URL.
+    /// `client.py:171-173` — `DI_GRANT_TYPE`: se envia como `grant_type` y es a su vez una URL.
     pub const TIPO_DE_CONCESION_DI: &str =
         "https://connectapi.garmin.com/di-oauth2-service/oauth/grant/service_ticket";
     /// `client.py:313` — `self._connectapi = f"https://connectapi.{domain}"`.
@@ -309,7 +324,7 @@ mod flujo {
 
     /// `client.py:898-903` — los campos del POST del código MFA.
     ///
-    /// No los envía nadie **todavía**, y es a propósito: cuando Garmin pide el segundo factor, este
+    /// No los envia nadie **todavía**, y es a propósito: cuando Garmin pide el segundo factor, este
     /// instrumento **para y lo dice** (código 5) en vez de pedir un código por consola, porque quien
     /// decide si eso se teclea al vuelo o se guarda la sesión es el dueño (contrato §2). Los nombres
     /// se dicen en el aviso de MFA, para que la pieza portada quede a la vista.
@@ -894,6 +909,11 @@ struct Peticion {
     consulta: Vec<(String, String)>,
     cabeceras: Vec<(String, String)>,
     cuerpo: Option<Secreto>,
+    /// **Los NOMBRES de los campos del formulario, en orden.** Nunca los valores: uno es la
+    /// contraseña y otro el `_csrf`. Se guardan aparte del cuerpo —que va codificado y en un
+    /// `Secreto`— porque el rastreo tiene que poder decir **qué** se manda sin poder decir **cuánto
+    /// vale**.
+    campos: Vec<String>,
 }
 
 impl fmt::Debug for Peticion {
@@ -925,6 +945,7 @@ impl Peticion {
             consulta,
             cabeceras: Vec::new(),
             cuerpo: None,
+            campos: Vec::new(),
         }
     }
 
@@ -938,12 +959,38 @@ impl Peticion {
                 "application/x-www-form-urlencoded".to_string(),
             )],
             cuerpo: Some(Secreto::nueva(codificar_formulario(campos))),
+            campos: campos.iter().map(|(k, _)| k.clone()).collect(),
         }
     }
 
+    /// **CAMBIA la lista de cabeceras entera; no añade.** Es lo que quiere un paso que dice de un
+    /// tirón con qué sale (el del token DI), pero es una trampa para el que solo quiere añadir una:
+    /// el POST del acceso lo usó para poner el `Referer` y **se llevó por delante el `Content-Type`
+    /// del formulario** que había puesto `post_form` —el `Content-Type` es una cabecera MÁS de esa
+    /// lista, y `ureq`, al enviar un `String`, no añade ninguna (`AsSendBody for String` deja
+    /// `content_type: None`, `send_body.rs:309-314`)—. Medido contra Garmin el 2026-10-14: un POST de
+    /// formulario sin `Content-Type` no da 401 (clave mala) sino **500**, un error del backend.
     fn con_cabeceras(mut self, cabeceras: Vec<(String, String)>) -> Self {
         self.cabeceras = cabeceras;
         self
+    }
+
+    /// **AÑADE cabeceras a las que ya hay**, sin tocar las que la petición puso (p. ej. el
+    /// `Content-Type` que `post_form` dejó). Es la forma correcta de sumar el `Referer` del acceso:
+    /// reemplazar la lista se llevó el `Content-Type` y Garmin respondió 500 (medido 2026-10-14,
+    /// rastreo-informe.md).
+    fn mas_cabeceras(mut self, cabeceras: Vec<(String, String)>) -> Self {
+        self.cabeceras.extend(cabeceras);
+        self
+    }
+
+    /// Los nombres de lo que se envia: los de la consulta (GET) o los del formulario (POST).
+    fn nombres_de_lo_que_envia(&self) -> Vec<String> {
+        if self.campos.is_empty() {
+            self.consulta.iter().map(|(k, _)| k.clone()).collect()
+        } else {
+            self.campos.clone()
+        }
     }
 
     /// La petición dicha **para un mensaje**: la URL y los NOMBRES de los parámetros, sin sus valores.
@@ -1015,8 +1062,35 @@ impl Respuesta {
 /// **El único punto por donde se habla por la red.** La implementación de verdad es `Transporte`
 /// (abajo, con `ureq`); las pruebas inyectan una falsa, así que **el flujo entero se puede probar sin
 /// salir a internet y sin una credencial real**.
+///
+/// Los tres métodos de abajo tienen implementación por defecto porque **el flujo no los necesita
+/// para funcionar**: solo los usa el rastreo (`--rastrear`). Un transporte que no sepa contestarlos
+/// —el falso de las pruebas, por ejemplo— sigue sirviendo para todo lo demás, que es lo que evita
+/// tener dos flujos: uno con rastreo y otro sin él.
 trait Transporte {
     fn pedir(&self, peticion: &Peticion) -> Result<Respuesta, Fallo>;
+
+    /// **El nombre del paso que va a pedir.** Lo dice el propio flujo, que es quien sabe por dónde
+    /// va; el rastreo solo lo escribe. Un transporte que no rastree lo ignora.
+    fn nombra(&self, _paso: &str) {}
+
+    /// Cuántas cookies lleva la sesión en memoria AHORA (justo después del paso).
+    fn cookies_en_la_sesion(&self) -> usize {
+        0
+    }
+
+    /// **Los nombres de las cabeceras con las que salió la última petición, y su `Content-Type`.**
+    /// Lo mide el cliente HTTP por dentro; un transporte que no lo sepa devuelve vacío, y el rastreo
+    /// lo dice como «sin dato» en vez de inventarse una lista.
+    fn salida(&self) -> sincronizacion::Salida {
+        sincronizacion::Salida::default()
+    }
+
+    /// El `displayName` del cliente, en cuanto el flujo lo aprende. **No es un adorno**: ese nombre
+    /// va DENTRO de la URL del sueño y del pulso en reposo (`__init__.py:2126` y `2189`), y el
+    /// rastreo imprime URLs: sin esto, un informe con la traza se llevaría el nombre del cliente al
+    /// repositorio.
+    fn vio_el_nombre_del_cliente(&self, _nombre: &str) {}
 }
 
 /// **El transporte de verdad: `ureq` bloqueante con jarra de cookies en memoria.** Es una cáscara
@@ -1033,14 +1107,6 @@ struct Cliente(Option<ClienteHttp>);
 impl Cliente {
     fn nuevo() -> Self {
         Cliente(Some(ClienteHttp::nuevo()))
-    }
-
-    /// Cuántas cookies lleva la sesión EN MEMORIA. Solo para poder decirlo: no se guardan en disco.
-    fn cookies_en_la_sesion(&self) -> usize {
-        match &self.0 {
-            Some(c) => c.cuantas_cookies(),
-            None => 0,
-        }
     }
 
     /// Cuánto tardó el último paso de RED. Es lo que permite separar el tiempo de la red del tiempo
@@ -1064,7 +1130,7 @@ impl Transporte for Cliente {
         let r = match peticion.metodo {
             Metodo::Get => cliente.get(&peticion.url, &peticion.consulta, &peticion.cabeceras)?,
             Metodo::Post => {
-                // El cuerpo de un POST ya viene codificado (y es un `Secreto`). Se envía tal cual.
+                // El cuerpo de un POST ya viene codificado (y es un `Secreto`). Se envia tal cual.
                 let cuerpo = peticion
                     .cuerpo
                     .clone()
@@ -1074,15 +1140,34 @@ impl Transporte for Cliente {
         };
         Ok(Respuesta::del_transporte(r))
     }
+
+    /// Cuántas cookies lleva la sesión EN MEMORIA. Solo para poder decirlo: no se guardan en disco.
+    fn cookies_en_la_sesion(&self) -> usize {
+        match &self.0 {
+            Some(c) => c.cuantas_cookies(),
+            None => 0,
+        }
+    }
+
+    fn salida(&self) -> sincronizacion::Salida {
+        match &self.0 {
+            Some(c) => c.salida(),
+            None => sincronizacion::Salida::default(),
+        }
+    }
 }
 
-/// **El hueco, conservado a propósito, y usado de verdad.** No es el transporte del camino de red
-/// (lo es `Cliente` con `ureq`), pero el instrumento lo usa como red de seguridad cuando el cliente
-/// no está: `get` devuelve el fallo tipado del hueco, nunca una respuesta inventada. Así la regla que
-/// lo trajo sigue viva y probada —**el hueco se declara, no se rellena con un remedio peor**— y no
-/// queda código muerto al lado del camino bueno.
+/// **El hueco, conservado a propósito, y usado SOLO por las pruebas.** No es el transporte del camino
+/// de red (lo es `Cliente` con `ureq`): el instrumento se queda con el fallo tipado que devuelve
+/// `Cliente::pedir`, no con este. Así la regla que lo trajo sigue viva y probada —**el hueco se
+/// declara, no se rellena con un remedio peor**— sin que quede código muerto al lado del camino bueno.
+///
+/// `#[cfg(test)]` por eso mismo: medido al limpiar los avisos (2026-10-14), fuera de las pruebas
+/// nadie lo construía.
+#[cfg(test)]
 struct SinTransporte;
 
+#[cfg(test)]
 impl Transporte for SinTransporte {
     fn pedir(&self, _peticion: &Peticion) -> Result<Respuesta, Fallo> {
         Err(Fallo::SinClienteHttp)
@@ -1141,6 +1226,392 @@ fn codificar(valor: &str) -> String {
 }
 
 // =============================================================================================
+// EL RASTREO: EL MISMO FLUJO, PASO A PASO
+// =============================================================================================
+
+/// **Las cabeceras con las que la librería portada saca ESTE POST. MEDIDAS, no leídas.**
+///
+/// El 2026-10-14 se levantó un servidor de eco en `127.0.0.1` y se le hizo, con la librería de verdad
+/// (`cyberjunky/python-garminconnect`), **la misma llamada del paso del acceso** —`client.py:797-810`:
+/// `sess.post(f"{sso_base}/signin", params=signin_params, headers={"Referer": r.url}, data={"username",
+/// "password", "embed", "_csrf"}, timeout=30)`— y se apuntaron las cabeceras que llegaron. Esa
+/// estrategia del widget usa `curl_cffi.Session(impersonate="chrome")` (`client.py:751`), no
+/// `requests`: por eso la lista trae la huella de un navegador.
+///
+/// Lo que llegó (nombres, en orden alfabético): `accept`, `accept-encoding`, `accept-language`,
+/// `connection`, `content-length`, `content-type`, `host`, `referer`, `sec-ch-ua`,
+/// `sec-ch-ua-mobile`, `sec-ch-ua-platform`, `sec-fetch-dest`, `sec-fetch-mode`, `sec-fetch-site`,
+/// `sec-fetch-user`, `upgrade`, `upgrade-insecure-requests`, `user-agent`. Y de `content-type`:
+/// `application/x-www-form-urlencoded`. Los campos del cuerpo fueron `_csrf`, `embed`, `password` y
+/// `username`: **los mismos que manda este instrumento**.
+///
+/// Se dejan FUERA tres que no son una diferencia entre los dos, y se dice por qué:
+/// - `host`: lo pone cualquier cliente (también el nuestro).
+/// - `cookie`: las dos partes mandan la jarra que tengan; se dice aparte, con el número de cookies.
+/// - `upgrade` y `http2-settings`: son un artefacto de haber medido contra un servidor **en claro**
+///   (curl_cffi intenta el `h2c`); contra Garmin, que es HTTPS, no van.
+const CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO: &[&str] = &[
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "connection",
+    "content-length",
+    "content-type",
+    "referer",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-fetch-user",
+    "upgrade-insecure-requests",
+    "user-agent",
+];
+
+/// **Las que añade NUESTRO cliente solo, después de que el middleware mire la petición.** Medido en
+/// la fuente de `ureq` 3.4.2 (`src/run.rs:272-350`, `add_headers`): `Cookie` —solo si la jarra tiene
+/// algo, y por eso se dice aparte con el número de cookies—, `Accept-Encoding`, `Content-Length`
+/// —solo si el cuerpo tiene longitud conocida, que es el caso de un formulario—, `User-Agent`
+/// (`ureq/3.4.2` por defecto) y `Accept: */*`. Ninguna se añade si la petición ya la trae.
+const CABECERAS_QUE_ANADE_EL_CLIENTE: &[&str] =
+    &["accept", "accept-encoding", "content-length", "user-agent"];
+
+/// Compara dos listas de NOMBRES de cabecera (nunca valores). Pura: los mismos nombres dan el mismo
+/// resultado. Devuelve `(solo_de_ella, solo_nuestras, en_las_dos)`, en minúsculas y ordenadas.
+fn comparar_cabeceras(
+    nuestras: &[String],
+    suyas: &[&str],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let normalizar = |lista: &[String]| -> Vec<String> {
+        let mut v: Vec<String> = lista.iter().map(|n| n.to_ascii_lowercase()).collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let nuestras = normalizar(nuestras);
+    let mut suyas: Vec<String> = suyas.iter().map(|n| n.to_ascii_lowercase()).collect();
+    suyas.sort();
+    suyas.dedup();
+
+    let solo_ella = suyas
+        .iter()
+        .filter(|n| !nuestras.contains(n))
+        .cloned()
+        .collect();
+    let solo_nosotras = nuestras
+        .iter()
+        .filter(|n| !suyas.contains(n))
+        .cloned()
+        .collect();
+    let en_las_dos = nuestras
+        .iter()
+        .filter(|n| suyas.contains(n))
+        .cloned()
+        .collect();
+    (solo_ella, solo_nosotras, en_las_dos)
+}
+
+/// **EL RASTREO: el mismo flujo que `--probar`, pero contando cada paso.**
+///
+/// Es un transporte que envuelve al de verdad: el flujo no cambia ni una línea (sigue pidiendo a
+/// `&dyn Transporte`), y lo único que añade es que **dice lo que sale y lo que vuelve**. Nada de esto
+/// es adorno: el 500 medido contra Garmin el 2026-10-14 no se podía explicar leyendo el código —todo
+/// el mundo daba por hecho que el `Content-Type` del formulario iba puesto— y sí se explica mirando
+/// lo que de verdad sale por el cable.
+///
+/// **Lo que NUNCA escribe**: el usuario, la clave, el `_csrf`, el ticket, el token, los valores de
+/// las cookies y los valores de cualquier cabecera o parámetro. Escribe nombres, números y estados
+/// ([`Peticion::nombres_de_lo_que_envia`] y [`sincronizacion::Salida`] están hechos para eso), más el
+/// `Content-Type`, que es una constante del protocolo y no un dato del cliente.
+struct Rastro<'a> {
+    interior: &'a dyn Transporte,
+    /// Cuántas peticiones se han hecho: es el «paso N» de la tabla.
+    hechos: Cell<usize>,
+    /// El nombre del paso en curso, que pone el propio flujo con `nombra`.
+    paso: RefCell<String>,
+    /// El `displayName` del cliente, en cuanto el flujo lo aprende: va DENTRO de la URL del sueño y
+    /// del pulso en reposo (`__init__.py:2126` y `2189`), así que la URL se imprime con él sustituido
+    /// por `{displayName}`. Un informe de este repositorio no se lleva el nombre del cliente.
+    nombre_del_cliente: RefCell<Option<String>>,
+    /// **Dónde va el rastro.** `None`: a la pantalla, que es lo que hace el instrumento. `Some`: a un
+    /// texto, que es como lo miran las pruebas —afirmar sobre un `String` es afirmar de verdad;
+    /// afirmar sobre lo que ya salió por `print!`, no—.
+    recogido: Option<RefCell<String>>,
+}
+
+impl<'a> Rastro<'a> {
+    fn nuevo(interior: &'a dyn Transporte) -> Self {
+        Rastro {
+            interior,
+            hechos: Cell::new(0),
+            paso: RefCell::new(String::new()),
+            nombre_del_cliente: RefCell::new(None),
+            recogido: None,
+        }
+    }
+
+    /// El rastro que se queda en un texto en vez de salir por la pantalla: es el que usan las
+    /// pruebas, y prueba lo mismo (el texto se construye con el mismo código).
+    #[cfg(test)]
+    fn recogiendo(interior: &'a dyn Transporte) -> Self {
+        Rastro {
+            interior,
+            hechos: Cell::new(0),
+            paso: RefCell::new(String::new()),
+            nombre_del_cliente: RefCell::new(None),
+            recogido: Some(RefCell::new(String::new())),
+        }
+    }
+
+    /// Lo que el rastro ha dicho hasta ahora (solo en las pruebas).
+    #[cfg(test)]
+    fn texto(&self) -> String {
+        self.recogido
+            .as_ref()
+            .map(|s| s.borrow().clone())
+            .unwrap_or_default()
+    }
+
+    /// Escribe una línea del rastro donde toque.
+    fn dice(&self, texto: &str) {
+        match &self.recogido {
+            Some(s) => s.borrow_mut().push_str(texto),
+            None => print!("{texto}"),
+        }
+    }
+
+    /// La URL dicha para un informe: sin el nombre del cliente (si ya se sabe) y **sin los valores de
+    /// la consulta** —el `Display` de `Destino` solo dice nombres, y uno de esos valores es el ticket
+    /// de servicio—.
+    fn url_publica(&self, url: &str) -> String {
+        match self.nombre_del_cliente.borrow().as_ref() {
+            Some(n) if !n.is_empty() => url.replace(n.as_str(), "{displayName}"),
+            _ => url.to_string(),
+        }
+    }
+
+    /// ¿Es la petición del ACCESO? Se reconoce por el método y la URL, no por el nombre del paso: el
+    /// nombre puede cambiar y esto no.
+    fn es_el_acceso(&self, peticion: &Peticion) -> bool {
+        matches!(peticion.metodo, Metodo::Post) && peticion.url == flujo::URL_SIGNIN
+    }
+
+    /// La línea de un paso. Todo lo que dice es público: destino, NOMBRES, número de cookies, estado
+    /// y tamaño.
+    fn bloque(&self, peticion: &Peticion, respuesta: Option<&Respuesta>) -> String {
+        let salida = self.interior.salida();
+        let metodo = match peticion.metodo {
+            Metodo::Get => "GET",
+            Metodo::Post => "POST",
+        };
+        let envia = peticion.nombres_de_lo_que_envia();
+        let mut s = String::new();
+        s.push_str(&format!(
+            "\n── paso {} · {}\n",
+            self.hechos.get(),
+            self.paso.borrow()
+        ));
+        s.push_str(&format!(
+            "   destino         {metodo} {}\n",
+            self.url_publica(&peticion.url)
+        ));
+        s.push_str(&format!(
+            "   envia           {}\n",
+            if envia.is_empty() {
+                "ningún parámetro".to_string()
+            } else {
+                format!("{} (los NOMBRES, nunca los valores)", envia.join(", "))
+            }
+        ));
+        s.push_str(&format!(
+            "   content-type    {}\n",
+            match &salida.content_type {
+                Some(ct) => ct.clone(),
+                None => "(NINGUNO: no lo lleva la petición, y el cliente no lo añade solo)".to_string(),
+            }
+        ));
+        s.push_str(&format!(
+            "   cabeceras       {}\n",
+            if !salida.medido {
+                "(sin dato: este transporte no las mide)".to_string()
+            } else if salida.nombres.is_empty() {
+                "(ninguna: la petición va sin cabeceras propias)".to_string()
+            } else {
+                salida.nombres.join(", ")
+            }
+        ));
+        // Las que añade el cliente por su cuenta (`ureq` `run.rs:272-350`), dichas aparte para no
+        // mezclar lo que manda el flujo con lo que manda la librería de red.
+        let solo_del_cliente: Vec<&str> = CABECERAS_QUE_ANADE_EL_CLIENTE
+            .iter()
+            .copied()
+            .filter(|n| !salida.nombres.iter().any(|m| m == n))
+            .collect();
+        if !solo_del_cliente.is_empty() {
+            s.push_str(&format!(
+                "   + del cliente   {} (los añade ureq: run.rs:272-350)\n",
+                solo_del_cliente.join(", ")
+            ));
+        }
+        s.push_str(&format!(
+            "   cookies         {} en la jarra de la sesión (en memoria)\n",
+            self.interior.cookies_en_la_sesion()
+        ));
+        match respuesta {
+            Some(r) => s.push_str(&format!(
+                "   respuesta       {} · {} bytes (ya descomprimido) · set-cookie: {} · location: {}\n",
+                r.estado,
+                r.cuerpo.len(),
+                si_no(tiene_cabecera(&r.cabeceras, "set-cookie")),
+                si_no(tiene_cabecera(&r.cabeceras, "location")),
+            )),
+            None => s.push_str("   respuesta       sin respuesta: no llegó a haberla\n"),
+        }
+        s
+    }
+
+    /// **El DIAGNÓSTICO, pegado al POST que falla.** Compara las cabeceras que salieron de verdad con
+    /// las que manda la librería portada y dice, con nombres, cuál falta. Es lo que convierte «Garmin
+    /// contesta 500» en «falta el `Content-Type`».
+    fn diagnostico(&self) -> String {
+        diagnostico_del_acceso(
+            &self.interior.salida(),
+            self.interior.cookies_en_la_sesion(),
+        )
+    }
+}
+
+/// **La comparación, como función pura**: lo que salió de verdad contra lo que manda la librería
+/// portada en el POST del acceso. Pura a propósito —los mismos datos dan el mismo texto, y se prueba
+/// sin red y sin credenciales—.
+///
+/// Compara **lo que sale de verdad por el cable**, no lo que pone la petición: a lo que el flujo puso
+/// se le suman las cabeceras que añade el cliente solo (`ureq` `run.rs:272-350`). Sin eso, la
+/// comparación diría que no mandamos `accept` ni `user-agent` cuando sí los mandamos, y una
+/// comparación que exagera la diferencia no sirve para decidir.
+fn diagnostico_del_acceso(salida: &sincronizacion::Salida, cookies_en_la_jarra: usize) -> String {
+    let mut s = String::new();
+    s.push_str("\n   DIAGNÓSTICO · contra la librería portada (garminconnect/client.py:795-810):\n");
+    if !salida.medido {
+        s.push_str(
+            "      (sin dato: este transporte no mide qué cabeceras salen; el de verdad sí, con el\n\
+             \x20       `middleware` de `ureq`)\n",
+        );
+        s.push_str(
+            "      lo que ella manda en este POST, medido con un servidor de eco: accept,\n\
+             \x20       accept-encoding, accept-language, connection, content-length, content-type,\n\
+             \x20       referer, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, sec-fetch-dest,\n\
+             \x20       sec-fetch-mode, sec-fetch-site, sec-fetch-user, upgrade-insecure-requests,\n\
+             \x20       user-agent\n",
+        );
+        return s;
+    }
+    let mut nuestras = salida.nombres.clone();
+    for anadida in CABECERAS_QUE_ANADE_EL_CLIENTE {
+        if !nuestras.iter().any(|n| n == anadida) {
+            nuestras.push(anadida.to_string());
+        }
+    }
+    let (solo_ella, solo_nosotras, en_las_dos) =
+        comparar_cabeceras(&nuestras, CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO);
+    s.push_str(&format!(
+        "      ella manda y NOSOTROS NO: {}\n",
+        si_hay(&solo_ella)
+    ));
+    s.push_str(&format!(
+        "      nosotros mandamos y ELLA NO: {}\n",
+        si_hay(&solo_nosotras)
+    ));
+    s.push_str(&format!("      coincidimos en: {}\n", si_hay(&en_las_dos)));
+    s.push_str(&format!(
+        "      la `cookie` no entra en la comparación: las dos mandan su jarra (nosotros, \
+         {cookies_en_la_jarra} en memoria)\n"
+    ));
+    if salida.content_type.is_none() {
+        s.push_str(
+            "      → **el que explica el 500 es `content-type`**: el POST del acceso lleva el cuerpo\n\
+             \x20       de un formulario y sale SIN declararlo. El paso reemplaza la lista de\n\
+             \x20       cabeceras y se lleva por delante el `application/x-www-form-urlencoded` que\n\
+             \x20       pone `post_form`, y `ureq`, al enviar un texto, no añade ninguna\n\
+             \x20       (`send_body.rs:309-314`). El backend no lo lee como formulario y revienta con\n\
+             \x20       un 500 JSON (`java.lang.StringIndexOutOfBoundsException`): el 500 NO es de las\n\
+             \x20       credenciales.\n\
+             \x20       Lo demás que falta es la huella de navegador de `curl_cffi`, no un requisito\n\
+             \x20       del formulario: el `user-agent` coincide en nombre y no en valor (ella va como\n\
+             \x20       un Chrome; nosotros, como la librería HTTP).\n",
+        );
+    } else {
+        s.push_str(
+            "      → el `content-type` SÍ sale en esta corrida: la hipótesis del formulario sin\n\
+             \x20       declarar no aplica; lo que falte de la lista de arriba es lo que hay que mirar.\n",
+        );
+    }
+    s
+}
+
+/// Una lista de nombres para un mensaje: los nombres, o «nada».
+fn si_hay(nombres: &[String]) -> String {
+    if nombres.is_empty() {
+        "nada".to_string()
+    } else {
+        nombres.join(", ")
+    }
+}
+
+/// Sí o no, en español y sin adornos. Nunca el valor: solo si está.
+fn si_no(hay: bool) -> &'static str {
+    if hay {
+        "sí"
+    } else {
+        "no"
+    }
+}
+
+/// ¿La respuesta trae esa cabecera? Se dice la PRESENCIA, jamás el valor: un `set-cookie` es una
+/// credencial de sesión y un `location` puede llevar parámetros.
+fn tiene_cabecera(cabeceras: &[(String, String)], nombre: &str) -> bool {
+    cabeceras.iter().any(|(n, _)| n.eq_ignore_ascii_case(nombre))
+}
+
+impl Transporte for Rastro<'_> {
+    fn pedir(&self, peticion: &Peticion) -> Result<Respuesta, Fallo> {
+        let resultado = self.interior.pedir(peticion);
+        self.hechos.set(self.hechos.get() + 1);
+        let dicho = self.bloque(peticion, resultado.as_ref().ok());
+        self.dice(&dicho);
+        if self.es_el_acceso(peticion) {
+            let falla = match &resultado {
+                Ok(r) => !(200..300).contains(&r.estado),
+                Err(_) => true,
+            };
+            if falla {
+                self.dice(&self.diagnostico());
+            }
+        }
+        resultado
+    }
+
+    fn nombra(&self, paso: &str) {
+        *self.paso.borrow_mut() = paso.to_string();
+        self.interior.nombra(paso);
+    }
+
+    fn cookies_en_la_sesion(&self) -> usize {
+        self.interior.cookies_en_la_sesion()
+    }
+
+    fn salida(&self) -> sincronizacion::Salida {
+        self.interior.salida()
+    }
+
+    fn vio_el_nombre_del_cliente(&self, nombre: &str) {
+        *self.nombre_del_cliente.borrow_mut() = Some(nombre.to_string());
+        self.interior.vio_el_nombre_del_cliente(nombre);
+    }
+}
+
+// =============================================================================================
 // EL FLUJO, PASO A PASO
 // =============================================================================================
 
@@ -1154,12 +1625,14 @@ struct Sesion {
 
 /// `client.py:770-775` — la primera visita, que deja las cookies de sesión.
 fn paso_embed(t: &dyn Transporte) -> Result<(), Fallo> {
+    t.nombra("el widget: la primera visita, que deja las cookies de sesión (client.py:770-775)");
     let r = pedir(t, &Peticion::get(flujo::URL_EMBED, flujo::parametros_embed()))?;
     exigir_estado(&r, "la página de entrada del widget (client.py:770-775)")
 }
 
 /// `client.py:777-788` — la página de acceso, de donde sale el `_csrf`.
 fn paso_csrf(t: &dyn Transporte) -> Result<String, Fallo> {
+    t.nombra("la página de acceso: de aquí sale el `_csrf` (client.py:777-788)");
     let r = pedir(t, &Peticion::get(flujo::URL_SIGNIN, flujo::parametros_signin()))?;
     exigir_estado(&r, "la página de acceso (client.py:777-788)")?;
     flujo::extraer_csrf(&r.cuerpo)
@@ -1173,10 +1646,11 @@ fn paso_credenciales(
     usuario: &Secreto,
     clave: &Secreto,
 ) -> Result<String, Fallo> {
+    t.nombra("EL ACCESO: el POST de las credenciales, el paso que responde 500 (client.py:790-881)");
     espera_anti_waf();
     let peticion =
         Peticion::post_form(flujo::URL_SIGNIN, &flujo::campos_del_login(csrf, usuario, clave))
-            .con_cabeceras(vec![(
+            .mas_cabeceras(vec![(
                 "Referer".to_string(),
                 flujo::URL_EMBED.to_string(),
             )]);
@@ -1189,7 +1663,13 @@ fn paso_credenciales(
 /// identificadores de cliente **en orden**. Si ninguno acepta, se usa la reserva de
 /// `client.py:1284-1306`: se consume el ticket y se toma la cookie `JWT_WEB` de esa respuesta.
 fn paso_sesion(t: &dyn Transporte, ticket: &str) -> Result<Sesion, Fallo> {
-    for cliente in flujo::CLIENTES_DI {
+    for (i, cliente) in flujo::CLIENTES_DI.iter().enumerate() {
+        let cliente: &str = cliente;
+        t.nombra(&format!(
+            "el ticket → token DI, identificador {} de {} (client.py:1317-1380)",
+            i + 1,
+            flujo::CLIENTES_DI.len()
+        ));
         let campos: Vec<(String, Secreto)> = flujo::campos_del_token(ticket, cliente)
             .into_iter()
             .map(|(k, v)| (k, Secreto::nueva(v)))
@@ -1226,6 +1706,7 @@ fn paso_sesion(t: &dyn Transporte, ticket: &str) -> Result<Sesion, Fallo> {
     }
 
     // La reserva: se consume el ticket contra la misma página del widget y se mira la cookie.
+    t.nombra("el ticket → la cookie `JWT_WEB`: la reserva (client.py:1284-1306)");
     let r = pedir(
         t,
         &Peticion::get(
@@ -1243,6 +1724,7 @@ fn paso_sesion(t: &dyn Transporte, ticket: &str) -> Result<Sesion, Fallo> {
 /// `__init__.py:1049` — el `displayName` del perfil: **va dentro de la URL** del sueño y del pulso en
 /// reposo, y sin él esas dos peticiones dan 403 (`__init__.py:1111-1126`).
 fn paso_perfil(t: &dyn Transporte, sesion: &mut Sesion) -> Result<(), Fallo> {
+    t.nombra("el perfil: de aquí sale el `displayName` (__init__.py:1049)");
     let r = pedir_api(t, sesion, flujo::RUTA_PERFIL, Vec::new())?;
     let o = match serde_json::from_str::<serde_json::Value>(&r.cuerpo) {
         Ok(serde_json::Value::Object(o)) => o,
@@ -1256,6 +1738,9 @@ fn paso_perfil(t: &dyn Transporte, sesion: &mut Sesion) -> Result<(), Fallo> {
     match o.get("displayName").and_then(|d| d.as_str()) {
         Some(d) if !d.is_empty() => {
             sesion.display_name = Some(d.to_string());
+            // `displayName` va DENTRO de la URL del sueño y del pulso: el rastreo tiene que saberlo
+            // para no imprimirlo. El flujo no lo necesita para nada más.
+            t.vio_el_nombre_del_cliente(d);
             Ok(())
         }
         // `__init__.py:1114-1116`: un `displayName` ausente se interpola como «None» en la URL y da
@@ -1421,7 +1906,8 @@ fn segundos(t: Duration) -> String {
 // =============================================================================================
 
 /// **Lo que se mide, en orden**: perfil, actividades y los cuatro diarios. Devuelve la tabla con el
-/// tiempo total. Con `SinTransporte` para en el primer paso de red y devuelve el error tipado.
+/// tiempo total. El transporte es el que le pasen: el de verdad (`--probar`), el rastreo
+/// (`--rastrear`, que es el mismo envuelto) o el falso de las pruebas.
 fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<String, Fallo> {
     let inicio = Instant::now();
 
@@ -1435,6 +1921,7 @@ fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<Strin
     let mut fichas: Vec<Ficha> = Vec::new();
 
     // --- Actividades: de una vez, hasta el tope que deja Garmin (`__init__.py:2596-2636`) ---
+    t.nombra("las actividades, de una vez (__init__.py:2596-2636)");
     let r = pedir_api(
         t,
         &sesion,
@@ -1466,6 +1953,7 @@ fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<Strin
     for i in 0..VENTANA_DIAS {
         let dia = hace_dias(i);
         let (ruta, consulta) = flujo::ruta_sueno(&nombre, &dia);
+        t.nombra(&format!("el sueño del día {dia} (__init__.py:637)"));
         let r = pedir_api(t, &sesion, &ruta, consulta)?;
         sueno.pide(&dia, flujo::sueno_tiene_dato(&r.cuerpo)?);
     }
@@ -1474,6 +1962,7 @@ fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<Strin
     // --- Pulso en reposo: el rango entero en UNA petición (`__init__.py:2199-2224`) ---
     let desde = hace_dias(VENTANA_DIAS - 1);
     let (ruta, consulta) = flujo::ruta_pulso_reposo(&nombre, &desde, &hoy);
+    t.nombra("el pulso en reposo: el rango entero en una petición (__init__.py:2199-2224)");
     let r = pedir_api(t, &sesion, &ruta, consulta)?;
     let dias = flujo::dias_de_pulso(&r.cuerpo)?;
     let mut pulso = Ficha::nueva("pulso en reposo");
@@ -1490,10 +1979,14 @@ fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<Strin
         let dia = hace_dias(i);
 
         let (ruta, consulta) = flujo::ruta_estres(&dia);
+        t.nombra(&format!("el estrés del día {dia} (__init__.py:2170-2176)"));
         let r = pedir_api(t, &sesion, &ruta, consulta)?;
         estres.pide(&dia, flujo::estres_tiene_dato(&r.cuerpo)?);
 
         let (ruta, consulta) = flujo::ruta_training(&dia);
+        t.nombra(&format!(
+            "el training status del día {dia} (__init__.py:2478-2482)"
+        ));
         let r = pedir_api(t, &sesion, &ruta, consulta)?;
         training.pide(&dia, flujo::training_tiene_dato(&r.cuerpo)?);
     }
@@ -1573,8 +2066,15 @@ fn main() {
         return;
     }
 
-    if !argumentos.iter().any(|a| a == "--probar") {
-        eprintln!("Uso: {} --ayuda | --probar", env!("CARGO_BIN_NAME"));
+    // `--rastrear` es **el mismo modo**, con el transporte envuelto en el rastreo: mismo camino hasta
+    // aquí (así que faltar variables da el mismo código 3) y mismo flujo después.
+    let rastrear = argumentos.iter().any(|a| a == "--rastrear");
+
+    if !argumentos.iter().any(|a| a == "--probar") && !rastrear {
+        eprintln!(
+            "Uso: {} --ayuda | --probar | --rastrear",
+            env!("CARGO_BIN_NAME")
+        );
         std::process::exit(CODIGO_USO);
     }
 
@@ -1599,6 +2099,34 @@ fn main() {
         let fallo = Fallo::SinClienteHttp;
         eprintln!("{}", fallo.mensaje());
         std::process::exit(fallo.codigo());
+    }
+
+    if rastrear {
+        println!("--- RASTREO PASO A PASO (el mismo flujo que --probar) ---");
+        println!(
+            "por cada paso: destino, NOMBRES de lo que envía, content-type, estado, bytes y cookies."
+        );
+        println!("no se imprime NINGÚN valor: ni usuario, ni clave, ni `_csrf`, ni ticket, ni token.");
+        let rastro = Rastro::nuevo(&transporte);
+        let resultado = medir(&rastro, &usuario, &clave);
+        match resultado {
+            Ok(texto) => {
+                print!("{texto}");
+                eprintln!(
+                    "sesión: {} cookies en memoria · último paso de red: {}",
+                    transporte.cookies_en_la_sesion(),
+                    match transporte.tardanza_de_la_red() {
+                        Some(t) => segundos(t),
+                        None => "sin dato".to_string(),
+                    }
+                );
+            }
+            Err(fallo) => {
+                eprintln!("{}", fallo.mensaje());
+                std::process::exit(fallo.codigo());
+            }
+        }
+        return;
     }
 
     match medir(&transporte, &usuario, &clave) {
@@ -1638,6 +2166,9 @@ fn main() {
 struct TransporteFalso {
     rutas: BTreeMap<(String, String), Respuesta>,
     pedidas: std::cell::RefCell<Vec<Peticion>>,
+    /// **Lo que el rastro dirá que salió.** El transporte de verdad lo MIDE (el middleware de
+    /// `ureq`); el falso lo copia de aquí, para poder probar la comparación de cabeceras sin red.
+    salida: sincronizacion::Salida,
 }
 
 #[cfg(test)]
@@ -1646,7 +2177,14 @@ impl TransporteFalso {
         TransporteFalso {
             rutas: BTreeMap::new(),
             pedidas: std::cell::RefCell::new(Vec::new()),
+            salida: sincronizacion::Salida::default(),
         }
+    }
+
+    /// Lo que este transporte dirá que envió. Los nombres, sin valores.
+    fn salida(mut self, salida: sincronizacion::Salida) -> Self {
+        self.salida = salida;
+        self
     }
 
     /// Registra una respuesta de GET. La ruta se compara **sin la consulta**: es lo que identifica al
@@ -1749,6 +2287,10 @@ impl Transporte for TransporteFalso {
             "la prueba no previó {metodo} {}",
             sin_consulta
         )))
+    }
+
+    fn salida(&self) -> sincronizacion::Salida {
+        self.salida.clone()
     }
 }
 
@@ -1890,10 +2432,11 @@ mod pruebas {
     }
 
     #[test]
-    fn la_ayuda_dice_los_dos_modos_y_no_toca_la_red() {
+    fn la_ayuda_dice_los_tres_modos_y_no_toca_la_red() {
         let t = uso();
         assert!(t.contains("--ayuda"), "{t}");
         assert!(t.contains("--probar"), "{t}");
+        assert!(t.contains("--rastrear"), "{t}");
         assert!(
             t.contains("GARMIN_USUARIO") && t.contains("GARMIN_CLAVE"),
             "{t}"
@@ -1904,6 +2447,183 @@ mod pruebas {
         assert!(t.contains("el 8 «falta el cliente HTTP» ya NO existe"), "{t}");
         assert!(t.contains("ureq"), "{t}");
         assert!(t.contains("rustls"), "{t}");
+        // Y el rastreo dice, ANTES de correrlo, qué NO va a imprimir nunca y que con credenciales
+        // falsas se ve lo mismo: es la promesa que la prueba de abajo comprueba de verdad.
+        assert!(t.contains("NUNCA imprime usuario"), "{t}");
+        assert!(t.contains("NOMBRES"), "{t}");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // EL RASTREO
+    // -----------------------------------------------------------------------------------------
+
+    /// Un cuerpo de 500 como el que devolvió Garmin el 2026-10-14, con un marcador dentro: si el
+    /// marcador aparece en el rastro, es que se volcó un cuerpo.
+    const JSON_DEL_500: &str = r#"{"timestamp":1,"status":500,"error":"Internal Server Error","exception":"MARCADOR-DEL-CUERPO","path":"/sso/signin"}"#;
+
+    /// Lo que sale de verdad en el POST del acceso del instrumento: el `Referer` y nada más (el
+    /// `Content-Type` del formulario se pierde al reemplazar la lista de cabeceras). Es el dato que en
+    /// la vida real mide el middleware de `ureq`; aquí se copia, porque la prueba no sale a la red.
+    fn lo_que_sale_en_el_acceso() -> sincronizacion::Salida {
+        sincronizacion::Salida {
+            medido: true,
+            nombres: vec!["referer".to_string()],
+            content_type: None,
+        }
+    }
+
+    #[test]
+    fn el_rastreo_dice_cada_paso_y_el_500_del_acceso_sin_soltar_el_cuerpo() {
+        // El flujo que falla como el de verdad: el POST del acceso contesta 500 con JSON del backend.
+        let t = TransporteFalso::new()
+            .get_con_cookie(
+                flujo::URL_EMBED,
+                200,
+                "<html><title>widget</title></html>",
+                "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+            )
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            .post(
+                flujo::URL_SIGNIN,
+                500,
+                JSON_DEL_500,
+                vec![("Set-Cookie".to_string(), "LOCALE=en; Path=/".to_string())],
+            )
+            .salida(lo_que_sale_en_el_acceso());
+        let rastro = Rastro::recogiendo(&t);
+        let fallo = medir(
+            &rastro,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        let dicho = rastro.texto();
+
+        // 1) El paso, numerado y con nombre, y el destino completo (es público).
+        assert!(dicho.contains("paso 3"), "los pasos van numerados: {dicho}");
+        assert!(
+            dicho.contains("EL ACCESO: el POST de las credenciales"),
+            "{dicho}"
+        );
+        assert!(
+            dicho.contains("POST https://sso.garmin.com/sso/signin"),
+            "{dicho}"
+        );
+        // 2) Los NOMBRES de lo que envía, y ni uno de sus valores.
+        assert!(
+            dicho.contains("username, password, embed, _csrf"),
+            "los nombres de los campos: {dicho}"
+        );
+        assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
+        assert!(!dicho.contains("CSRF-DE-PRUEBA"), "salió el _csrf: {dicho}");
+        // 3) El content-type, el estado, los bytes y la presencia de set-cookie/location.
+        assert!(
+            dicho.contains("content-type    (NINGUNO"),
+            "el content-type que sale: {dicho}"
+        );
+        assert!(dicho.contains("respuesta       500"), "{dicho}");
+        assert!(dicho.contains("bytes"), "el tamaño del cuerpo: {dicho}");
+        assert!(dicho.contains("set-cookie: sí"), "{dicho}");
+        assert!(dicho.contains("location: no"), "{dicho}");
+        assert!(dicho.contains("cookies"), "las cookies de la jarra: {dicho}");
+        // 4) El cuerpo de la respuesta NO se vuelca, ni siquiera teniendo un marcador dentro.
+        assert!(!dicho.contains("MARCADOR-DEL-CUERPO"), "se volcó el cuerpo: {dicho}");
+        // 5) Y el diagnóstico, pegado al POST que falla, con el `content-type` señalado.
+        assert!(dicho.contains("DIAGNÓSTICO"), "{dicho}");
+        assert!(
+            dicho.contains(
+                "ella manda y NOSOTROS NO: accept-language, connection, content-type, sec-ch-ua,"
+            ),
+            "la comparación con la librería portada: {dicho}"
+        );
+        assert!(
+            dicho.contains("coincidimos en: accept, accept-encoding, content-length, referer, user-agent"),
+            "lo que SÍ coincide, para no exagerar la diferencia: {dicho}"
+        );
+        assert!(dicho.contains("nosotros mandamos y ELLA NO: nada"), "{dicho}");
+        assert!(dicho.contains("el que explica el 500 es `content-type`"), "{dicho}");
+        // El flujo paró donde tenía que parar, y con el mismo código que `--probar`.
+        assert_eq!(fallo.codigo(), CODIGO_SIN_RED, "{}", fallo.mensaje());
+    }
+
+    #[test]
+    fn el_rastreo_del_flujo_entero_no_suelta_ni_el_nombre_del_cliente_ni_un_dato_de_salud() {
+        // El flujo entero, con el camino del token DI. El `displayName` va DENTRO de la URL del sueño
+        // y del pulso: el rastro tiene que decir `{displayName}`, no el nombre del cliente.
+        let t = rutas_de_la_api(con_token_di());
+        let rastro = Rastro::recogiendo(&t);
+        let _ = medir(
+            &rastro,
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(FALSA.into()),
+        );
+        let dicho = rastro.texto();
+
+        assert!(dicho.contains("paso 28"), "el flujo entero: {dicho}");
+        assert!(dicho.contains("{displayName}"), "{dicho}");
+        assert!(
+            !dicho.contains("NombreFalsoDePrueba"),
+            "salió el nombre del cliente: {dicho}"
+        );
+        assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
+        assert!(!dicho.contains("TOKEN-DI-FALSO"), "salió el token: {dicho}");
+        assert!(!dicho.contains(SALUD_FALSA), "salió un dato de salud: {dicho}");
+        assert!(
+            !dicho.contains("ST-123456-FALSO"),
+            "salió el ticket de servicio: {dicho}"
+        );
+        // Y del camino bueno no hay diagnóstico: el acceso salió bien y no hay nada que comparar.
+        assert!(!dicho.contains("DIAGNÓSTICO"), "{dicho}");
+    }
+
+    #[test]
+    fn la_comparacion_de_cabeceras_dice_cual_falta_y_cual_coincide() {
+        let nuestras = vec!["Referer".to_string()];
+        let (solo_ella, solo_nosotras, coinciden) =
+            comparar_cabeceras(&nuestras, CABECERAS_DE_LA_LIBRERIA_EN_EL_ACCESO);
+        assert!(solo_ella.contains(&"content-type".to_string()), "{solo_ella:?}");
+        assert!(solo_ella.contains(&"user-agent".to_string()), "{solo_ella:?}");
+        assert!(solo_nosotras.is_empty(), "{solo_nosotras:?}");
+        // La comparación no distingue mayúsculas: `Referer` de aquí es `referer` de allí.
+        assert_eq!(coinciden, vec!["referer".to_string()]);
+    }
+
+    #[test]
+    fn el_diagnostico_solo_afirma_lo_que_sus_datos_dicen() {
+        // Con el `content-type` ausente: la hipótesis se afirma.
+        let texto = diagnostico_del_acceso(&lo_que_sale_en_el_acceso(), 5);
+        assert!(texto.contains("el que explica el 500 es `content-type`"), "{texto}");
+        assert!(texto.contains("NOSOTROS NO: accept-language, connection, content-type"), "{texto}");
+        // Y NO exagera la diferencia: lo que sí sale se dice que coincide. El `user-agent` y el
+        // `accept` los añade `ureq`, y la comparación tiene que contarlos.
+        assert!(
+            texto.contains("coincidimos en: accept, accept-encoding, content-length, referer, user-agent"),
+            "{texto}"
+        );
+        assert!(texto.contains("5 en memoria"), "las cookies, aparte: {texto}");
+        // Con el `content-type` presente: NO se afirma, y se dice por qué.
+        let con = sincronizacion::Salida {
+            medido: true,
+            nombres: vec!["referer".to_string(), "content-type".to_string()],
+            content_type: Some("application/x-www-form-urlencoded".to_string()),
+        };
+        let texto = diagnostico_del_acceso(&con, 0);
+        assert!(texto.contains("SÍ sale"), "{texto}");
+        assert!(!texto.contains("el que explica el 500"), "{texto}");
+        // Medido y VACÍO no es lo mismo que sin medir: si la petición no lleva ninguna cabecera, la
+        // comparación se hace igual y sale que falta lo que no añade el cliente.
+        let vacio = sincronizacion::Salida {
+            medido: true,
+            nombres: Vec::new(),
+            content_type: None,
+        };
+        let texto = diagnostico_del_acceso(&vacio, 0);
+        assert!(!texto.contains("sin dato"), "{texto}");
+        assert!(texto.contains("NOSOTROS NO: accept-language"), "{texto}");
+        // Y con un transporte que no mide (el falso sin `salida`): se dice «sin dato», no se inventa.
+        let texto = diagnostico_del_acceso(&sincronizacion::Salida::default(), 0);
+        assert!(texto.contains("sin dato"), "{texto}");
+        assert!(!texto.contains("el que explica el 500"), "{texto}");
     }
 
     #[test]

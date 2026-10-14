@@ -367,6 +367,13 @@ Contrato ANTES del código: `docs/CONTRATO-agua-en-el-recorrido.md`. Lo que camb
 
   Y sin ZIP: `agua ...... sin dato (se lee de la exportacion de Huawei)`.
 
+  **Y la segunda vía, medida también** (`cargo run -q --bin avisos -- <carpeta> --huawei /tmp/salud-baja.zip`,
+  agua 50,0 % con fecha): el aviso sale con la fecha dentro del texto —
+  `su báscula de Huawei marca 50,0 % de agua corporal (medida el 2026-10-10)`.
+
+**Y LO QUE FALTA DEL PUNTO 3, dicho como tarea**: es la `P6.6` de `TASKS.json`, **pendiente y bloqueada
+por el cliente**. La vía está lista; solo falta su ZIP real.
+
 **2 · El PERIODO en la pantalla.** Antes `Real.desde`/`hasta` **solo** se veían en `--texto`. Ahora
 `cara::lo_que_ensena` calcula **`periodo`** (una línea, con `avisos::fecha_de_epoch`) y **la ventana lo
 recibe ya escrito**: la interfaz no calcula. `--texto` imprime **la misma cadena** (una sola fuente: si

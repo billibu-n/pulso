@@ -113,7 +113,7 @@ fn uso() -> String {
          \x20                       el estado HTTP, el tamaño del cuerpo en bytes, cuántas cookies lleva\n\
          \x20                       la jarra de sesión y sus NOMBRES (nunca sus valores), y si la\n\
          \x20                       respuesta trae `set-cookie` o `location`\n\
-         \x20                       (sí/no, nunca su valor).\n\
+         \x20                       (sí/no y, en el `set-cookie`, sus NOMBRES: nunca sus valores).\n\
          \x20                       NUNCA imprime usuario, clave, `_csrf`, ticket, token ni valores de\n\
          \x20                       cookies. El POST del acceso lleva la consulta del `signin` y el\n\
          \x20                       `Referer` de la PÁGINA DE ACCESO (`client.py:795-807`): con\n\
@@ -2283,13 +2283,30 @@ impl<'a> Rastro<'a> {
             }
         ));
         match respuesta {
-            Some(r) => s.push_str(&format!(
-                "   respuesta       {} · {} bytes (ya descomprimido) · set-cookie: {} · location: {}\n",
-                r.estado,
-                r.cuerpo.len(),
-                si_no(tiene_cabecera(&r.cabeceras, "set-cookie")),
-                si_no(tiene_cabecera(&r.cabeceras, "location")),
-            )),
+            Some(r) => {
+                // **Qué cookie deja ESTE paso, por su NOMBRE.** El recuento de la jarra dice que la
+                // sesión se sostiene, pero no EN QUÉ PASO entró cada cookie; con esta lista el rastro
+                // se compara paso a paso con la jarra de la biblioteca portada, que es como se
+                // diagnosticó el 401 (una cookie de más: `_cfuvid`, de Cloudflare). Los valores NO
+                // salen: la función del módulo devuelve nombres y nada más.
+                let nombres = sincronizacion::nombres_del_set_cookie(&r.cabeceras);
+                let set_cookie = match (tiene_cabecera(&r.cabeceras, "set-cookie"), nombres.is_empty())
+                {
+                    // Sin la cabecera, «no». Con ella y sin nombres que dar (no debería pasar: una
+                    // cabecera ilegible), se queda en «sí»: no se dice una lista vacía que parezca
+                    // «no trae ninguna».
+                    (false, _) => "no".to_string(),
+                    (true, true) => "sí".to_string(),
+                    (true, false) => format!("sí ({})", nombres.join(", ")),
+                };
+                s.push_str(&format!(
+                    "   respuesta       {} · {} bytes (ya descomprimido) · set-cookie: {} · location: {}\n",
+                    r.estado,
+                    r.cuerpo.len(),
+                    set_cookie,
+                    si_no(tiene_cabecera(&r.cabeceras, "location")),
+                ));
+            }
             None => s.push_str("   respuesta       sin respuesta: no llegó a haberla\n"),
         }
         s
@@ -2400,6 +2417,10 @@ fn si_no(hay: bool) -> &'static str {
 
 /// ¿La respuesta trae esa cabecera? Se dice la PRESENCIA, jamás el valor: un `set-cookie` es una
 /// credencial de sesión y un `location` puede llevar parámetros.
+///
+/// Para el `set-cookie` la presencia se queda corta —«sí» no dice CUÁL—, así que la línea de la
+/// respuesta añade los NOMBRES de sus cookies con [`sincronizacion::nombres_del_set_cookie`], que
+/// devuelve nombres y no parejas justo para que el valor no se pueda imprimir.
 fn tiene_cabecera(cabeceras: &[(String, String)], nombre: &str) -> bool {
     cabeceras.iter().any(|(n, _)| n.eq_ignore_ascii_case(nombre))
 }
@@ -3629,16 +3650,19 @@ mod pruebas {
         );
         assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
         assert!(!dicho.contains("CSRF-DE-PRUEBA"), "salió el _csrf: {dicho}");
-        // 3) El content-type, el estado, los bytes y la presencia de set-cookie/location. El
-        // `content-type` SÍ sale: lo pone `post_form` y el `Referer`/el disfraz se AÑADEN con
-        // `mas_cabeceras`, no reemplazan la lista (la lección del 500).
+        // 3) El content-type, el estado, los bytes y la presencia de set-cookie/location, con los
+        // NOMBRES de las cookies que deja la respuesta (el valor no). El `content-type` SÍ sale: lo
+        // pone `post_form` y el `Referer`/el disfraz se AÑADEN con `mas_cabeceras`, no reemplazan la
+        // lista (la lección del 500).
         assert!(
             dicho.contains("content-type    application/x-www-form-urlencoded"),
             "el content-type que sale: {dicho}"
         );
         assert!(dicho.contains("respuesta       500"), "{dicho}");
         assert!(dicho.contains("bytes"), "el tamaño del cuerpo: {dicho}");
-        assert!(dicho.contains("set-cookie: sí"), "{dicho}");
+        // El 500 de esta prueba deja UNA cookie (`LOCALE`): la línea la dice por su nombre, así que
+        // se ve en qué paso la dejó —que es justo lo que el recuento de la jarra no dice—.
+        assert!(dicho.contains("set-cookie: sí (LOCALE)"), "{dicho}");
         assert!(dicho.contains("location: no"), "{dicho}");
         // La jarra: el recuento Y los nombres, en la misma línea. El nombre va TAL CUAL (no es un
         // secreto); el valor de esa cookie no sale por ningún lado.
@@ -3731,6 +3755,125 @@ mod pruebas {
         assert!(
             !dicho.contains(VALOR_DE_LA_SESION),
             "salió el VALOR de una cookie: {dicho}"
+        );
+    }
+
+    /// **El NOMBRE de la cookie que deja cada `set-cookie`, en la línea de su paso, y NUNCA su valor.**
+    ///
+    /// Es el dato que faltaba para el 401 de Garmin: el recuento de la jarra dice que la sesión se
+    /// sostiene, pero **no en qué paso** entró cada cookie; con los nombres se compara el rastro con
+    /// la jarra de la biblioteca portada paso a paso, que es como se vio la cookie de más (`_cfuvid`,
+    /// de Cloudflare). Los dos nombres van como los manda un servidor de verdad —uno de ellos en
+    /// MINÚSCULA, que HTTP no distingue— y con un valor reconocible dentro: si el valor aparece en el
+    /// rastro, la prueba se pone roja.
+    #[test]
+    fn la_linea_de_la_respuesta_dice_el_nombre_del_set_cookie_y_nunca_su_valor() {
+        const VALOR_DE_SET_COOKIE_FALSO: &str = "VALOR-DE-SET-COOKIE-FALSO";
+        let t = TransporteFalso::new()
+            // El primer paso deja su cookie (`CASTGC`, la del widget del SSO): es lo que permite
+            // afirmar que el rastro la atribuye a ESE paso y no a otro.
+            .get_con_cookie(
+                flujo::URL_EMBED,
+                200,
+                "<html><title>widget</title></html>",
+                "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+            )
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            // Y el acceso —que aquí falla con 500, como el medido— deja DOS, una de ellas en
+            // minúscula en el nombre de la cabecera.
+            .post(
+                flujo::URL_SIGNIN,
+                500,
+                JSON_DEL_500,
+                vec![
+                    (
+                        "Set-Cookie".to_string(),
+                        format!("SESSION_GARMIN={VALOR_DE_SET_COOKIE_FALSO}; Path=/; Secure"),
+                    ),
+                    (
+                        "set-cookie".to_string(),
+                        format!("_cfuvid={VALOR_DE_SET_COOKIE_FALSO}; Path=/"),
+                    ),
+                ],
+            )
+            .salida(lo_que_sale_en_el_acceso());
+        let rastro = Rastro::recogiendo(&t);
+        let _ = medir_sin_mfa(
+            &rastro,
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        let dicho = rastro.texto();
+
+        // 1) El paso 1 (el widget) deja `CASTGC`, y lo dice en SU línea.
+        assert!(
+            dicho.contains("set-cookie: sí (CASTGC)"),
+            "la cookie del paso del widget, por su nombre: {dicho}"
+        );
+        // 2) El paso del acceso deja DOS, con el nombre tal cual y en orden alfabético (`SESSION_GARMIN`
+        // va antes que `_cfuvid`: las mayúsculas son bytes menores que el guion bajo).
+        assert!(
+            dicho.contains("set-cookie: sí (SESSION_GARMIN, _cfuvid)"),
+            "los DOS nombres de las cookies del acceso: {dicho}"
+        );
+        // 3) El estado y los bytes siguen al lado, en la misma línea: la frase no se ha llevado nada.
+        assert!(dicho.contains("respuesta       500"), "{dicho}");
+        assert!(dicho.contains("bytes (ya descomprimido)"), "{dicho}");
+        // 4) Y el VALOR no sale, ni el de las cabeceras ni el de la cookie del widget.
+        assert!(
+            !dicho.contains(VALOR_DE_SET_COOKIE_FALSO),
+            "salió el VALOR de un `set-cookie`: {dicho}"
+        );
+        assert!(
+            !dicho.contains("TGT-FALSO-DE-PRUEBA"),
+            "salió el VALOR de la cookie del widget: {dicho}"
+        );
+    }
+
+    /// **El caso raro del `set-cookie`, anotado**: la cabecera está, pero no se le puede sacar ningún
+    /// nombre (una cabecera sin `=` no es una cookie). El rastro se queda en «sí» **sin paréntesis**:
+    /// «no trae ninguna» y «trae una que no sé nombrar» no se dicen igual, y una lista vacía
+    /// —`sí ()`— parecería lo primero.
+    #[test]
+    fn un_set_cookie_del_que_no_se_puede_sacar_el_nombre_se_queda_en_si() {
+        let t = TransporteFalso::new()
+            // El flujo pasa por el widget antes del acceso (y ese paso NO lleva `set-cookie` aquí: la
+            // línea tiene que decir «no» sin paréntesis, para que se vea la diferencia con el otro).
+            .get(flujo::URL_EMBED, 200, "<html><title>widget</title></html>")
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            .post(
+                flujo::URL_SIGNIN,
+                500,
+                JSON_DEL_500,
+                vec![("Set-Cookie".to_string(), "sin-igual".to_string())],
+            );
+        let rastro = Rastro::recogiendo(&t);
+        let _ = medir_sin_mfa(
+            &rastro,
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        let dicho = rastro.texto();
+
+        assert!(
+            dicho.contains("set-cookie: sí · location: no"),
+            "el «sí» sin paréntesis, pegado al «location»: {dicho}"
+        );
+        // Y el paso que NO deja ninguna dice «no», que es lo que no se puede confundir con el de
+        // arriba: las dos ramas se distinguen leyendo el rastro.
+        assert!(
+            dicho.contains("set-cookie: no · location: no"),
+            "el paso sin `set-cookie`: {dicho}"
+        );
+        assert!(
+            !dicho.contains("sí ()"),
+            "una lista vacía parecería «no trae ninguna»: {dicho}"
+        );
+        assert!(
+            !dicho.contains("sin-igual"),
+            "salió el texto de la cabecera: {dicho}"
         );
     }
 

@@ -350,6 +350,40 @@ pub fn cookie_jwt_web(cabeceras: &[(String, String)]) -> Option<String> {
     None
 }
 
+/// **Los NOMBRES de las cookies que deja una respuesta, y jamás sus valores.** Es la pregunta que un
+/// 401 de Garmin deja abierta: la jarra de `ureq` lleva una cookie que la biblioteca portada NO tiene
+/// (`_cfuvid`, la pone Cloudflare, medido el 2026-10-14), y el **recuento** de la jarra no dice **en
+/// qué paso** entró cada una. Con los nombres puestos junto a cada respuesta, el rastro del
+/// instrumento se compara paso a paso con la jarra de la librería portada y se ve dónde se separan
+/// los dos caminos.
+///
+/// Entrada: las cabeceras de una respuesta, tal cual vienen ([`Respuesta::cabeceras`]). Salida: los
+/// nombres de **todas** las cabeceras `set-cookie` —el nombre de la cabecera se busca **sin
+/// distinguir mayúsculas**, porque HTTP no las distingue—, **en orden alfabético y sin repetidos**,
+/// que es el único orden estable para poder comparar dos listas.
+///
+/// **Regla de extracción, conservadora a propósito**: una cabecera `set-cookie` trae UNA cookie (la
+/// forma habitual), así que el nombre es **la parte antes del primer `=`**, sin los espacios de los
+/// lados. NO se parte una cabecera que traiga varias cookies separadas por `, `: partir por comas
+/// rompería cualquier `Expires=Wed, 21 Oct 2015 …`, y un nombre mal partido es peor que un nombre de
+/// menos. Una cabecera **sin `=`** no es una cookie y no aporta ningún nombre.
+///
+/// **La regla de secretos, escrita aquí**: de un `set-cookie` se dice el NOMBRE y **nunca el VALOR**
+/// —el valor de una cookie de sesión es una credencial; el nombre no lo es—. Por eso se devuelven
+/// nombres y no las parejas: **lo que no se puede pedir, no se puede imprimir**.
+pub fn nombres_del_set_cookie(cabeceras: &[(String, String)]) -> Vec<String> {
+    let mut nombres: Vec<String> = cabeceras
+        .iter()
+        .filter(|(nombre, _)| nombre.eq_ignore_ascii_case("set-cookie"))
+        // La parte antes del primer `=`: el nombre. El resto (el valor y los atributos) NO se toca.
+        .filter_map(|(_, valor)| valor.split_once('=').map(|(nombre, _)| nombre.trim().to_string()))
+        .filter(|nombre| !nombre.is_empty())
+        .collect();
+    nombres.sort();
+    nombres.dedup();
+    nombres
+}
+
 // =============================================================================================
 // LAS CABECERAS DEL FLUJO, COMO FUNCIONES PURAS
 // =============================================================================================
@@ -963,5 +997,57 @@ mod pruebas {
                 "«{prohibido}» NO es parte de la huella: {nombres:?}"
             );
         }
+    }
+
+    /// **Los nombres de las cookies de un `set-cookie`, sin un solo valor.** Es lo que el rastro del
+    /// instrumento pone junto a cada respuesta para poder comparar, paso a paso, con la jarra de la
+    /// biblioteca portada: el 401 de Garmin se diagnosticó al ver que la jarra de `ureq` lleva una
+    /// cookie de más (`_cfuvid`, de Cloudflare), y el recuento no dice en qué paso entró.
+    #[test]
+    fn los_nombres_del_set_cookie_salen_sin_valores() {
+        let cabeceras = vec![
+            (
+                "Set-Cookie".to_string(),
+                "SESSION=VALOR-SECRETO; Path=/; Secure".to_string(),
+            ),
+            ("Set-Cookie".to_string(), "LOCALE=en; Path=/".to_string()),
+            // En MINÚSCULA a propósito: HTTP no distingue mayúsculas en el nombre de la cabecera.
+            ("set-cookie".to_string(), "__cf_bm=OTRO-VALOR".to_string()),
+        ];
+        let nombres = nombres_del_set_cookie(&cabeceras);
+        assert_eq!(
+            nombres,
+            vec![
+                "LOCALE".to_string(),
+                "SESSION".to_string(),
+                "__cf_bm".to_string()
+            ],
+            "los nombres, en orden alfabético y sin repetidos: {nombres:?}"
+        );
+        // Y NINGÚN valor: ni el de la sesión ni el de la cookie de Cloudflare. La lista se dice
+        // entera para que la prueba falle por el valor, no por un nombre de casualidad.
+        let dicho = format!("{nombres:?}");
+        for valor in ["VALOR-SECRETO", "OTRO-VALOR"] {
+            assert!(!dicho.contains(valor), "salió un VALOR de cookie: {dicho}");
+        }
+        // El caso vacío: sin cabeceras, ninguna cookie. Importa porque el rastro tiene que poder
+        // decir «no» sin inventarse una lista.
+        assert!(nombres_del_set_cookie(&[]).is_empty());
+        // Una cabecera que NO es `set-cookie` no aporta nada, y una sin `=` tampoco (no es una
+        // cookie): la regla conservadora, probada.
+        assert!(nombres_del_set_cookie(&[
+            ("Content-Type".to_string(), "text/html; charset=utf-8".to_string()),
+            ("Set-Cookie".to_string(), "solo-atributos-sin-igual".to_string()),
+        ])
+        .is_empty());
+        // El mismo nombre en dos cabeceras es UNA entrada de la lista (sin repetidos).
+        assert_eq!(
+            nombres_del_set_cookie(&[
+                ("Set-Cookie".to_string(), "CASTGC=A; Path=/".to_string()),
+                ("Set-Cookie".to_string(), "CASTGC=B; Path=/".to_string()),
+            ]),
+            vec!["CASTGC".to_string()],
+            "un nombre repetido se dice una vez"
+        );
     }
 }

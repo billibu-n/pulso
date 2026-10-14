@@ -114,10 +114,9 @@ fn uso() -> String {
          \x20                       la jarra de sesión y si la respuesta trae `set-cookie` o `location`\n\
          \x20                       (sí/no, nunca su valor).\n\
          \x20                       NUNCA imprime usuario, clave, `_csrf`, ticket, token ni valores de\n\
-         \x20                       cookies. Con credenciales falsas llega al MISMO paso y muestra el\n\
-         \x20                       mismo estado que con las buenas: el 500 del backend (medido el\n\
-         \x20                       2026-10-14) no depende de las credenciales, sino de la forma de la\n\
-         \x20                       petición — un POST de formulario sin `content-type` no da 401.\n\
+         \x20                       cookies. El POST del acceso lleva la consulta del `signin` y el\n\
+         \x20                       `Referer` de la PÁGINA DE ACCESO (`client.py:795-807`): con\n\
+         \x20                       credenciales falsas hay que ver 401, y con las buenas el paso 4.\n\
          \x20                       Faltar las variables da el mismo código 3 que `--probar`.\n"
     ));
     s.push_str("\nCREDENCIALES: se leen de las variables de entorno GARMIN_USUARIO y GARMIN_CLAVE, que\n");
@@ -190,7 +189,7 @@ fn uso() -> String {
 /// URL **borran los valores de la consulta** antes de registrarlos (`client.py:196-210`,
 /// `_sanitize_exception_text`). Es exactamente la regla de este hito.
 mod flujo {
-    use super::{Fallo, Secreto, forma_del_cuerpo};
+    use super::{codificar_consulta, Fallo, Secreto, forma_del_cuerpo};
     use serde_json::{Map, Value};
 
     /// `client.py:311` — `self._sso = f"https://sso.{domain}"`.
@@ -316,6 +315,18 @@ mod flujo {
         ]
     }
 
+    /// **`client.py:797` — la URL de la página de acceso, que es el `Referer` del POST.**
+    ///
+    /// La librería escribe `headers={"Referer": r.url}`, y `r.url` es la URL de la respuesta del GET
+    /// del paso 2: **la página de acceso CON SU CONSULTA** (`{sso_base}/signin?id=…&embedWidget=true&…`),
+    /// no el widget. Es la diferencia que estaba anotada como pendiente (`rastreo-informe.md`,
+    /// `flujo-nuevo-informe.md`): el instrumento mandaba `URL_EMBED`, y Garmin respondía 200 volviendo
+    /// a servir la página de acceso. Se construye con los MISMOS `signin_params` que se piden en el
+    /// GET, así que el `Referer` dice exactamente de qué página se viene.
+    pub fn url_de_la_pagina_de_acceso() -> String {
+        format!("{}?{}", URL_SIGNIN, codificar_consulta(&parametros_signin()))
+    }
+
     /// `client.py:800-805` — el cuerpo del POST de credenciales. **Aquí va la contraseña del dueño**:
     /// este texto no se imprime nunca, y por eso el campo `cuerpo` de una `Peticion` es un `Secreto`.
     pub fn campos_del_login(
@@ -352,12 +363,13 @@ mod flujo {
     /// codifica desde aquí: así no puede imprimirlo ni el rastreo ni un mensaje de error, y no se
     /// guarda en ningún sitio. El `_csrf` también, que es credencial de un solo uso.
     ///
-    /// Lo que **no** se porta, y se dice para que no se dé por hecho: la librería manda además los
-    /// parámetros de consulta del acceso (`params=signin_params`, `client.py:896`) y
-    /// `Referer: <la url de la respuesta>` (`client.py:897`). Este transporte no sabe poner consulta
-    /// en un POST (`src/sincronizacion.rs`, `post_form`), y el POST del acceso —que sí funciona
-    /// medido— tampoco los manda. Queda como cola: si Garmin rechaza el código, eso es lo primero que
-    /// se añade.
+    /// Lo que **no** se porta todavía, y se dice para que no se dé por hecho: la librería manda
+    /// también los parámetros de consulta del acceso (`params=signin_params`, `client.py:896`) y
+    /// `Referer: <la url de la respuesta>` (`client.py:897`) en **este** POST del código. La capacidad
+    /// ya existe —[`Peticion::con_consulta`] y la consulta en la URL del POST, que es lo que el acceso
+    /// estrenó (`paso_credenciales`)—, pero el POST del código no la usa: se cambia una cosa a la vez,
+    /// y el acceso es el que está medido en rojo. Queda como cola declarada: si Garmin rechaza el
+    /// código, eso es lo primero que se añade.
     pub fn campos_del_mfa(csrf: &str, codigo: &Secreto) -> Vec<(String, Secreto)> {
         vec![
             ("mfa-code".into(), codigo.clone()),
@@ -1686,6 +1698,19 @@ impl Peticion {
         self
     }
 
+    /// **Pone CONSULTA a una petición, también a un POST.** Nació del acceso: la librería manda el
+    /// POST de las credenciales a la MISMA URL del GET con los MISMOS parámetros de consulta
+    /// (`params=signin_params`, `client.py:795-796`), y ese era el segundo pendiente anotado
+    /// (`rastreo-informe.md`, `flujo-nuevo-informe.md`).
+    ///
+    /// No abre ninguna fuga: de la consulta **solo se dicen los nombres** —el `Display` de `Destino`
+    /// no tiene los valores—, y el usuario, la clave y el `_csrf` siguen en el cuerpo, que es un
+    /// `Secreto`. La consulta de este POST son URLs del widget, no credenciales.
+    fn con_consulta(mut self, consulta: Vec<(String, String)>) -> Self {
+        self.consulta = consulta;
+        self
+    }
+
     /// **AÑADE cabeceras a las que ya hay**, sin tocar las que la petición puso (p. ej. el
     /// `Content-Type` que `post_form` dejó). Es la forma correcta de sumar el `Referer` del acceso:
     /// reemplazar la lista se llevó el `Content-Type` y Garmin respondió 500 (medido 2026-10-14,
@@ -1695,13 +1720,16 @@ impl Peticion {
         self
     }
 
-    /// Los nombres de lo que se envia: los de la consulta (GET) o los del formulario (POST).
+    /// Los nombres de lo que se envia: **los de la consulta y los del formulario**, en ese orden.
+    ///
+    /// Un POST puede llevar las dos cosas —el del acceso lleva los `signin_params` en la URL y
+    /// usuario/clave/`embed`/`_csrf` en el cuerpo (`client.py:795-807`)—, y el rastreo tiene que poder
+    /// decir las dos sin decir ningún valor. Cuando solo hay una de las dos listas, esto devuelve
+    /// exactamente lo mismo que devolvía antes.
     fn nombres_de_lo_que_envia(&self) -> Vec<String> {
-        if self.campos.is_empty() {
-            self.consulta.iter().map(|(k, _)| k.clone()).collect()
-        } else {
-            self.campos.clone()
-        }
+        let mut nombres: Vec<String> = self.consulta.iter().map(|(k, _)| k.clone()).collect();
+        nombres.extend(self.campos.iter().cloned());
+        nombres
     }
 
     /// La petición dicha **para un mensaje**: la URL y los NOMBRES de los parámetros, sin sus valores.
@@ -1846,7 +1874,13 @@ impl Transporte for Cliente {
                     .cuerpo
                     .clone()
                     .unwrap_or_else(|| Secreto::nueva(String::new()));
-                cliente.post_form(&peticion.url, &cuerpo, &peticion.cabeceras)?
+                // **La consulta de un POST va en la URL**, que es lo que hace `requests` con
+                // `params=signin_params` (`client.py:795-796`). Se arma aquí —y no en la petición—
+                // porque `Peticion.url` es la IDENTIDAD de la petición (la miran `es_el_acceso`, el
+                // `Destino` del rastreo y el transporte falso) y porque `post_form` de la librería
+                // portada no acepta consulta: así no hay que tocar `src/sincronizacion.rs`.
+                let url = url_con_consulta(&peticion.url, &peticion.consulta);
+                cliente.post_form(&url, &cuerpo, &peticion.cabeceras)?
             }
         };
         Ok(Respuesta::del_transporte(r))
@@ -1919,6 +1953,35 @@ fn codificar_formulario(campos: &[(String, Secreto)]) -> String {
         .map(|(k, v)| format!("{}={}", codificar(k), codificar(v.expuesto())))
         .collect::<Vec<_>>()
         .join("&")
+}
+
+/// **La consulta de una petición, codificada igual que un formulario.**
+///
+/// Nació del POST del acceso: la librería lo manda con `params=signin_params` (`client.py:795-796`),
+/// y esos valores son URLs (`https://sso.garmin.com/sso/embed`), así que `:` y `/` tienen que salir
+/// percent-encoded (`%3A`, `%2F`) para que la consulta no se parta en dos parámetros. Se reutiliza
+/// `codificar` —**una sola manera de codificar en este fichero**— en vez de escribir una segunda.
+fn codificar_consulta(consulta: &[(String, String)]) -> String {
+    consulta
+        .iter()
+        .map(|(k, v)| format!("{}={}", codificar(k), codificar(v)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// **La URL con la que sale de verdad una petición que lleva consulta.**
+///
+/// Un GET lleva la consulta aparte y la arma el cliente (`Cliente::pedir` la pasa a la librería, que
+/// usa `.query_pairs`). Un POST **no**: `post_form` de la librería portada solo acepta la URL, así que
+/// la consulta se pega aquí (`?k=v&…`), codificada con `codificar_consulta` —lo mismo que hace
+/// `requests` con `params=…`—. Sin consulta devuelve la URL **intacta**: así los demás POST (el del
+/// código, el del ticket) salen exactamente como salían.
+fn url_con_consulta(url: &str, consulta: &[(String, String)]) -> String {
+    if consulta.is_empty() {
+        url.to_string()
+    } else {
+        format!("{}?{}", url, codificar_consulta(consulta))
+    }
 }
 
 /// Percent-encoding de formulario, como lo hacen `urlencode` y `requests`.
@@ -2349,6 +2412,34 @@ fn paso_csrf(t: &dyn Transporte) -> Result<String, Fallo> {
     flujo::extraer_csrf(&r.cuerpo)
 }
 
+/// **El POST del acceso, montado en un solo sitio** (`client.py:795-807`).
+///
+/// Es exactamente lo que hace la librería, y las dos piezas que faltaban son las que estaban anotadas
+/// como pendientes (`rastreo-informe.md`, `flujo-nuevo-informe.md`):
+/// - **La consulta**: `session.post(f"{sso_base}/signin", params=signin_params, …)` — el POST va a la
+///   MISMA URL del GET del paso 2 y **con los mismos parámetros de consulta** (`client.py:795-796`).
+/// - **El `Referer`**: `headers={"Referer": r.url}` (`client.py:797`), y `r.url` es la URL de la
+///   página de acceso que se acaba de pedir, **no el widget**.
+///
+/// El cuerpo no cambia: `username`, `password`, `embed="true"`, `_csrf` (`client.py:800-805`). Las
+/// credenciales van ahí —y en un `Secreto`—, nunca en la URL: esto no las mueve de sitio.
+///
+/// Se monta en su propia función, y no dentro del paso, para que la prueba pueda afirmar sobre **la
+/// petición de verdad** y no sobre una copia que se parece.
+fn peticion_del_acceso(csrf: &str, usuario: &Secreto, clave: &Secreto) -> Peticion {
+    Peticion::post_form(
+        flujo::URL_SIGNIN,
+        &flujo::campos_del_login(csrf, usuario, clave),
+    )
+    .con_consulta(flujo::parametros_signin())
+    // `mas_cabeceras` (AÑADE), no `con_cabeceras` (REEMPLAZA): reemplazar se llevó por delante el
+    // `Content-Type` del formulario y Garmin respondió 500 (medido 2026-10-14).
+    .mas_cabeceras(vec![(
+        "Referer".to_string(),
+        flujo::url_de_la_pagina_de_acceso(),
+    )])
+}
+
 /// `client.py:790-881` — la espera contra el WAF, el POST de las credenciales y la clasificación de
 /// lo que conteste: **y, si Garmin pide un segundo factor y el dueño dejó el código, se entrega aquí
 /// mismo**.
@@ -2368,14 +2459,12 @@ fn paso_credenciales(
     clave: &Secreto,
     codigo_mfa: Option<&Secreto>,
 ) -> Result<String, Fallo> {
-    t.nombra("EL ACCESO: el POST de las credenciales, el paso que responde 500 (client.py:790-881)");
+    // El nombre del paso dice lo que se está mirando: el 500 fue el síntoma del `Content-Type` perdido
+    // (2026-10-14) y el 200 con la página de acceso otra vez es el síntoma de la consulta y el
+    // `Referer` que faltaban. Los dos se arreglaron aquí.
+    t.nombra("EL ACCESO: el POST de las credenciales (client.py:790-881)");
     espera_anti_waf();
-    let peticion =
-        Peticion::post_form(flujo::URL_SIGNIN, &flujo::campos_del_login(csrf, usuario, clave))
-            .mas_cabeceras(vec![(
-                "Referer".to_string(),
-                flujo::URL_EMBED.to_string(),
-            )]);
+    let peticion = peticion_del_acceso(csrf, usuario, clave);
     let r = pedir(t, &peticion)?;
     exigir_estado(&r, "el acceso (client.py:795-810)")?;
     // Se clasifica CON lo que el rastreo sabe de la respuesta y el cuerpo no dice: si traía
@@ -3308,13 +3397,12 @@ mod pruebas {
     const FALSA: &str = "CLAVE-FALSA-XYZ-1234";
 
     fn peticion_de_login() -> Peticion {
-        Peticion::post_form(
-            flujo::URL_SIGNIN,
-            &flujo::campos_del_login(
-                "csrf-de-prueba",
-                &Secreto::nueva("ana@ejemplo.cl".into()),
-                &Secreto::nueva(FALSA.into()),
-            ),
+        // **La petición de verdad**, la misma que monta el paso: si aquí se copiara a mano, la prueba
+        // podría pasar mientras el flujo manda otra cosa.
+        peticion_del_acceso(
+            "csrf-de-prueba",
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(FALSA.into()),
         )
     }
 
@@ -3396,10 +3484,14 @@ mod pruebas {
             dicho.contains("POST https://sso.garmin.com/sso/signin"),
             "{dicho}"
         );
-        // 2) Los NOMBRES de lo que envía, y ni uno de sus valores.
+        // 2) Los NOMBRES de lo que envía —los de la CONSULTA de `signin_params` primero, y después los
+        // del cuerpo—, y ni uno de sus valores. El acceso manda las dos cosas (`client.py:795-807`).
         assert!(
-            dicho.contains("username, password, embed, _csrf"),
-            "los nombres de los campos: {dicho}"
+            dicho.contains(
+                "id, embedWidget, gauthHost, service, source, redirectAfterAccountLoginUrl, \
+                 redirectAfterAccountCreationUrl, username, password, embed, _csrf"
+            ),
+            "los nombres de la consulta y del cuerpo: {dicho}"
         );
         assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
         assert!(!dicho.contains("CSRF-DE-PRUEBA"), "salió el _csrf: {dicho}");
@@ -3620,11 +3712,230 @@ mod pruebas {
     #[test]
     fn las_credenciales_van_en_el_cuerpo_y_no_en_la_url() {
         // En este flujo el usuario y la clave van en el CUERPO del POST: eso es lo que evita que
-        // acaben en el registro de un servidor o en un mensaje de error.
+        // acaben en el registro de un servidor o en un mensaje de error. **La consulta del acceso NO
+        // son credenciales** —son los `signin_params`, que son URLs del widget (`client.py:795-796`)—,
+        // así que esto ya no exige una consulta vacía: exige que en la consulta no haya ni el usuario
+        // ni la clave, y que el `_csrf` siga en el cuerpo.
         let p = peticion_de_login();
-        assert_eq!(p.url, flujo::URL_SIGNIN, "el login no lleva nada en la URL");
-        assert!(p.consulta.is_empty(), "{:?}", p.descripcion_publica());
+        assert_eq!(p.url, flujo::URL_SIGNIN, "el login va a la URL del acceso");
+        assert_eq!(
+            p.consulta,
+            flujo::parametros_signin(),
+            "la consulta son los `signin_params`, ni uno más"
+        );
+        let nombres: Vec<&str> = p.consulta.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(
+            !nombres.contains(&"username") && !nombres.contains(&"password"),
+            "las credenciales no van en la URL: {nombres:?}"
+        );
+        assert!(
+            !p.consulta
+                .iter()
+                .any(|(_, v)| v.contains(FALSA) || v.contains("ana@ejemplo.cl")),
+            "un valor de la consulta llevaba una credencial"
+        );
+        assert_eq!(
+            p.campos,
+            vec!["username", "password", "embed", "_csrf"],
+            "el cuerpo sigue siendo el formulario de `client.py:800-805`"
+        );
         assert!(!p.descripcion_publica().contains(FALSA));
+    }
+
+    #[test]
+    fn el_post_del_acceso_lleva_la_consulta_del_signin() {
+        // `client.py:795-796`: el POST va a la MISMA URL del GET del paso 2 y con los MISMOS
+        // parámetros de consulta. Los nombres, en su orden, y los valores: los mismos que se pidieron
+        // en el GET (el `Referer` tiene que decir de qué página se viene).
+        let p = peticion_de_login();
+        let nombres: Vec<String> = p.consulta.iter().map(|(k, _)| k.clone()).collect();
+        assert_eq!(
+            nombres,
+            vec![
+                "id",
+                "embedWidget",
+                "gauthHost",
+                "service",
+                "source",
+                "redirectAfterAccountLoginUrl",
+                "redirectAfterAccountCreationUrl",
+            ],
+            "los nombres de `signin_params`, en su orden (`client.py:761-768`)"
+        );
+        assert_eq!(
+            p.consulta,
+            flujo::parametros_signin(),
+            "los valores son los mismos que los del GET del paso 2"
+        );
+        // Y el GET del paso 2 pide exactamente lo mismo: si uno cambia, la prueba lo dice.
+        assert_eq!(
+            p.consulta,
+            Peticion::get(flujo::URL_SIGNIN, flujo::parametros_signin()).consulta
+        );
+    }
+
+    #[test]
+    fn el_referer_del_acceso_es_la_pagina_de_acceso_y_no_el_widget() {
+        // `client.py:797` — `headers={"Referer": r.url}`, y `r.url` es la página de ACCESO.
+        let p = peticion_de_login();
+        let referer = p
+            .cabeceras
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("referer"))
+            .map(|(_, v)| v.clone())
+            .expect("el POST del acceso lleva `Referer`");
+        assert_eq!(referer, flujo::url_de_la_pagina_de_acceso());
+        assert!(
+            referer.starts_with(flujo::URL_SIGNIN),
+            "el `Referer` es la página de acceso: {referer}"
+        );
+        assert_ne!(referer, flujo::URL_EMBED, "el `Referer` NO es el widget");
+        assert!(
+            !referer.starts_with(flujo::URL_EMBED),
+            "el `Referer` NO es una URL del widget: {referer}"
+        );
+        // La consulta del `Referer` va codificada, como la de `requests`: `/` y `:` escapados.
+        assert!(
+            referer.contains("gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed"),
+            "{referer}"
+        );
+    }
+
+    #[test]
+    fn el_post_del_acceso_conserva_el_content_type() {
+        // LA LECCIÓN DEL 500 (medido 2026-10-14): añadir el `Referer` con `con_cabeceras` (que
+        // REEMPLAZA) se llevó por delante el `Content-Type` del formulario y Garmin contestó 500 en
+        // vez de 401. Con `mas_cabeceras` (que AÑADE) las dos cabeceras conviven.
+        let p = peticion_de_login();
+        assert!(
+            p.cabeceras.iter().any(|(n, v)| n == "Content-Type"
+                && v == "application/x-www-form-urlencoded"),
+            "el `Content-Type` del formulario tiene que seguir vivo: {:?}",
+            p.cabeceras
+        );
+        assert!(
+            p.cabeceras
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("referer")),
+            "y el `Referer` tiene que estar: {:?}",
+            p.cabeceras
+        );
+    }
+
+    #[test]
+    fn el_rastreo_del_acceso_dice_los_nombres_de_la_consulta_y_ningun_valor() {
+        // El rastreo tiene que poder decir **qué** se manda: los nombres de la consulta y los del
+        // cuerpo. Nunca los valores (uno de ellos es la contraseña).
+        let t = con_token_di();
+        let rastro = Rastro::recogiendo(&t);
+        medir_sin_mfa(
+            &rastro,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .expect("el flujo llega al final");
+        let dicho = rastro.texto();
+        for nombre in [
+            "id",
+            "embedWidget",
+            "gauthHost",
+            "service",
+            "source",
+            "redirectAfterAccountLoginUrl",
+            "redirectAfterAccountCreationUrl",
+            "username",
+            "password",
+            "embed",
+            "_csrf",
+        ] {
+            assert!(
+                dicho.contains(nombre),
+                "el rastreo no dice el nombre «{nombre}»: {dicho}"
+            );
+        }
+        assert!(!dicho.contains(FALSA), "salió la clave: {dicho}");
+        assert!(!dicho.contains("CSRF-DE-PRUEBA"), "salió el `_csrf`: {dicho}");
+        // Y ni un VALOR de la consulta: se dice el nombre, y `Destino` escribe `nombre=…`. Tampoco
+        // aparece ningún valor percent-encoded, que es como viajan esos valores en la URL.
+        assert!(
+            !dicho.contains("gauthHost=https") && !dicho.contains("%3A%2F%2F"),
+            "salió un valor de la consulta: {dicho}"
+        );
+    }
+
+    #[test]
+    fn la_url_con_consulta_es_la_que_sale_por_el_cable() {
+        // El camino de RED no lo toca ninguna prueba (necesitaría internet), así que lo que sí se
+        // prueba es la pieza que arma la URL: es la que decide si los `signin_params` llegan a Garmin.
+        let p = peticion_de_login();
+        let url = url_con_consulta(&p.url, &p.consulta);
+        assert!(
+            url.starts_with("https://sso.garmin.com/sso/signin?"),
+            "{url}"
+        );
+        for nombre in [
+            "id=gauth-widget",
+            "embedWidget=true",
+            "gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+            "service=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+            "source=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+            "redirectAfterAccountLoginUrl=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+            "redirectAfterAccountCreationUrl=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+        ] {
+            assert!(url.contains(nombre), "falta «{nombre}» en {url}");
+        }
+        assert_eq!(
+            url.split('&').count(),
+            7,
+            "siete parámetros, ni uno partido por un `:` o un `/` sin codificar: {url}"
+        );
+        // Y ninguna credencial en la URL.
+        assert!(!url.contains(FALSA) && !url.contains("ana@ejemplo.cl"), "{url}");
+        assert!(!url.contains("csrf-de-prueba"), "{url}");
+        // Sin consulta, la URL sale INTACTA: los demás POST no cambian de comportamiento.
+        assert_eq!(
+            url_con_consulta("https://sso.garmin.com/sso/verifyMFA/loginEnterMfaCode", &[]),
+            "https://sso.garmin.com/sso/verifyMFA/loginEnterMfaCode"
+        );
+    }
+
+    #[test]
+    fn el_paso_del_acceso_de_verdad_lleva_consulta_y_referer_de_la_pagina() {
+        // Sobre el TRANSPORTE FALSO (sin red): lo que salió de verdad en el paso 3 del flujo entero.
+        let t = con_token_di();
+        medir_sin_mfa(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .expect("el flujo llega al final");
+        let acceso = t
+            .pedidas()
+            .into_iter()
+            .find(|p| matches!(p.metodo, Metodo::Post) && p.url == flujo::URL_SIGNIN)
+            .expect("el flujo hizo el POST del acceso");
+        assert_eq!(
+            acceso.consulta,
+            flujo::parametros_signin(),
+            "el POST del acceso lleva la consulta del `signin`"
+        );
+        assert_eq!(
+            acceso
+                .cabeceras
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case("referer"))
+                .map(|(_, v)| v.clone()),
+            Some(flujo::url_de_la_pagina_de_acceso()),
+            "y el `Referer` de la página de acceso"
+        );
+        assert!(
+            acceso.cabeceras.iter().any(|(n, v)| n == "Content-Type"
+                && v == "application/x-www-form-urlencoded"),
+            "sin llevarse el `Content-Type`: {:?}",
+            acceso.cabeceras
+        );
+        // Y el rastreo lo sigue reconociendo como el acceso (por método y URL, no por el nombre).
+        assert!(Rastro::nuevo(&t).es_el_acceso(&acceso));
     }
 
     #[test]
@@ -4078,7 +4389,9 @@ mod pruebas {
                 assert!(p.cabeceras.iter().any(|(k, _)| k == "X-Garmin-User-Agent"));
             }
         }
-        // Y los pasos del SSO, en cambio, llevan el `Referer` del widget en el POST del login.
+        // Y el POST del login lleva el `Referer` de la PÁGINA DE ACCESO (`client.py:797`: `r.url`, la
+        // página que se pidió en el paso 2), **no el widget**: eso era el pendiente medido, y con el
+        // widget Garmin volvía a servir la página de acceso en vez del ticket.
         let del_login = t
             .pedidas()
             .into_iter()
@@ -4088,8 +4401,16 @@ mod pruebas {
             del_login
                 .cabeceras
                 .iter()
-                .any(|(k, v)| k == "Referer" && v == flujo::URL_EMBED),
+                .any(|(k, v)| k == "Referer" && v == &flujo::url_de_la_pagina_de_acceso()),
             "{:?}",
+            del_login.cabeceras
+        );
+        assert!(
+            !del_login
+                .cabeceras
+                .iter()
+                .any(|(_, v)| v == flujo::URL_EMBED),
+            "el `Referer` no puede ser el widget: {:?}",
             del_login.cabeceras
         );
 

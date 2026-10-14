@@ -1,6 +1,6 @@
 # ESTADO: dónde estamos y por dónde se sigue
 
-**Escrito el 2026-10-13**, porque el contexto se estaba llenando y **una compactación a mitad de tarea
+**Escrito el 2026-10-13**, y **actualizado el mismo día**, porque el contexto se estaba llenando y **una compactación a mitad de tarea
 es catastrófica**. Este fichero existe para que **quien retome no tenga que reconstruir nada**: dice qué
 está hecho, qué está medido, **qué falta**, y **dónde está cada cosa**.
 
@@ -19,7 +19,8 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **120 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **144 pruebas en verde**, cero avisos | `motor/src/` |
+| **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
 | **la interfaz** | existe y **se MIDE**: 411x880, cabecera 56, nav 64, huecos repartidos | `motor/ui/` |
@@ -132,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 120 pruebas (101 motor + 8 medicion + 11 recorrido)
+cargo test                              # 144 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -145,6 +146,31 @@ cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mi
 
 - **lo visual se MIDE, no se mira** — y si no se puede medir, **eso es la tarea**;
 - **nunca abrir la ventana en la pantalla del dueño** para comprobar algo. Se mide.
+
+## 6-ter. Lo que está EN VUELO ahora mismo (2026-10-13, noche)
+
+**Dos rondas trabajando, y su trabajo NO está respaldado todavía** — vive en el árbol de trabajo:
+
+| módulo | líneas | qué |
+|---|---|---|
+| `motor/src/potencia.rs` | **1.277** | zonas de POTENCIA desde su FTP de 213 W, TSS y carga semanal |
+| `motor/src/avisos.rs` | **1.461** | el motor de reglas: sus tres módulos, con lo que los datos sostienen |
+
+**Y hay TRES cosas construidas y verificadas que todavía NO están conectadas** — es lo primero que
+hay que hacer cuando las rondas cierren, y está aquí para que no se pierda:
+
+1. **`motor/src/profile.rs`** — leer y guardar el perfil, **junto al programa** (con reserva si la
+   carpeta es de solo lectura). **`ventana.rs` todavía tiene los datos escritos a mano.**
+2. **`motor/src/memoria.rs`** — la memoria entre arranques, **medida: 5,40 s -> 0,001 s**. Nadie la
+   llama: **la aplicación sigue tardando 5,4 s en abrir.**
+3. **`motor/src/cara.rs`** — `lo_que_ensena`, que saca lo que va a la pantalla **sin abrir ventana**.
+   **`ventana.rs` sigue calculando dentro de `main`.**
+
+**Y la EDAD sigue mal**: dice `60` y tiene **62**. No se arregla escribiendo 62 — eso **caduca el 25 de
+enero** — sino **guardando la fecha de nacimiento** y calculando la edad al usarla. Eso exige un campo
+nuevo en `Persona` (`datos.rs`), que es lo único que queda por añadir al modelo.
+
+---
 
 ## 6-bis. El encargo del cliente (Farellones, 29 de noviembre de 2026)
 

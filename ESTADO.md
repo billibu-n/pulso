@@ -489,3 +489,39 @@ y medidas: `docs/ESTUDIO-interfaz-android-2026-10-14.md`. Los fallos y su arregl
 
 **Medido**: **207 pruebas en verde, 0 avisos**. Normas nuevas en `norma-app`: **AU-89 a AU-93**. Capturas
 actualizadas en `datos/capturas/` (**no se suben**: llevan el recuento y el periodo de sus ficheros).
+
+---
+
+## 6-decies. La interfaz desde cero y el bloque Garmin (2026-10-14, chat ui-desde-cero)
+
+**El dueño encargó rehacer la capa de interfaz y, a mitad de camino, subir la prioridad de la
+sincronización con Garmin (el cliente no exporta a mano). Todo en la rama `main` (autorizado), un
+commit por hito. Estado al cerrar el chat (15:25):**
+
+| commit | qué |
+|---|---|
+| `04cc3ec` | especificación de interfaz CONGELADA (contrato de fases 1-3, `docs/ESPECIFICACION-interfaz-resumen.md`) |
+| `3889fab` | Fase 1: armazón 411×880, barras 64/80, iconos del kit completos (corazón en Zonas), temas |
+| `ba4ca37` + `1dbde84` | márgenes 16 en las 4 secciones + portero GLOBAL AU-95 (recursivo, sin listas) |
+| `5ed9e78` | escritorio 1280×800 con riel de navegación y contenido desplazable |
+| `851bf2e` | contrato de datos del motor para la Fase 2 (`docs/CONTRATO-cara-datos.md`; tramos ppm, «no existe», eje, frases, pares) |
+| `294a441`…`8bc2d17` | bloque Garmin: instrumento `sincronizacion --probar/--rastrear`, transporte `ureq`, MFA, diagnóstico de páginas nuevas — **el acceso ya llega a Garmin; el POST del acceso se está afinando** |
+
+**Qué hay que hacer al retomar** (detalle en `datos/trabajo-ui/TASKS.json`, que MANDA):
+1. Recoger al subagente del POST de acceso (dejaba `datos/trabajo-ui/post-acceso-informe.md` y el
+   `motor/src/bin/sincronizacion.rs` a medio editar si no asentó): correr `cargo test` (339+ verdes,
+   0 avisos) y commitear. El cambio: el POST lleva los `signin_params` como consulta y `Referer` =
+   página de acceso (client.py:795-807), no el widget.
+2. El dueño repite la prueba real (`read -s` + `--probar`; comandos en los informes de `datos/trabajo-ui/`).
+   Con el navegador entra SOLO con credenciales (sin MFA): el 200 con la página repetida era ese desajuste.
+3. Después: hitos B (módulo de sincronización + «qué es nuevo»), C (pantalla en Datos: Conectar,
+   Sincronizar), D (Android), y las fases 2-3 de la interfaz. Ventana de 7 días de diarios: pendiente
+   de decidir por el dueño.
+
+**Norma alimentada en este chat**: AU-94 (iconos dibujados, no solo nombrados) y AU-95 (porteros
+globales que barren el árbol) en `norma-app`; 3 trampas nuevas en `docs/SLINT-lo-que-hay-que-saber.md`;
+calibraciones en `temas/orquestacion-modelos.md` (gemini roto ×3, nemotron:free vuelve a fallar,
+flash sirve de visor, serializar agentes que tocan `.slint`, cuidado con la cuota de disco).
+
+**Lección del chat, escrita**: la meta del cliente PRIMA y las sugerencias se filtran (en
+`docs/ENCARGO-farellones-2026.md` y en el objetivo crudo local `datos/trabajo-ui/objetivo-del-cliente.md`).

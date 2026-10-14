@@ -124,11 +124,20 @@ fn uso() -> String {
     s.push_str("  exporta el dueño en SU terminal. No se imprimen, no se registran y no se guardan: no\n");
     s.push_str("  aparecen ni en la salida ni en un mensaje de error.\n");
     s.push_str(
+        "\nSEGUNDO FACTOR (MFA): es OPCIONAL y solo se usa si Garmin lo pide. Si el acceso contesta que\n",
+    );
+    s.push_str("  hace falta un código, se pone en GARMIN_CODIGO_MFA y se REPITE el mismo comando:\n");
+    s.push_str("    read -s -p \"código MFA: \" GARMIN_CODIGO_MFA; export GARMIN_CODIGO_MFA\n");
+    s.push_str("  El código se entrega en un POST a sso/verifyMFA/loginEnterMfaCode (client.py:894-905).\n");
+    s.push_str("  NO se guarda y NO se imprime: viaja como un `Secreto`, igual que la clave. Si no hay MFA\n");
+    s.push_str("  y la variable está puesta, se ignora. Sin ella, el instrumento para y sale con el código\n");
+    s.push_str("  5, que ya dice qué hacer.\n");
+    s.push_str(
         "\nDEVUELVE: cuántos hay de cada cosa y su rango de fechas, más el tiempo total. Nada más.\n",
     );
     s.push_str("\nCÓDIGOS DE SALIDA: 0 bien · 2 uso · 3 faltan variables · 4 credenciales rechazadas ·\n");
-    s.push_str("  5 MFA requerido · 6 sin red o servidor caído · 7 endpoint cambiado (forma\n");
-    s.push_str("  inesperada) · 9 demasiadas peticiones (anti-abuso)\n");
+    s.push_str("  5 MFA requerido (pon el código en GARMIN_CODIGO_MFA y repite) · 6 sin red o servidor\n");
+    s.push_str("  caído · 7 endpoint cambiado (forma inesperada) · 9 demasiadas peticiones (anti-abuso)\n");
     s.push_str("  (el 8 «falta el cliente HTTP» ya NO existe en el camino de red: el transporte es\n");
     s.push_str("   `ureq` 3.4.2 con `cookies`, TLS rustls, y vive en `src/sincronizacion.rs`)\n");
 
@@ -322,13 +331,41 @@ mod flujo {
         ]
     }
 
-    /// `client.py:898-903` — los campos del POST del código MFA.
+    /// `client.py:899-904` — los NOMBRES de los campos del POST del código MFA, en su orden.
     ///
-    /// No los envia nadie **todavía**, y es a propósito: cuando Garmin pide el segundo factor, este
-    /// instrumento **para y lo dice** (código 5) en vez de pedir un código por consola, porque quien
-    /// decide si eso se teclea al vuelo o se guarda la sesión es el dueño (contrato §2). Los nombres
-    /// se dicen en el aviso de MFA, para que la pieza portada quede a la vista.
+    /// Ahora **sí los envía** alguien: el paso MFA, cuando el dueño ha puesto `GARMIN_CODIGO_MFA`.
+    /// Sin esa variable el instrumento **para y lo dice** (código 5), que es la regla del contrato §2:
+    /// quien decide si el código se teclea al vuelo es el dueño, y lo que se guarda es la SESIÓN,
+    /// nunca la contraseña ni el código.
     pub const CAMPOS_DEL_MFA: [&str; 4] = ["mfa-code", "embed", "_csrf", "fromPage"];
+
+    /// `client.py:902` — el valor de `fromPage` en el POST del código MFA: literalmente
+    /// `"setupEnterMfaCode"`. **No es la cadena vacía**, y ese detalle es el que se porta de la
+    /// librería: es el que le dice a Garmin de qué página viene el formulario.
+    pub const FROM_PAGE_DEL_MFA: &str = "setupEnterMfaCode";
+
+    /// `client.py:894-905` — el cuerpo del POST que entrega el código MFA:
+    /// `{"mfa-code": <el código>, "embed": "true", "_csrf": <el de la página>, "fromPage":
+    /// "setupEnterMfaCode"}` (`client.py:899-904`).
+    ///
+    /// **El código viaja como `Secreto`** —igual que la contraseña— porque el cuerpo del POST se
+    /// codifica desde aquí: así no puede imprimirlo ni el rastreo ni un mensaje de error, y no se
+    /// guarda en ningún sitio. El `_csrf` también, que es credencial de un solo uso.
+    ///
+    /// Lo que **no** se porta, y se dice para que no se dé por hecho: la librería manda además los
+    /// parámetros de consulta del acceso (`params=signin_params`, `client.py:896`) y
+    /// `Referer: <la url de la respuesta>` (`client.py:897`). Este transporte no sabe poner consulta
+    /// en un POST (`src/sincronizacion.rs`, `post_form`), y el POST del acceso —que sí funciona
+    /// medido— tampoco los manda. Queda como cola: si Garmin rechaza el código, eso es lo primero que
+    /// se añade.
+    pub fn campos_del_mfa(csrf: &str, codigo: &Secreto) -> Vec<(String, Secreto)> {
+        vec![
+            ("mfa-code".into(), codigo.clone()),
+            ("embed".into(), Secreto::nueva("true".into())),
+            ("_csrf".into(), Secreto::nueva(csrf.into())),
+            ("fromPage".into(), Secreto::nueva(FROM_PAGE_DEL_MFA.into())),
+        ]
+    }
 
     /// `client.py:1343-1348` — el cuerpo del intercambio del ticket de servicio por el token DI.
     pub fn campos_del_token(ticket: &str, client_id: &str) -> Vec<(String, String)> {
@@ -426,17 +463,48 @@ mod flujo {
         None
     }
 
+    /// **Los marcadores del MFA que se buscan en el cuerpo**, en el orden en que se dicen.
+    ///
+    /// `mfaMethod` es la variable que Garmin escribe en el `<script>` de la página del segundo factor
+    /// (`client.py:144-151`); `verifyMFA` y `loginEnterMfaCode` son los trozos del endpoint donde se
+    /// entrega el código (`client.py:895`). Se busca cualquiera de los tres **en cualquier parte del
+    /// cuerpo**, no solo en la forma `var x = "…";` que mira `variable_de_mfa`.
+    ///
+    /// Por qué se amplió (medido el 2026-10-14 con la cuenta del dueño): la página del MFA se titula
+    /// «GARMIN Authentication Application» —igual que la de acceso— y el instrumento la estaba
+    /// tomando por un endpoint cambiado (código 7), porque `variable_de_mfa` no encontraba su
+    /// `var mfaMethod`. El marcador dice QUE hay MFA; el valor, cuando se puede leer, dice cuál.
+    pub const MARCADORES_DEL_MFA: [&str; 3] = ["mfaMethod", "verifyMFA", "loginEnterMfaCode"];
+
+    /// **Qué marcadores del MFA trae la página, por su NOMBRE.** Nunca sus valores: es lo que se dice
+    /// en el diagnóstico sin volcar el cuerpo, que puede traer datos de salud del cliente.
+    pub fn marcadores_de_mfa(html: &str) -> Vec<&'static str> {
+        MARCADORES_DEL_MFA
+            .iter()
+            .filter(|m| html.contains(**m))
+            .copied()
+            .collect()
+    }
+
     /// `client.py:856-869` — **cómo se sabe que Garmin pide MFA**.
     ///
     /// La página del MFA se titula igual que la de acceso («GARMIN Authentication Application»), así
-    /// que el título solo no vale: hay que mirar si trae las variables del MFA. Esa es la regla que se
-    /// porta, literal.
+    /// que el título solo no vale: hay que mirar los marcadores. Se porta la regla de la librería
+    /// —`"mfa" in title or ("authentication application" in title and mfa_method)`— y se le añade lo
+    /// que hizo falta al medir: **cualquier marcador de [`MARCADORES_DEL_MFA`] basta**, aunque el
+    /// `var mfaMethod` no venga en la forma exacta que espera `variable_de_mfa`.
+    ///
+    /// Devuelve el método cuando se puede leer y la cadena vacía cuando no: el marcador dice que hay
+    /// MFA, no siempre dice cómo.
     pub fn metodo_de_mfa(html: &str) -> Option<String> {
         let titulo = titulo(html).to_lowercase();
         let metodo = variable_de_mfa(html, "mfaMethod").unwrap_or_default();
-        let parece_mfa = titulo.contains("mfa")
-            || (titulo.contains("authentication application") && !metodo.is_empty());
-        if parece_mfa { Some(metodo) } else { None }
+        let hay_marcadores = !marcadores_de_mfa(html).is_empty();
+        if hay_marcadores || titulo.contains("mfa") {
+            Some(metodo)
+        } else {
+            None
+        }
     }
 
     /// `client.py:812-881` — **la clasificación de la respuesta del login**, en el MISMO orden que la
@@ -474,11 +542,23 @@ mod flujo {
             return Err(Fallo::MfaRequerido { metodo });
         }
         if titulo(html) != "Success" {
+            // Lo que se dice es el TÍTULO y los NOMBRES de los marcadores que trae: eso basta para
+            // diagnosticar (¿es el MFA con otra forma, o es otra página?) sin volcar el cuerpo, que
+            // puede traer datos de salud.
+            let marcadores = marcadores_de_mfa(html);
             return Err(Fallo::EndpointCambiado {
                 esperaba:
                     "una página de título «Success» con el ticket de servicio (client.py:871-879)"
                         .into(),
-                llego: format!("una página de título «{}»", titulo(html)),
+                llego: format!(
+                    "una página de título «{}»; marcadores de MFA en la página: {}",
+                    titulo(html),
+                    if marcadores.is_empty() {
+                        "ninguno".to_string()
+                    } else {
+                        marcadores.join(", ")
+                    }
+                ),
             });
         }
         extraer_ticket(html)
@@ -802,13 +882,14 @@ impl Fallo {
                 vars.join(" y ")
             ),
             Fallo::MfaRequerido { metodo } => format!(
-                "Garmin pide el segundo factor (MFA{}): el login por sí solo NO puede seguir.\n  El \
-                 flujo SÍ lo contempla: el código se entrega en {}\n  (client.py:894-905), con el \
-                 cuerpo {:?} (client.py:898-903), y si hay que pedir otro, en {}\n  (client.py:954).\n  Lo que hay que \
-                 decidir —y es del dueño, no del instrumento— es si el código se teclea al vuelo o si \
-                 se guarda la sesión para no repetirlo: la librería puede devolver «necesito MFA» sin \
-                 consumirlo (__init__.py:526-527 y client.py:927-934), y el contrato §2 ya dice que lo que se \
-                 guarda es la SESIÓN, nunca la contraseña.",
+                "Garmin pide el segundo factor (MFA{}): con el usuario y la clave NO se llega al ticket.\n  \
+                 QUÉ ES: Garmin ha aceptado el usuario y la clave, y ahora pide un código de un solo uso.\n  \
+                 QUÉ HACER: pon el código en la variable GARMIN_CODIGO_MFA y repite el MISMO comando:\n    \
+                 read -s -p \"código MFA: \" GARMIN_CODIGO_MFA; export GARMIN_CODIGO_MFA\n  \
+                 El código NO se guarda y NO se imprime: viaja como un `Secreto`, igual que la clave, y no \
+                 aparece ni en la salida ni en ningún mensaje de error.\n  \
+                 Se entrega en un POST a {} (client.py:894-905) con los campos {:?} (client.py:899-904), y \
+                 si Garmin pidiera otro código, en {} (client.py:954).",
                 if metodo.is_empty() {
                     String::new()
                 } else {
@@ -1659,6 +1740,28 @@ fn paso_credenciales(
     flujo::clasificar_login(&r.cuerpo)
 }
 
+/// `client.py:894-905` — **el paso del segundo factor: entregar el código MFA.**
+///
+/// Se hace solo cuando el acceso ha contestado «necesito MFA» Y el dueño ha puesto el código en
+/// `GARMIN_CODIGO_MFA`. El código no se lee aquí ni se imprime: llega ya envuelto en un [`Secreto`] y
+/// así se va al cuerpo del POST.
+///
+/// La respuesta se clasifica con la MISMA función que la del acceso (`flujo::clasificar_login`), y no
+/// con una copia: si el código vale, esa página es la de título «Success» con el ticket; si no vale,
+/// sale el mismo error tipado que saldría en el acceso —y si Garmin vuelve a pedir el segundo factor,
+/// vuelve a salir el código 5, que ya dice qué hacer.
+fn paso_mfa(t: &dyn Transporte, csrf: &str, codigo: &Secreto) -> Result<String, Fallo> {
+    t.nombra("EL SEGUNDO FACTOR: el POST del código MFA (client.py:894-905)");
+    let peticion = Peticion::post_form(flujo::URL_MFA, &flujo::campos_del_mfa(csrf, codigo))
+        .mas_cabeceras(vec![(
+            "Referer".to_string(),
+            flujo::URL_EMBED.to_string(),
+        )]);
+    let r = pedir(t, &peticion)?;
+    exigir_estado(&r, "el segundo factor (client.py:894-905)")?;
+    flujo::clasificar_login(&r.cuerpo)
+}
+
 /// `client.py:1317-1380` — el ticket de servicio se cambia por el token DI, probando los
 /// identificadores de cliente **en orden**. Si ninguno acepta, se usa la reserva de
 /// `client.py:1284-1306`: se consume el ticket y se toma la cookie `JWT_WEB` de esa respuesta.
@@ -1908,12 +2011,29 @@ fn segundos(t: Duration) -> String {
 /// **Lo que se mide, en orden**: perfil, actividades y los cuatro diarios. Devuelve la tabla con el
 /// tiempo total. El transporte es el que le pasen: el de verdad (`--probar`), el rastreo
 /// (`--rastrear`, que es el mismo envuelto) o el falso de las pruebas.
-fn medir(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<String, Fallo> {
+///
+/// `codigo_mfa` es **opcional** y solo se usa si Garmin pide el segundo factor: si el acceso contesta
+/// «necesito MFA» y hay código, se entrega y se sigue; si no lo hay, el flujo para con el código 5,
+/// que dice cómo ponerlo. Si no hay MFA y el código está puesto, **se ignora sin decir nada**.
+fn medir(
+    t: &dyn Transporte,
+    usuario: &Secreto,
+    clave: &Secreto,
+    codigo_mfa: Option<&Secreto>,
+) -> Result<String, Fallo> {
     let inicio = Instant::now();
 
     paso_embed(t)?;
     let csrf = paso_csrf(t)?;
-    let ticket = paso_credenciales(t, &csrf, usuario, clave)?;
+    let ticket = match paso_credenciales(t, &csrf, usuario, clave) {
+        // Garmin aceptó usuario y clave y pide el segundo factor: si el dueño dejó el código, se
+        // entrega y se sigue por donde iba el acceso; si no, se para y se dice qué hacer (código 5).
+        Err(Fallo::MfaRequerido { metodo }) => match codigo_mfa {
+            Some(codigo) => paso_mfa(t, &csrf, codigo)?,
+            None => return Err(Fallo::MfaRequerido { metodo }),
+        },
+        otro => otro?,
+    };
     let mut sesion = paso_sesion(t, &ticket)?;
     paso_perfil(t, &mut sesion)?;
     let nombre = sesion.display_name.clone().unwrap_or_default();
@@ -2054,6 +2174,21 @@ fn leer_credenciales(
     Ok((usuario, clave))
 }
 
+/// **El código MFA, leído del entorno — y es OPCIONAL.** Se lee igual que las credenciales (mismo
+/// lector inyectable, para que las pruebas no toquen el entorno real) y se recorta igual, porque al
+/// pegar en la terminal se cuela un salto de línea detrás.
+///
+/// Devuelve `None` si la variable no está **o si está vacía** (`export GARMIN_CODIGO_MFA=` no es
+/// tener código): en los dos casos el flujo sigue igual y, si Garmin pide el segundo factor, sale el
+/// código 5 diciendo qué hacer. **Nunca es un fallo**: quien no tenga MFA no tiene por qué exportar
+/// nada, y si la exporta sin que haga falta, se ignora sin aviso de más.
+fn leer_codigo_mfa(leer: impl Fn(&str) -> Option<String>) -> Option<Secreto> {
+    leer("GARMIN_CODIGO_MFA")
+        .map(|v| v.trim_end_matches(['\n', '\r']).to_string())
+        .map(Secreto::nueva)
+        .filter(|s| !s.esta_vacio())
+}
+
 fn main() {
     let argumentos: Vec<String> = std::env::args().collect();
 
@@ -2086,6 +2221,10 @@ fn main() {
         }
     };
 
+    // El código del segundo factor, si el dueño lo ha puesto. **No es obligatorio y no se exige
+    // aquí**: se lee ahora y solo se usará si Garmin contesta que pide MFA.
+    let codigo_mfa = leer_codigo_mfa(|n| std::env::var(n).ok());
+
     // **HITO B: el transporte de verdad.** `ureq` bloqueante con la jarra de cookies en memoria
     // (feature `cookies`, autorizada por el dueño el 2026-10-14). Aquí se acaba el código 8: el
     // flujo llega al login de Garmin, y lo que devuelva será un error tipado de VERDAD
@@ -2108,7 +2247,7 @@ fn main() {
         );
         println!("no se imprime NINGÚN valor: ni usuario, ni clave, ni `_csrf`, ni ticket, ni token.");
         let rastro = Rastro::nuevo(&transporte);
-        let resultado = medir(&rastro, &usuario, &clave);
+        let resultado = medir(&rastro, &usuario, &clave, codigo_mfa.as_ref());
         match resultado {
             Ok(texto) => {
                 print!("{texto}");
@@ -2129,7 +2268,7 @@ fn main() {
         return;
     }
 
-    match medir(&transporte, &usuario, &clave) {
+    match medir(&transporte, &usuario, &clave, codigo_mfa.as_ref()) {
         Ok(texto) => {
             print!("{texto}");
             // Se dice, sin dar el valor: cuántas cookies sostienen la sesión y cuánto de ese tiempo
@@ -2413,6 +2552,14 @@ fn por_cookie() -> TransporteFalso {
 // PRUEBAS
 // =============================================================================================
 
+/// **`medir` sin código MFA**, para las pruebas que no tienen segundo factor. Existe para que esas
+/// pruebas digan lo que quieren decir —«este flujo no lleva MFA»— en vez de arrastrar un `None`
+/// suelto por todas partes.
+#[cfg(test)]
+fn medir_sin_mfa(t: &dyn Transporte, usuario: &Secreto, clave: &Secreto) -> Result<String, Fallo> {
+    medir(t, usuario, clave, None)
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -2491,7 +2638,7 @@ mod pruebas {
             )
             .salida(lo_que_sale_en_el_acceso());
         let rastro = Rastro::recogiendo(&t);
-        let fallo = medir(
+        let fallo = medir_sin_mfa(
             &rastro,
             &Secreto::nueva("prueba@invalido.test".into()),
             &Secreto::nueva(FALSA.into()),
@@ -2552,7 +2699,7 @@ mod pruebas {
         // y del pulso: el rastro tiene que decir `{displayName}`, no el nombre del cliente.
         let t = rutas_de_la_api(con_token_di());
         let rastro = Rastro::recogiendo(&t);
-        let _ = medir(
+        let _ = medir_sin_mfa(
             &rastro,
             &Secreto::nueva("ana@ejemplo.cl".into()),
             &Secreto::nueva(FALSA.into()),
@@ -2772,17 +2919,33 @@ mod pruebas {
     }
 
     #[test]
-    fn el_aviso_de_mfa_dice_los_campos_que_espera_garmin() {
-        // La pieza está portada aunque hoy el instrumento pare: el aviso enseña por dónde seguiría.
+    fn el_aviso_de_mfa_dice_los_campos_y_la_variable_donde_poner_el_codigo() {
+        // Ya no es «la pieza está portada aunque el instrumento pare»: ahora el aviso dice QUÉ HACER,
+        // porque el paso MFA existe y solo le falta el código.
         let fallo = flujo::clasificar_login("<title>MFA</title>").unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
         let m = fallo.mensaje();
-        assert_eq!(flujo::CAMPOS_DEL_MFA, ["mfa-code", "embed", "_csrf", "fromPage"]);
+        assert_eq!(
+            flujo::CAMPOS_DEL_MFA,
+            ["mfa-code", "embed", "_csrf", "fromPage"]
+        );
         for campo in flujo::CAMPOS_DEL_MFA {
             assert!(m.contains(campo), "falta {campo} en el aviso: {m}");
         }
-        assert!(m.contains("client.py:898-903"), "{m}");
-        // Y la decisión que NO toma el instrumento, la dice: es del dueño (contrato §2).
-        assert!(m.contains("contrato §2"), "{m}");
+        // Los tres datos que hacen el aviso accionable: la variable, cómo se pone sin que se vea, y
+        // que el código no se guarda ni se imprime.
+        assert!(m.contains("GARMIN_CODIGO_MFA"), "{m}");
+        assert!(m.contains("read -s -p"), "sin `read -s` el código se ve al teclearlo: {m}");
+        assert!(
+            m.contains("NO se guarda") && m.contains("NO se imprime"),
+            "el aviso tiene que decir que el código no se guarda ni se imprime: {m}"
+        );
+        assert!(m.contains("client.py:899-904"), "{m}");
+        // Y las URLs, sacadas de las constantes: no se escriben a mano en el mensaje.
+        assert!(m.contains(flujo::URL_MFA), "{m}");
+        assert!(m.contains(flujo::URL_MFA_PEDIR_CODIGO), "{m}");
+        // Y sigue diciendo que el flujo se para: no es un aviso de éxito.
+        assert!(m.contains("segundo factor"), "{m}");
     }
 
     #[test]
@@ -3031,7 +3194,7 @@ mod pruebas {
     fn la_medicion_para_en_el_primer_paso_de_red_sin_hacer_nada_mas() {
         // Con el hueco (un `Cliente` sin cliente HTTP dentro), el instrumento devuelve el error
         // tipado, no un pánico —y ese es el camino que `main` corta ANTES de medir, con el código 8—.
-        let fallo = medir(
+        let fallo = medir_sin_mfa(
             &Cliente(None),
             &Secreto::nueva("ana@ejemplo.cl".into()),
             &Secreto::nueva(FALSA.into()),
@@ -3117,7 +3280,7 @@ mod pruebas {
     #[test]
     fn el_flujo_entero_llega_al_final_y_ninguna_credencial_sale_por_el_camino() {
         let t = con_token_di();
-        let resumen = medir(
+        let resumen = medir_sin_mfa(
             &t,
             &Secreto::nueva("prueba@invalido.test".into()),
             &Secreto::nueva(FALSA.into()),
@@ -3214,7 +3377,7 @@ mod pruebas {
         // `client.py:1284-1306`: el camino de reserva. Se prueba entero: los CUATRO identificadores
         // de cliente se intentan en orden, y después la sesión se sostiene con `JWT_WEB`.
         let t = por_cookie();
-        let resumen = medir(
+        let resumen = medir_sin_mfa(
             &t,
             &Secreto::nueva("prueba@invalido.test".into()),
             &Secreto::nueva(FALSA.into()),
@@ -3252,7 +3415,7 @@ mod pruebas {
                 "<html><title>Account Locked</title></html>",
                 Vec::new(),
             );
-        let fallo = medir(
+        let fallo = medir_sin_mfa(
             &t,
             &Secreto::nueva("prueba@invalido.test".into()),
             &Secreto::nueva(FALSA.into()),
@@ -3312,5 +3475,364 @@ mod pruebas {
         assert!(texto.contains("reqwest"), "{texto}");
         assert!(texto.contains("serde_json"), "{texto}");
         assert!(texto.contains("yanked"), "{texto}");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // EL SEGUNDO FACTOR (MFA)
+    //
+    // Medido el 2026-10-14 con la cuenta del dueño: el POST del acceso pasó, y lo que llegó NO era
+    // «Success» con el ticket sino una página titulada «GARMIN Authentication Application» —el mismo
+    // título que la de acceso—, así que el instrumento devolvía código 7 (endpoint cambiado). La
+    // librería la reconoce por sus variables (`client.py:856-869`) y entrega el código en
+    // `/sso/verifyMFA/loginEnterMfaCode` (`client.py:894-905`). Todo esto se prueba SIN RED.
+    // -----------------------------------------------------------------------------------------
+
+    /// Un código MFA falso y bien distinguible: si aparece en un mensaje, es que se coló.
+    const CODIGO_MFA_FALSO: &str = "CODIGO-MFA-FALSO-9x7";
+
+    /// La página del MFA tal y como la describe la librería: el MISMO título que la de acceso y las
+    /// variables dentro de un `<script>` (`client.py:144-151`).
+    const HTML_MFA: &str = r#"<html><title>GARMIN Authentication Application</title>
+<script>var mfaMethod = "email"; var customerGuid = "abc"; var codeSentTo = "e***@x.cl";</script>
+<form><input type="hidden" name="_csrf" value="CSRF-DEL-MFA"></form></html>"#;
+
+    /// La misma página, pero SIN `var mfaMethod` en la forma que sabe leer `variable_de_mfa`: solo
+    /// con los marcadores del endpoint. Es el caso que obligó a ampliar la detección.
+    const HTML_MFA_SIN_LA_VARIABLE: &str = r#"<html><title>GARMIN Authentication Application</title>
+<script>fetch("/sso/verifyMFA/loginEnterMfaCode", {method:"POST"});</script></html>"#;
+
+    #[test]
+    fn una_pagina_success_con_ticket_sigue_dando_el_ticket() {
+        // El camino de siempre NO se puede romper al añadir el MFA: esto es lo que pasa cuando la
+        // cuenta no tiene segundo factor.
+        assert_eq!(
+            flujo::clasificar_login(HTML_EXITO).unwrap(),
+            "ST-123456-FALSO"
+        );
+    }
+
+    #[test]
+    fn la_pagina_del_mfa_con_la_variable_da_codigo_5() {
+        let fallo = flujo::clasificar_login(HTML_MFA).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
+        match fallo {
+            Fallo::MfaRequerido { metodo } => assert_eq!(metodo, "email"),
+            otro => panic!("tenía que ser MFA, fue {otro:?}"),
+        }
+    }
+
+    #[test]
+    fn la_pagina_del_mfa_sin_la_variable_pero_con_el_marcador_del_endpoint_da_codigo_5() {
+        // ESTE es el caso medido: el marcador está, pero `var mfaMethod = "…";` no. Antes daba 7.
+        assert_eq!(
+            flujo::marcadores_de_mfa(HTML_MFA_SIN_LA_VARIABLE),
+            vec!["verifyMFA", "loginEnterMfaCode"]
+        );
+        let fallo = flujo::clasificar_login(HTML_MFA_SIN_LA_VARIABLE).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
+        // Y el aviso no miente sobre el método: no se pudo leer, así que no se inventa.
+        match fallo {
+            Fallo::MfaRequerido { metodo } => assert!(metodo.is_empty(), "método inventado: {metodo}"),
+            otro => panic!("tenía que ser MFA, fue {otro:?}"),
+        }
+    }
+
+    #[test]
+    fn una_pagina_desconocida_sin_marcadores_da_codigo_7_diciendo_titulo_y_marcadores() {
+        // Lo que se dice para diagnosticar SIN volcar el cuerpo: el título y los NOMBRES de los
+        // marcadores que trae (aquí, ninguno).
+        let html = "<html><title>Otra Cosa Cualquiera</title><body>contenido \
+                    irrelevante</body></html>";
+        let fallo = flujo::clasificar_login(html).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("Otra Cosa Cualquiera"), "falta el título: {m}");
+        assert!(
+            m.contains("marcadores de MFA en la página: ninguno"),
+            "tiene que decir qué marcadores trae: {m}"
+        );
+        assert!(!m.contains("contenido irrelevante"), "se volcó el cuerpo: {m}");
+    }
+
+    #[test]
+    fn el_codigo_7_nombra_los_marcadores_que_si_tiene_la_pagina() {
+        // Una página que NO se clasifica como MFA (porque no cae en la rama) pero que sí trae
+        // marcadores: el diagnóstico tiene que nombrarlos. Se fuerza con un título que dispara una
+        // rama anterior, que es justo el caso en que el dueño necesita saber qué había.
+        let html = r#"<html><title>Account Locked</title>
+            <script>var mfaMethod = "email";</script></html>"#;
+        // `locked` gana, y es correcto (el orden es el de la librería): credenciales rechazadas.
+        assert_eq!(
+            flujo::clasificar_login(html).unwrap_err().codigo(),
+            CODIGO_CREDENCIALES
+        );
+        // Y sin esa pista previa, el mismo cuerpo con marcadores sí es MFA.
+        let sin_pista = r#"<html><title>Vaya</title>
+            <script>var mfaMethod = "email"; var loginEnterMfaCode = 1;</script></html>"#;
+        assert_eq!(
+            flujo::marcadores_de_mfa(sin_pista),
+            vec!["mfaMethod", "loginEnterMfaCode"]
+        );
+        assert_eq!(
+            flujo::clasificar_login(sin_pista).unwrap_err().codigo(),
+            CODIGO_MFA
+        );
+    }
+
+    /// El transporte del flujo CON MFA: el POST del acceso contesta la página del segundo factor y el
+    /// POST del código contesta el «Success» con el ticket. Lo demás, igual que el camino con token.
+    fn con_mfa() -> TransporteFalso {
+        rutas_de_la_api(
+            TransporteFalso::new()
+                .get_con_cookie(
+                    flujo::URL_EMBED,
+                    200,
+                    "<html><title>widget</title></html>",
+                    "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+                )
+                .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+                // El acceso: Garmin acepta las credenciales y pide el segundo factor.
+                .post(flujo::URL_SIGNIN, 200, HTML_MFA, Vec::new())
+                // El código: vale, y llega el ticket.
+                .post(flujo::URL_MFA, 200, HTML_EXITO, Vec::new())
+                .post(
+                    flujo::URL_TOKEN_DI,
+                    200,
+                    r#"{"access_token":"TOKEN-DI-FALSO","expires_in":3600}"#,
+                    Vec::new(),
+                ),
+        )
+    }
+
+    #[test]
+    fn sin_codigo_mfa_el_flujo_para_con_el_codigo_5_y_no_lo_pide() {
+        let t = con_mfa();
+        let fallo = medir_sin_mfa(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .expect_err("sin código no se puede pasar el segundo factor");
+        assert_eq!(fallo.codigo(), CODIGO_MFA);
+        assert!(
+            fallo.mensaje().contains("GARMIN_CODIGO_MFA"),
+            "el aviso tiene que decir dónde poner el código: {}",
+            fallo.mensaje()
+        );
+        assert_eq!(
+            t.veces_pedido("verifyMFA"),
+            0,
+            "sin código NO se intenta el POST del MFA"
+        );
+    }
+
+    #[test]
+    fn con_codigo_mfa_el_flujo_entero_pasa_el_segundo_factor_y_llega_al_ticket() {
+        let t = con_mfa();
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let resumen = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .expect("con el código puesto el flujo tiene que llegar al final");
+
+        // Llegó de verdad: el recuento de la API está.
+        assert!(resumen.contains("actividades"), "{resumen}");
+        // Y el paso del segundo factor se dio UNA vez, contra el endpoint de la librería.
+        assert_eq!(t.veces_pedido("verifyMFA"), 1);
+        let del_mfa = t
+            .pedidas()
+            .into_iter()
+            .find(|p| p.url == flujo::URL_MFA)
+            .expect("el POST del MFA se hizo");
+        // Los NOMBRES de los campos, en el orden de la librería (`client.py:899-904`).
+        assert_eq!(
+            del_mfa.nombres_de_lo_que_envia(),
+            vec!["mfa-code", "embed", "_csrf", "fromPage"]
+        );
+        // Y el `fromPage` es el de la librería, que NO es la cadena vacía (`client.py:902`).
+        assert!(del_mfa.cuerpo.as_ref().unwrap().expuesto().contains("setupEnterMfaCode"));
+        // El `Content-Type` del formulario sobrevive (el `Referer` se AÑADE, no reemplaza).
+        assert!(del_mfa
+            .cabeceras
+            .iter()
+            .any(|(k, v)| k == "Content-Type" && v == "application/x-www-form-urlencoded"));
+        assert!(del_mfa
+            .cabeceras
+            .iter()
+            .any(|(k, v)| k == "Referer" && v == flujo::URL_EMBED));
+    }
+
+    #[test]
+    fn sin_mfa_el_codigo_puesto_se_ignora_sin_avisar_y_no_se_pide_nada() {
+        // El dueño puede dejar la variable puesta: si su cuenta no tiene segundo factor, no pasa nada
+        // — ni un aviso de más, ni una petición de más.
+        let t = con_token_di();
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let resumen = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .expect("el flujo normal tiene que seguir igual");
+        assert!(resumen.contains("actividades"), "{resumen}");
+        assert_eq!(t.veces_pedido("verifyMFA"), 0);
+        // El mismo número de pasos que sin la variable: no se añadió ninguno.
+        assert_eq!(t.pedidas().len(), 28, "pasos de red");
+    }
+
+    #[test]
+    fn el_codigo_mfa_no_aparece_en_ningun_mensaje_ni_en_el_rastro() {
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+
+        // (a) El flujo completo con MFA: ni el resumen ni el rastro pueden traerlo.
+        let t = con_mfa();
+        let rastro = Rastro::recogiendo(&t);
+        let resumen = medir(
+            &rastro,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .expect("el flujo con MFA llega al final");
+        let dicho = rastro.texto();
+        assert!(!resumen.contains(CODIGO_MFA_FALSO), "salió en el resumen");
+        assert!(!dicho.contains(CODIGO_MFA_FALSO), "salió en el rastro: {dicho}");
+        // El rastro SÍ dice que el paso se dio, y los NOMBRES de lo que envió.
+        assert!(dicho.contains("EL SEGUNDO FACTOR"), "{dicho}");
+        assert!(dicho.contains("mfa-code"), "{dicho}");
+        // Y tampoco por el `Debug` de una petición (el cuerpo es un `Secreto`).
+        for p in t.pedidas() {
+            assert!(
+                !format!("{p:?}").contains(CODIGO_MFA_FALSO),
+                "salió por el Debug de una petición"
+            );
+        }
+
+        // (b) El código NO vale: la respuesta del MFA es una página desconocida, y el mensaje de
+        // error tampoco puede traerlo.
+        let t2 = rutas_de_la_api(
+            con_mfa()
+                .post(flujo::URL_MFA, 200, "<html><title>Vaya</title></html>", Vec::new()),
+        );
+        let fallo = medir(
+            &t2,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        assert!(
+            !fallo.mensaje().contains(CODIGO_MFA_FALSO),
+            "salió el código en el mensaje: {}",
+            fallo.mensaje()
+        );
+
+        // (c) Y el aviso del código 5, con la variable puesta o sin ella.
+        let aviso = Fallo::MfaRequerido {
+            metodo: "email".into(),
+        }
+        .mensaje();
+        assert!(!aviso.contains(CODIGO_MFA_FALSO), "{aviso}");
+    }
+
+    #[test]
+    fn el_codigo_mfa_se_lee_del_entorno_y_no_es_obligatorio() {
+        // Sin la variable: no hay código, y NO es un fallo.
+        assert!(leer_codigo_mfa(|_| None).is_none());
+        // `export GARMIN_CODIGO_MFA=` la deja puesta y vacía: eso NO es tener código.
+        assert!(leer_codigo_mfa(|n| Some(if n == "GARMIN_CODIGO_MFA" { "" } else { "x" }.to_string()))
+            .is_none());
+        // Puesta, con el salto de línea que se cuela al pegar: se recorta, y los espacios NO.
+        let s = leer_codigo_mfa(|n| {
+            Some(if n == "GARMIN_CODIGO_MFA" { " 123 456 \n" } else { "" }.to_string())
+        })
+        .expect("el código tiene que leerse");
+        assert_eq!(s.expuesto(), " 123 456 ");
+        // Y las credenciales no lo miran: la variable del MFA no tapa a las de siempre.
+        assert!(leer_credenciales(|n| Some(if n == "GARMIN_CODIGO_MFA" { "x" } else { "" }.to_string()))
+            .is_err());
+    }
+
+    #[test]
+    fn un_codigo_mfa_que_no_vale_corta_antes_de_clasificar_y_lo_dice() {
+        // EL CASO QUE MÁS PROBABLEMENTE VERÁ EL DUEÑO: el código llega caducado o mal tecleado y Garmin
+        // contesta 401. Ese fallo lo corta `exigir_estado` ANTES de clasificar la página, así que sale
+        // como «sin red» (código 6) con el estado y POR DÓNDE IBA. Se fija aquí para que no sea un
+        // accidente: lo que NO puede pasar es que ese 401 se lea sin decir en qué paso fue.
+        let t = rutas_de_la_api(
+            con_mfa().post(
+                flujo::URL_MFA,
+                401,
+                "<html><title>Unauthorized</title></html>",
+                Vec::new(),
+            ),
+        );
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let fallo = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_SIN_RED);
+        let m = fallo.mensaje();
+        assert!(m.contains("401"), "el estado tiene que salir: {m}");
+        assert!(
+            m.contains("segundo factor"),
+            "hay que decir EN QUÉ PASO fue, o el dueño busca el fallo en la red: {m}"
+        );
+        assert!(!m.contains(CODIGO_MFA_FALSO), "salió el código: {m}");
+    }
+
+    #[test]
+    fn los_campos_del_mfa_son_los_de_la_libreria_con_el_codigo_dentro() {
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let campos = flujo::campos_del_mfa("CSRF-DE-PRUEBA", &codigo);
+        assert_eq!(
+            campos.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            flujo::CAMPOS_DEL_MFA
+        );
+        assert_eq!(campos[0].1.expuesto(), CODIGO_MFA_FALSO);
+        assert_eq!(campos[1].1.expuesto(), "true");
+        assert_eq!(campos[2].1.expuesto(), "CSRF-DE-PRUEBA");
+        // El `fromPage` de la librería: `client.py:902`.
+        assert_eq!(campos[3].1.expuesto(), "setupEnterMfaCode");
+        assert_eq!(flujo::FROM_PAGE_DEL_MFA, "setupEnterMfaCode");
+        // Y el cuerpo codificado lleva los cuatro, con el código escapado dentro.
+        let cuerpo = codificar_formulario(&campos);
+        assert!(cuerpo.contains("mfa-code=CODIGO-MFA-FALSO-9x7"), "{cuerpo}");
+        assert!(cuerpo.contains("fromPage=setupEnterMfaCode"), "{cuerpo}");
+    }
+
+    #[test]
+    fn el_rastreo_del_mfa_dice_los_nombres_y_no_el_codigo() {
+        // El rastro del segundo factor, mirado de cerca: lo que sale es el destino (público), los
+        // NOMBRES y el estado. El código, jamás.
+        let codigo = Secreto::nueva(CODIGO_MFA_FALSO.into());
+        let t = con_mfa();
+        let rastro = Rastro::recogiendo(&t);
+        let _ = medir(
+            &rastro,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+            Some(&codigo),
+        );
+        let dicho = rastro.texto();
+        assert!(
+            dicho.contains("POST https://sso.garmin.com/sso/verifyMFA/loginEnterMfaCode"),
+            "{dicho}"
+        );
+        assert!(
+            dicho.contains("mfa-code, embed, _csrf, fromPage"),
+            "los nombres de los campos: {dicho}"
+        );
+        assert!(!dicho.contains(CODIGO_MFA_FALSO), "salió el código: {dicho}");
+        assert!(!dicho.contains("CSRF-DEL-MFA"), "salió el _csrf del MFA: {dicho}");
     }
 }

@@ -474,6 +474,12 @@ mod flujo {
     /// «GARMIN Authentication Application» —igual que la de acceso— y el instrumento la estaba
     /// tomando por un endpoint cambiado (código 7), porque `variable_de_mfa` no encontraba su
     /// `var mfaMethod`. El marcador dice QUE hay MFA; el valor, cuando se puede leer, dice cuál.
+    ///
+    /// **Esta lista DECIDE** (da el código 5 y para el flujo). La que solo DESCRIBE una página que no
+    /// se reconoce es [`MARCADORES_DEL_DIAGNOSTICO`]: son dos listas a propósito — decidir y describir
+    /// son cosas distintas, y una lista que decide de más convierte una página desconocida en un
+    /// segundo factor inventado. Tampoco se amplía esta con las mayúsculas cambiadas: los tres son
+    /// identificadores literales (`client.py:144-151`, `client.py:895`) y se buscan como se escriben.
     pub const MARCADORES_DEL_MFA: [&str; 3] = ["mfaMethod", "verifyMFA", "loginEnterMfaCode"];
 
     /// **Qué marcadores del MFA trae la página, por su NOMBRE.** Nunca sus valores: es lo que se dice
@@ -484,6 +490,310 @@ mod flujo {
             .filter(|m| html.contains(**m))
             .copied()
             .collect()
+    }
+
+    /// **Los marcadores de DIAGNÓSTICO: los NOMBRES que se buscan en el cuerpo para DESCRIBIR una
+    /// página que la clasificación no reconoce** (el aviso del código 7). Nunca valores, y ninguno
+    /// decide nada: la decisión es de [`MARCADORES_DEL_MFA`].
+    ///
+    /// Son cinco familias: 1) los nombres del segundo factor tal como los escribe Garmin
+    /// (`mfaMethod`, `verifyMFA`, `loginEnterMfaCode`, `setupEnterMfaCode`, `enterMfaCode`,
+    /// `mfa-code`, `fromPage`); 2) los otros nombres del mismo paso (`otp`, `authenticator`, `2fa`,
+    /// `twofactor`, `two-factor`); 3) el vocabulario con el que se pide el código
+    /// (`verification code`, `verify your identity`, `enter the code`); 4) la FORMA de la página de
+    /// entrega —el NOMBRE del atributo, jamás su valor— (`action="`, `method="post"`, `input name=`);
+    /// y 5) las señales de paso intermedio (`challenge`, `device`, `confirm`, `Success`).
+    ///
+    /// **Por qué se amplió** (medido el 2026-10-14 con la cuenta del dueño): la pantalla que Garmin
+    /// devuelve tras el acceso se titula «GARMIN Authentication Application» y NO trae ninguno de los
+    /// tres marcadores que deciden; el aviso del código 7 decía «marcadores: ninguno» y el dueño se
+    /// quedaba sin saber si aquello era el MFA con otra forma o la página en blanco de un endpoint
+    /// cambiado. Con estas pistas el aviso DESCRIBE la página (y nombra la ruta de su formulario); no
+    /// la da por MFA, porque eso sería decidir con una corazonada en vez de con un dato.
+    ///
+    /// La búsqueda **no distingue mayúsculas** —`METHOD="POST"` es `method="post"`, y los nombres de
+    /// atributo del HTML no las distinguen—; lo que se devuelve es siempre el NOMBRE de esta lista,
+    /// nunca el trozo del cuerpo que hizo saltar la aguja.
+    pub const MARCADORES_DEL_DIAGNOSTICO: [&str; 22] = [
+        // 1) El segundo factor, como lo nombra Garmin.
+        "mfaMethod",
+        "verifyMFA",
+        "loginEnterMfaCode",
+        "setupEnterMfaCode",
+        "enterMfaCode",
+        "mfa-code",
+        "fromPage",
+        // 2) Los otros nombres del mismo paso.
+        "otp",
+        "authenticator",
+        "2fa",
+        "twofactor",
+        "two-factor",
+        // 3) Cómo se pide el código.
+        "verification code",
+        "verify your identity",
+        "enter the code",
+        // 4) La forma de la página de entrega: el NOMBRE del atributo, no su valor.
+        "action=\"",
+        "method=\"post\"",
+        "input name=",
+        // 5) Señales de paso intermedio.
+        "challenge",
+        "device",
+        "confirm",
+        "Success",
+    ];
+
+    /// **Qué marcadores de DIAGNÓSTICO trae la página, por su NOMBRE y en el orden de la lista.**
+    /// Nunca sus valores: es lo que se dice del cuerpo sin volcarlo.
+    pub fn marcadores_del_diagnostico(html: &str) -> Vec<&'static str> {
+        MARCADORES_DEL_DIAGNOSTICO
+            .iter()
+            .filter(|m| buscar_sin_mayusculas(html, m, 0).is_some())
+            .copied()
+            .collect()
+    }
+
+    /// **La RUTA del `action` de cada formulario del cuerpo** (hasta cuatro, sin repetir).
+    ///
+    /// La ruta es un DESTINO, no un secreto, y por eso se puede decir. Del `action` se copia SOLO la
+    /// ruta: fuera el esquema y el servidor, y fuera la consulta (`?…`) y el fragmento (`#…`), que es
+    /// justo por donde se cuelan los tokens (`?ticket=ST-…`, `?fromPage=…`). Y si lo que queda no
+    /// parece una ruta, se calla: antes no decir nada que imprimir un valor del cuerpo.
+    pub fn rutas_de_formulario(html: &str) -> Vec<String> {
+        const TOPE: usize = 4;
+        let mut rutas: Vec<String> = Vec::new();
+        let mut desde = 0usize;
+        while rutas.len() < TOPE {
+            let Some(p) = buscar_sin_mayusculas(html, "<form", desde) else {
+                break;
+            };
+            let Some(fin) = html[p..].find('>') else { break };
+            if let Some(ruta) = ruta_del_action(&html[p..p + fin]) {
+                if !rutas.iter().any(|r| r == &ruta) {
+                    rutas.push(ruta);
+                }
+            }
+            desde = p + fin + 1;
+        }
+        rutas
+    }
+
+    /// **El resumen que acompaña al código 7**: los NOMBRES de los marcadores, la RUTA a la que apunta
+    /// el formulario, los NOMBRES de sus campos, si trae un ticket y si la respuesta era una
+    /// redirección. Nunca un valor del cuerpo.
+    ///
+    /// `hubo_location` es lo que el RASTREO sabe de la respuesta y el cuerpo no puede decir: `None`
+    /// cuando ese transporte no lo mide (entonces no se afirma nada), y `Some(true)`/`Some(false)`
+    /// cuando sí. Se dice que la traía, jamás a dónde iba: una `location` lleva parámetros.
+    pub fn resumen_del_diagnostico(html: &str, hubo_location: Option<bool>) -> String {
+        /// Cuántos nombres de campo se dicen antes de resumir: el aviso es para leerlo de un tirón.
+        const TOPE_DE_CAMPOS: usize = 12;
+        let marcadores = marcadores_del_diagnostico(html);
+        let mut s = format!(
+            "marcadores en la página (solo los nombres): {}",
+            if marcadores.is_empty() {
+                "ninguno".to_string()
+            } else {
+                marcadores.join(", ")
+            }
+        );
+        let rutas = rutas_de_formulario(html);
+        if !rutas.is_empty() {
+            s.push_str(&format!(
+                "; la página tiene un formulario hacia: {}",
+                rutas.join(", ")
+            ));
+        }
+        let campos = nombres_de_campos(html);
+        if !campos.is_empty() {
+            let dichos: Vec<&str> = campos.iter().take(TOPE_DE_CAMPOS).map(|c| c.as_str()).collect();
+            s.push_str(&format!(
+                "; campos del formulario (solo los nombres, que dicen QUÉ enviar): {}",
+                dichos.join(", ")
+            ));
+            if campos.len() > TOPE_DE_CAMPOS {
+                s.push_str(&format!(" y {} más", campos.len() - TOPE_DE_CAMPOS));
+            }
+        }
+        // El ticket, por su PRESENCIA: si la página trae uno, el acceso salió bien y lo que cambió es
+        // la página. El valor no se copia —es una credencial de un solo uso—: se usa la misma puerta
+        // que lo extrae y se tira el valor en el acto.
+        if extraer_ticket(html).is_ok() {
+            s.push_str(
+                "; y la página SÍ trae un ticket de servicio (no se copia: es una credencial de un \
+                 solo uso, así que aquí solo se dice que está)",
+            );
+        }
+        match hubo_location {
+            Some(true) => s.push_str(
+                "; y la respuesta traía `location`: es una REDIRECCIÓN, no una página final (a dónde \
+                 iba lo dice el rastreo; aquí no se copia, que una URL lleva parámetros)",
+            ),
+            Some(false) => {
+                s.push_str("; la respuesta no traía `location` (no fue una redirección)");
+            }
+            None => {}
+        }
+        s
+    }
+
+    /// **Los NOMBRES de los campos de formulario de la página**, en orden y sin repetir: los
+    /// `<input name="…">` y los `<select name="…">`. Nunca sus valores.
+    ///
+    /// Un nombre de campo **no es un dato de salud**: es el contrato del formulario —`otp`, `_csrf`,
+    /// `mfa-code`, `embed`— y es justo lo que dice QUÉ habría que enviar. Al lado va su valor, que sí
+    /// puede ser un código de un solo uso o un dato del cliente: el valor no sale nunca, ni siquiera
+    /// cuando el nombre salta por culpa de él.
+    ///
+    /// Se lee la ETIQUETA entera, así que **el orden de los atributos da igual**
+    /// (`<input id="otp" name="otp">` cuenta lo mismo que `<input name="otp" id="otp">`), que es lo
+    /// que la búsqueda literal del marcador `input name=` no puede hacer: medido el 2026-10-14, la
+    /// página nueva del dueño tiene campos y sin embargo NO dispara ese marcador, porque el `name` no
+    /// va pegado a `input`.
+    ///
+    /// `textarea` no se mira: los formularios del SSO que conocemos (`client.py:899-904`) usan
+    /// `input`, y el día que aparezca uno se añade a esta lista.
+    pub fn nombres_de_campos(html: &str) -> Vec<String> {
+        let mut nombres: Vec<String> = Vec::new();
+        let mut desde = 0usize;
+        loop {
+            // El siguiente `<input`/`<select` del cuerpo, sea cual sea: así se conserva el ORDEN de
+            // la página (mirar los dos por separado desordenaría los nombres).
+            let Some(p) = ["<input", "<select"]
+                .iter()
+                .filter_map(|etiqueta| buscar_sin_mayusculas(html, etiqueta, desde))
+                .min()
+            else {
+                break;
+            };
+            let Some(fin) = html[p..].find('>') else { break };
+            if let Some(nombre) = nombre_del_campo(&html[p..p + fin]) {
+                if !nombres.iter().any(|n| n == &nombre) {
+                    nombres.push(nombre);
+                }
+            }
+            desde = p + fin + 1;
+        }
+        nombres
+    }
+
+    /// **Busca una aguja en el texto sin mirar mayúsculas**, sobre los BYTES y sin copiar el cuerpo
+    /// (una página puede ser grande y esto se llama una vez por marcador).
+    ///
+    /// Se compara byte a byte con `eq_ignore_ascii_case`: las agujas son ASCII, y en UTF-8 un byte
+    /// ASCII no puede aparecer dentro de un carácter de varios bytes, así que el índice que devuelve
+    /// siempre cae en un límite de carácter y se puede cortar el texto con él.
+    fn buscar_sin_mayusculas(texto: &str, aguja: &str, desde: usize) -> Option<usize> {
+        let t = texto.as_bytes();
+        let a = aguja.as_bytes();
+        if a.is_empty() || a.len() > t.len() {
+            return None;
+        }
+        let mut i = desde.min(t.len());
+        while i + a.len() <= t.len() {
+            if t[i..i + a.len()].eq_ignore_ascii_case(a) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// **El valor de un atributo dentro de una etiqueta**: `nombre="valor"` o `nombre='valor'`, con
+    /// las mayúsculas que sean y esté donde esté dentro de la etiqueta.
+    ///
+    /// No vale el `nombre` que sea cola de otro atributo (`data-name=`, `data-action=`): antes tiene
+    /// que haber un separador. Y si el valor no va entrecomillado se devuelve nada —adivinar dónde
+    /// acaba un valor es como acabar imprimiendo media página—.
+    fn valor_del_atributo(etiqueta: &str, atributo: &str) -> Option<String> {
+        let mut desde = 0usize;
+        while let Some(p) = buscar_sin_mayusculas(etiqueta, atributo, desde) {
+            let pegado_a_otro = p > 0
+                && matches!(
+                    etiqueta.as_bytes()[p - 1],
+                    b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_'
+                );
+            if !pegado_a_otro {
+                let resto = etiqueta[p + atributo.len()..].trim_start();
+                if let Some(resto) = resto.strip_prefix('=') {
+                    let resto = resto.trim_start();
+                    if let Some(cita) = resto.as_bytes().first() {
+                        if matches!(cita, b'"' | b'\'') {
+                            if let Some(valor) = resto[1..].split(*cita as char).next() {
+                                return Some(valor.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            desde = p + atributo.len();
+        }
+        None
+    }
+
+    /// **La ruta del `action` de UNA etiqueta `<form …>`**, o nada.
+    ///
+    /// Se lee el valor entrecomillado que sigue a `action` y se deja solo la ruta ([`ruta_legible`]).
+    fn ruta_del_action(etiqueta: &str) -> Option<String> {
+        ruta_legible(&valor_del_atributo(etiqueta, "action")?)
+    }
+
+    /// **El `name` de UNA etiqueta `<input …>`/`<select …>`**, o nada si no lo parece.
+    fn nombre_del_campo(etiqueta: &str) -> Option<String> {
+        nombre_legible(&valor_del_atributo(etiqueta, "name")?)
+    }
+
+    /// **Solo la ruta de un `action`**, o nada si no lo parece.
+    ///
+    /// De `https://sso.garmin.com/sso/mfa/enterCode?ticket=ST-…` queda `/sso/mfa/enterCode`: se cae el
+    /// esquema y el servidor, y se cae la consulta y el fragmento (ahí van los tokens). Y lo que queda
+    /// tiene que empezar por `/`, ser corto y traer solo caracteres de ruta: si no, no se imprime nada.
+    fn ruta_legible(valor: &str) -> Option<String> {
+        const TOPE: usize = 120;
+        let sin_consulta = valor.split(['?', '#']).next().unwrap_or("");
+        let ruta = match sin_consulta.split_once("://") {
+            // Con servidor: lo que va tras el primer `/` del resto.
+            Some((_, tras_el_servidor)) => &tras_el_servidor[tras_el_servidor.find('/')?..],
+            None => sin_consulta,
+        }
+        .trim();
+        if ruta.is_empty() || ruta.len() > TOPE || !ruta.starts_with('/') {
+            return None;
+        }
+        let parece_una_ruta = ruta.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~' | b'%')
+        });
+        if !parece_una_ruta {
+            return None;
+        }
+        // Un tramo largo y de una sola pieza NO es el nombre de un endpoint: es un token metido en la
+        // ruta (`/sso/2f8a9c…`). Antes de imprimir eso, se calla la ruta entera. El corte está muy por
+        // encima de los tramos que usa el SSO de Garmin (`loginEnterMfaCode`, 18 caracteres): no se
+        // pierde ningún destino legible.
+        const TRAMO_DE_TOKEN: usize = 40;
+        if ruta.split('/').any(|tramo| tramo.len() >= TRAMO_DE_TOKEN) {
+            return None;
+        }
+        Some(ruta.to_string())
+    }
+
+    /// **Solo un nombre de campo**, o nada si no lo parece: un nombre de formulario es corto y sin
+    /// espacios (`otp`, `_csrf`, `mfa-code`, `items[]`). Cualquier otra cosa —un valor pegado, una
+    /// frase, media etiqueta— no se imprime.
+    fn nombre_legible(valor: &str) -> Option<String> {
+        const TOPE: usize = 60;
+        let nombre = valor.trim();
+        if nombre.is_empty() || nombre.len() > TOPE {
+            return None;
+        }
+        let parece_un_nombre = nombre
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'[' | b']'));
+        if !parece_un_nombre {
+            return None;
+        }
+        Some(nombre.to_string())
     }
 
     /// `client.py:856-869` — **cómo se sabe que Garmin pide MFA**.
@@ -507,13 +817,38 @@ mod flujo {
         }
     }
 
+    /// **La clasificación SIN el dato del rastreo** (ni `location` ni su ausencia). La usan las
+    /// PRUEBAS de la clasificación; **el flujo de verdad no**, porque los dos pasos que clasifican
+    /// tienen delante la respuesta entera y saben si traía `location` (`paso_credenciales`,
+    /// `paso_mfa`).
+    ///
+    /// Vive bajo `#[cfg(test)]` desde el 2026-10-14: al pasar el flujo a
+    /// [`clasificar_login_con_redireccion`] se quedó sin llamadas en el binario, y eso son dos
+    /// problemas a la vez —un aviso de `never used`, que salió en la corrida del dueño, y una
+    /// trampa, porque quien la llamara creería que el rastreo no sabe nada de la redirección cuando
+    /// sí lo sabe—.
+    #[cfg(test)]
+    pub fn clasificar_login(html: &str) -> Result<String, Fallo> {
+        clasificar_login_con_redireccion(html, None)
+    }
+
     /// `client.py:812-881` — **la clasificación de la respuesta del login**, en el MISMO orden que la
     /// librería, que es lo que hace que no se confunda un MFA con una contraseña mala:
     ///
     /// 1. avería del servidor → sin red (817-827); 2. contraseña mala o cuenta bloqueada (830-836);
     /// 3. cuenta de menor, que Garmin no deja entrar por web (840-848); 4. MFA (856-869); 5. cualquier
     /// otro título que no sea «Success» → endpoint cambiado (871-874); 6. el ticket (876-879).
-    pub fn clasificar_login(html: &str) -> Result<String, Fallo> {
+    ///
+    /// Y con lo que el rastreo sabe de la RESPUESTA y el cuerpo no puede decir: **si traía
+    /// `location`**, que es lo que separa una redirección de una página final. El aviso del código 7
+    /// lo anota, porque mirando solo el cuerpo las dos se parecen mucho.
+    ///
+    /// `hubo_location`: `None` = ese transporte no lo mide (no se afirma nada); `Some(true/false)` =
+    /// lo midió. Nunca se copia la URL, solo si la había: una `location` lleva parámetros.
+    pub fn clasificar_login_con_redireccion(
+        html: &str,
+        hubo_location: Option<bool>,
+    ) -> Result<String, Fallo> {
         let t = titulo(html).to_lowercase();
 
         for pista in [
@@ -542,22 +877,18 @@ mod flujo {
             return Err(Fallo::MfaRequerido { metodo });
         }
         if titulo(html) != "Success" {
-            // Lo que se dice es el TÍTULO y los NOMBRES de los marcadores que trae: eso basta para
-            // diagnosticar (¿es el MFA con otra forma, o es otra página?) sin volcar el cuerpo, que
-            // puede traer datos de salud.
-            let marcadores = marcadores_de_mfa(html);
+            // Lo que se dice es el TÍTULO, los NOMBRES de los marcadores que trae, la RUTA de su
+            // formulario y —si el rastreo lo vio— si era una redirección: eso basta para diagnosticar
+            // (¿es el MFA con otra forma, o es otra página?) sin volcar el cuerpo, que puede traer
+            // datos de salud.
             return Err(Fallo::EndpointCambiado {
                 esperaba:
                     "una página de título «Success» con el ticket de servicio (client.py:871-879)"
                         .into(),
                 llego: format!(
-                    "una página de título «{}»; marcadores de MFA en la página: {}",
+                    "una página de título «{}»; {}",
                     titulo(html),
-                    if marcadores.is_empty() {
-                        "ninguno".to_string()
-                    } else {
-                        marcadores.join(", ")
-                    }
+                    resumen_del_diagnostico(html, hubo_location)
                 ),
             });
         }
@@ -1737,7 +2068,12 @@ fn paso_credenciales(
             )]);
     let r = pedir(t, &peticion)?;
     exigir_estado(&r, "el acceso (client.py:795-810)")?;
-    flujo::clasificar_login(&r.cuerpo)
+    // Se clasifica CON lo que el rastreo sabe de la respuesta y el cuerpo no dice: si traía
+    // `location`. Solo la PRESENCIA de la cabecera; su valor no se copia.
+    flujo::clasificar_login_con_redireccion(
+        &r.cuerpo,
+        Some(tiene_cabecera(&r.cabeceras, "location")),
+    )
 }
 
 /// `client.py:894-905` — **el paso del segundo factor: entregar el código MFA.**
@@ -1759,7 +2095,12 @@ fn paso_mfa(t: &dyn Transporte, csrf: &str, codigo: &Secreto) -> Result<String, 
         )]);
     let r = pedir(t, &peticion)?;
     exigir_estado(&r, "el segundo factor (client.py:894-905)")?;
-    flujo::clasificar_login(&r.cuerpo)
+    // Igual que en el acceso: lo que el rastreo sabe de la respuesta (si era una redirección) se
+    // anota en el aviso del código 7.
+    flujo::clasificar_login_con_redireccion(
+        &r.cuerpo,
+        Some(tiene_cabecera(&r.cabeceras, "location")),
+    )
 }
 
 /// `client.py:1317-1380` — el ticket de servicio se cambia por el token DI, probando los
@@ -3540,17 +3881,20 @@ mod pruebas {
     #[test]
     fn una_pagina_desconocida_sin_marcadores_da_codigo_7_diciendo_titulo_y_marcadores() {
         // Lo que se dice para diagnosticar SIN volcar el cuerpo: el título y los NOMBRES de los
-        // marcadores que trae (aquí, ninguno).
+        // marcadores que trae (aquí, ninguno) —«ninguno» como siempre—, y nada de un formulario que
+        // no existe.
         let html = "<html><title>Otra Cosa Cualquiera</title><body>contenido \
                     irrelevante</body></html>";
+        assert!(flujo::marcadores_del_diagnostico(html).is_empty());
         let fallo = flujo::clasificar_login(html).unwrap_err();
         assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
         let m = fallo.mensaje();
         assert!(m.contains("Otra Cosa Cualquiera"), "falta el título: {m}");
         assert!(
-            m.contains("marcadores de MFA en la página: ninguno"),
+            m.contains("marcadores en la página (solo los nombres): ninguno"),
             "tiene que decir qué marcadores trae: {m}"
         );
+        assert!(!m.contains("formulario hacia"), "no hay formulario que nombrar: {m}");
         assert!(!m.contains("contenido irrelevante"), "se volcó el cuerpo: {m}");
     }
 
@@ -3577,6 +3921,380 @@ mod pruebas {
             flujo::clasificar_login(sin_pista).unwrap_err().codigo(),
             CODIGO_MFA
         );
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // LA PÁGINA NUEVA: TÍTULO DE SIEMPRE, MARCADORES DESCONOCIDOS (medido el 2026-10-14)
+    //
+    // Lo que Garmin devuelve tras el acceso: se titula «GARMIN Authentication Application» —igual
+    // que la de acceso— y NO trae ninguno de los tres marcadores que deciden el código 5. Con la
+    // lista ampliada de DIAGNÓSTICO el aviso describe la página y nombra la ruta de su formulario;
+    // NO la da por MFA, porque eso sería decidir con una corazonada. Todo esto se prueba SIN RED.
+    // -----------------------------------------------------------------------------------------
+
+    /// La página nueva, con un `_csrf` y un valor dentro que NO pueden salir en ningún mensaje.
+    const HTML_PAGINA_NUEVA: &str = r#"<html><head><title>GARMIN Authentication Application</title></head>
+<body>
+<form id="mfa-form" action="/sso/mfa/challenge/enterCode?fromPage=setupEnterMfaCode" method="post">
+  <input type="hidden" name="_csrf" value="CSRF-QUE-NO-SALE">
+  <input name="verificationCode" type="text" value="CODIGO-MFA-FALSO-9x7">
+</form>
+<p>Enter the code we sent to your device.</p>
+</body></html>"#;
+
+    #[test]
+    fn una_pagina_nueva_con_formulario_de_mfa_da_codigo_7_y_nombra_la_ruta_del_formulario() {
+        // Ni MFA decidido ni una página muda: no trae ninguno de los tres marcadores que deciden…
+        assert_eq!(flujo::metodo_de_mfa(HTML_PAGINA_NUEVA), None);
+        // …y sin embargo SÍ trae forma de página de entrega, y eso se dice.
+        let fallo = flujo::clasificar_login(HTML_PAGINA_NUEVA).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("GARMIN Authentication Application"), "falta el título: {m}");
+        assert!(
+            m.contains("la página tiene un formulario hacia: /sso/mfa/challenge/enterCode"),
+            "tiene que nombrar la RUTA del formulario: {m}"
+        );
+        // Los marcadores que sí trae, por su NOMBRE y en el orden de la lista.
+        assert_eq!(
+            flujo::marcadores_del_diagnostico(HTML_PAGINA_NUEVA),
+            vec![
+                "setupEnterMfaCode",
+                "enterMfaCode",
+                "fromPage",
+                "enter the code",
+                "action=\"",
+                "method=\"post\"",
+                "input name=",
+                "challenge",
+                "device",
+            ]
+        );
+        // Y de la página no sale ni la consulta del `action`, ni el `_csrf`, ni el valor del código.
+        assert!(!m.contains("fromPage=setupEnterMfaCode"), "salió la consulta: {m}");
+        assert!(!m.contains("CSRF-QUE-NO-SALE"), "salió el _csrf: {m}");
+        assert!(!m.contains(CODIGO_MFA_FALSO), "salió el valor del campo: {m}");
+        assert!(!m.contains("verificationCode\""), "salió el valor del campo: {m}");
+    }
+
+    #[test]
+    fn con_el_transporte_falso_la_pagina_nueva_llega_como_codigo_7_con_ruta_y_sin_valores() {
+        // El mismo caso, pero por el FLUJO y con el transporte falso: es lo que verá el dueño.
+        let t = TransporteFalso::new()
+            .get_con_cookie(
+                flujo::URL_EMBED,
+                200,
+                "<html><title>widget</title></html>",
+                "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+            )
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            // El acceso contesta la página nueva Y una redirección: las dos cosas se dicen.
+            .post(
+                flujo::URL_SIGNIN,
+                200,
+                HTML_PAGINA_NUEVA,
+                vec![(
+                    "Location".to_string(),
+                    "https://sso.garmin.com/sso/mfa/challenge/enterCode?x=SECRETO-DE-LA-URL".to_string(),
+                )],
+            );
+        let fallo = medir_sin_mfa(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("GARMIN Authentication Application"), "{m}");
+        assert!(
+            m.contains("la página tiene un formulario hacia: /sso/mfa/challenge/enterCode"),
+            "{m}"
+        );
+        // La redirección se ANOTA —es lo que separa una página final de un salto— y su URL no se
+        // copia, que lleva parámetros.
+        assert!(m.contains("REDIRECCIÓN"), "hay que anotar el `location`: {m}");
+        assert!(!m.contains("SECRETO-DE-LA-URL"), "salió la URL de la redirección: {m}");
+        // Ni la clave del dueño, ni el `_csrf`, ni el valor del campo.
+        assert!(!m.contains(FALSA), "salió la clave: {m}");
+        assert!(!m.contains("CSRF-QUE-NO-SALE"), "{m}");
+        assert!(!m.contains(CODIGO_MFA_FALSO), "{m}");
+    }
+
+    #[test]
+    fn el_codigo_7_no_imprime_ningun_valor_del_cuerpo_ni_aunque_el_marcador_este() {
+        // La regla, llevada al extremo: la página trae el marcador PEGADO a un valor, y un `action`
+        // con el valor en la consulta. Lo que sale es el NOMBRE del marcador y la RUTA; los valores,
+        // jamás.
+        let html = r#"<html><title>GARMIN Authentication Application</title>
+<challenge="VALOR-QUE-NO-SALE">
+<form action="/sso/mfa/challenge/enterCode?ticket=ST-VALOR-QUE-NO-SALE">
+<p>verification code: VALOR-QUE-NO-SALE</p></html>"#;
+        let m = flujo::clasificar_login(html).unwrap_err().mensaje();
+        assert!(m.contains("challenge"), "el marcador tiene que salir: {m}");
+        assert!(m.contains("verification code"), "{m}");
+        assert!(m.contains("/sso/mfa/challenge/enterCode"), "{m}");
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
+        assert!(!m.contains("ticket=ST-"), "salió la consulta del `action`: {m}");
+    }
+
+    #[test]
+    fn la_ruta_del_formulario_se_copia_sin_servidor_ni_consulta_y_solo_si_lo_parece() {
+        // Con servidor y consulta: se queda la ruta (el destino), no el resto.
+        assert_eq!(
+            flujo::rutas_de_formulario(
+                r#"<form action="https://sso.garmin.com/sso/mfa/enterCode?ticket=ST-SECRETO" method="post">"#
+            ),
+            vec!["/sso/mfa/enterCode"]
+        );
+        // Comillas simples, atributos en mayúsculas y dos formularios: se leen los dos, sin repetir.
+        assert_eq!(
+            flujo::rutas_de_formulario(
+                "<FORM METHOD=\"POST\" ACTION='/a/b'>…<form action=\"/a/b\">…<form action=\"/c\">"
+            ),
+            vec!["/a/b", "/c"]
+        );
+        // Y lo que no parece una ruta NO se imprime: antes callar que soltar un valor.
+        for raro in [
+            "<form action=\"VALOR QUE NO ES UNA RUTA\">",
+            "<form action=\"javascript:alert('VALOR-QUE-NO-SALE')\">",
+            "<form action=\"/sso/<script>alert(1)</script>\">",
+            "<form action=\"\">",
+            "<form action=VALOR-SIN-COMILAS>",
+            "<form>",
+        ] {
+            assert!(
+                flujo::rutas_de_formulario(raro).is_empty(),
+                "se imprimió algo de {raro}"
+            );
+        }
+        // Una ruta absurdamente larga tampoco (puede ser un valor pegado al `action`).
+        let largo = format!("<form action=\"/{}\">", "x".repeat(200));
+        assert!(flujo::rutas_de_formulario(&largo).is_empty());
+        // Ni un tramo largo y de una sola pieza, que no es un endpoint sino un token metido en la
+        // ruta: la ruta entera se calla antes que imprimir eso.
+        let token = format!("<form action=\"/sso/{}\">", "2f8a9c".repeat(7));
+        assert!(
+            flujo::rutas_de_formulario(&token).is_empty(),
+            "se imprimió un tramo que parece un token"
+        );
+        // Y un destino legible del SSO, con su tramo más largo (`loginEnterMfaCode`, 18), sí sale.
+        assert_eq!(
+            flujo::rutas_de_formulario(r#"<form action="/sso/verifyMFA/loginEnterMfaCode">"#),
+            vec!["/sso/verifyMFA/loginEnterMfaCode"]
+        );
+    }
+
+    #[test]
+    fn el_codigo_7_anota_la_redireccion_cuando_el_rastreo_la_vio() {
+        let html = "<html><title>GARMIN Authentication Application</title><body>x</body></html>";
+        // El rastreo la vio: se dice que era una redirección (y no se copia su URL, que no se tiene).
+        let con = flujo::clasificar_login_con_redireccion(html, Some(true))
+            .unwrap_err()
+            .mensaje();
+        assert!(con.contains("REDIRECCIÓN"), "{con}");
+        // Y el rastreo dice que NO la había: también se dice, que no es lo mismo que no saberlo.
+        let sin = flujo::clasificar_login_con_redireccion(html, Some(false))
+            .unwrap_err()
+            .mensaje();
+        assert!(sin.contains("no traía `location`"), "{sin}");
+        // Sin dato (el transporte que no lo mide) no se afirma nada de la redirección.
+        let mudo = flujo::clasificar_login(html).unwrap_err().mensaje();
+        assert!(!mudo.contains("location"), "no se puede afirmar lo que no se midió: {mudo}");
+        // Los tres coinciden en lo que sí se sabe: el título y los marcadores.
+        for m in [&con, &sin, &mudo] {
+            assert!(m.contains("GARMIN Authentication Application"), "{m}");
+            assert!(m.contains("marcadores en la página (solo los nombres)"), "{m}");
+        }
+    }
+
+    #[test]
+    fn los_marcadores_de_diagnostico_no_deciden_el_mfa_y_no_distinguen_mayusculas() {
+        // La página de acceso (un `input name=` y nada más) NO es un MFA: el diagnóstico la nombra,
+        // la decisión no cambia. Es la línea que separa describir de decidir.
+        let acceso = r#"<title>GARMIN Authentication Application</title><input name="_csrf" value="x">"#;
+        assert_eq!(flujo::metodo_de_mfa(acceso), None);
+        let fallo = flujo::clasificar_login(acceso).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        assert!(fallo.mensaje().contains("input name="), "{}", fallo.mensaje());
+        // Y los nombres de atributo del HTML no distinguen mayúsculas: `METHOD="POST"` es
+        // `method="post"`, y lo que se devuelve es el NOMBRE de la lista, no el trozo del cuerpo.
+        let mayusculas = r#"<FORM ACTION="/sso/x" METHOD="POST">"#;
+        let dichos = flujo::marcadores_del_diagnostico(mayusculas);
+        assert!(dichos.contains(&"action=\""), "{dichos:?}");
+        assert!(dichos.contains(&"method=\"post\""), "{dichos:?}");
+        assert_eq!(flujo::rutas_de_formulario(mayusculas), vec!["/sso/x"]);
+    }
+
+    #[test]
+    fn la_pagina_clasica_del_mfa_sigue_dando_codigo_5_con_la_lista_ampliada() {
+        // Lo que NO puede cambiar: las pistas nuevas son de diagnóstico, así que la página clásica
+        // —la del `var mfaMethod`— sigue parando el flujo con el código 5 y su método.
+        for html in [HTML_MFA, HTML_MFA_SIN_LA_VARIABLE] {
+            let fallo = flujo::clasificar_login(html).unwrap_err();
+            assert_eq!(fallo.codigo(), CODIGO_MFA, "{html}");
+        }
+        // Y una página que solo trae vocabulario de MFA, sin ninguno de los tres marcadores, NO se
+        // declara MFA: se describe (código 7) y decide el dueño.
+        let solo_vocabulario = r#"<html><title>GARMIN Authentication Application</title>
+            <p>Enter the code we sent to your device. verification code / otp / 2fa</p></html>"#;
+        assert_eq!(
+            flujo::clasificar_login(solo_vocabulario).unwrap_err().codigo(),
+            CODIGO_ENDPOINT_CAMBIADO
+        );
+        // Lo que sí hace es nombrar lo que vio, que es todo el motivo de la lista nueva.
+        let dicho = flujo::clasificar_login(solo_vocabulario)
+            .unwrap_err()
+            .mensaje();
+        for pista in ["otp", "2fa", "verification code", "enter the code", "device"] {
+            assert!(dicho.contains(pista), "falta «{pista}» en el aviso: {dicho}");
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // LA PÁGINA OTP MEDIDA DE VERDAD (2026-10-14, `--rastrear` con la cuenta del dueño)
+    //
+    // Es la verificación nueva de Garmin por código de un solo uso: el título de siempre y —dato
+    // medido— los marcadores `otp`, `challenge`, `device`, `Success` y `method="post"`, SIN
+    // `mfaMethod`/`verifyMFA`/`loginEnterMfaCode`. Lo que el aviso tiene que añadir para poder
+    // decidir qué enviar son los NOMBRES de los campos del formulario, que no son datos de salud.
+    // -----------------------------------------------------------------------------------------
+
+    /// La página medida, reconstruida: **los nombres de los marcadores son los medidos**; el texto y
+    /// los valores son inventados (y por eso hay valores señuelo dentro: si salen, es que se volcó).
+    /// El `name` va DESPUÉS de otros atributos a propósito: es como estaba en la medición, y es lo que
+    /// hace que el marcador literal `input name=` no salte mientras los nombres de campo sí.
+    const HTML_OTP_MEDIDA: &str = r#"<html><head><title>GARMIN Authentication Application</title></head>
+<body>
+<form id="otp-form" method="post">
+  <input id="otp" name="otp" type="text" autocomplete="one-time-code" value="VALOR-QUE-NO-SALE">
+  <input type="hidden" name="_csrf" value="VALOR-QUE-NO-SALE">
+  <input type="hidden" name="deviceId" value="VALOR-QUE-NO-SALE">
+  <select name="challenge"><option value="VALOR-QUE-NO-SALE">código</option></select>
+</form>
+<p>We sent a code to your device. Success.</p>
+</body></html>"#;
+
+    #[test]
+    fn la_pagina_otp_medida_da_codigo_7_y_nombra_sus_marcadores_y_sus_campos() {
+        // Lo primero: NO es MFA por los tres marcadores de siempre (no los trae) y sin embargo el
+        // título no es «Success»: código 7, el aviso descriptivo.
+        assert_eq!(flujo::marcadores_de_mfa(HTML_OTP_MEDIDA), Vec::<&str>::new());
+        assert_eq!(flujo::metodo_de_mfa(HTML_OTP_MEDIDA), None);
+        let fallo = flujo::clasificar_login(HTML_OTP_MEDIDA).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        // Los CINCO marcadores medidos, que es lo que dice qué página es.
+        for marcador in ["otp", "challenge", "device", "Success", "method=\"post\""] {
+            assert!(m.contains(marcador), "falta el marcador «{marcador}»: {m}");
+        }
+        // Y —lo nuevo— los NOMBRES de los campos, en el orden de la página y sin repetir: es lo que
+        // dice QUÉ habría que enviar en el POST.
+        assert_eq!(
+            flujo::nombres_de_campos(HTML_OTP_MEDIDA),
+            vec!["otp", "_csrf", "deviceId", "challenge"]
+        );
+        assert!(
+            m.contains("campos del formulario (solo los nombres, que dicen QUÉ enviar): otp, _csrf, deviceId, challenge"),
+            "tienen que salir los nombres de los campos: {m}"
+        );
+        // Ni un valor, ni de los campos ni del `<option>`: solo nombres.
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "salió un valor del cuerpo: {m}");
+        // Y el `input name=` literal NO salta (el `name` no va pegado a `input`): por eso hacía falta
+        // leer la etiqueta entera y no la subcadena.
+        assert!(!m.contains("input name="), "el marcador literal no debería saltar: {m}");
+    }
+
+    #[test]
+    fn una_pagina_con_input_name_otp_queda_nombrada_en_el_aviso() {
+        // El caso pedido, en pequeño: la página trae `<input name="otp">` y el aviso lo nombra.
+        let html = r#"<html><title>GARMIN Authentication Application</title>
+<form method="post"><input name="otp" type="text" value="VALOR-QUE-NO-SALE"></form></html>"#;
+        let fallo = flujo::clasificar_login(html).unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_ENDPOINT_CAMBIADO);
+        let m = fallo.mensaje();
+        assert!(m.contains("otp"), "{m}");
+        assert!(m.contains("campos del formulario"), "{m}");
+        assert!(!m.contains("VALOR-QUE-NO-SALE"), "{m}");
+    }
+
+    #[test]
+    fn los_nombres_de_campos_se_leen_de_la_etiqueta_entera_y_sin_valores() {
+        // El orden de los atributos da igual: el `name` se busca dentro de la etiqueta.
+        assert_eq!(
+            flujo::nombres_de_campos(r#"<input id="otp" name="otp"><input name="x" id="y">"#),
+            vec!["otp", "x"]
+        );
+        // `select` también, y los repetidos no se dicen dos veces.
+        assert_eq!(
+            flujo::nombres_de_campos(
+                "<select name=\"challenge\"></select><input name='code'><input NAME=\"code\">"
+            ),
+            vec!["challenge", "code"]
+        );
+        // El `name` de OTRO atributo no cuela (`data-name=`), ni un valor sin comillas.
+        assert!(flujo::nombres_de_campos(r#"<input data-name="VALOR-QUE-NO-SALE">"#).is_empty());
+        assert!(flujo::nombres_de_campos("<input name=VALOR-SIN-COMILAS>").is_empty());
+        // Y lo que no parece un nombre de campo no se imprime.
+        for raro in [
+            r#"<input name="UN VALOR CON ESPACIOS">"#,
+            r#"<input name="VALOR-QUE-NO-SALE<script>">"#,
+            r#"<input name="">"#,
+            r#"<input value="VALOR-QUE-NO-SALE">"#,
+            "<input>",
+        ] {
+            assert!(
+                flujo::nombres_de_campos(raro).is_empty(),
+                "se imprimió algo de {raro}"
+            );
+        }
+        // Un nombre absurdamente largo tampoco (puede ser un valor pegado al `name`).
+        let largo = format!("<input name=\"{}\">", "v".repeat(200));
+        assert!(flujo::nombres_de_campos(&largo).is_empty());
+    }
+
+    #[test]
+    fn si_la_pagina_trae_un_ticket_el_aviso_del_codigo_7_lo_dice_sin_copiarlo() {
+        // El caso que importa cuando el título cambia pero el acceso salió bien: hay ticket en el
+        // cuerpo. Se dice que ESTÁ —que es la diferencia entre «falló el acceso» y «cambió la
+        // página»— y no se copia, que es una credencial de un solo uso.
+        let html = r#"<html><title>GARMIN Authentication Application</title>
+<a href="https://connect.garmin.com/modern/?ticket=ST-VALOR-QUE-NO-SALE">seguir</a></html>"#;
+        let m = flujo::clasificar_login(html).unwrap_err().mensaje();
+        assert!(m.contains("SÍ trae un ticket de servicio"), "{m}");
+        assert!(!m.contains("ST-VALOR-QUE-NO-SALE"), "salió el ticket: {m}");
+        // Y cuando no lo trae, no se dice nada de un ticket: no se afirma lo que no hay. (La palabra
+        // «ticket» sí sale en el «Se esperaba», que es la frase fija del aviso: lo que no puede salir
+        // es la frase del hallazgo.)
+        let sin = flujo::clasificar_login(HTML_OTP_MEDIDA).unwrap_err().mensaje();
+        assert!(!sin.contains("SÍ trae un ticket"), "se inventó un ticket: {sin}");
+    }
+
+    #[test]
+    fn el_aviso_del_codigo_7_resume_los_campos_cuando_son_muchos() {
+        // Doce nombres se dicen enteros; a partir de ahí se resume, porque el aviso es para leerlo.
+        let doce: String = (1..=12)
+            .map(|i| format!("<input name=\"campo{i}\">"))
+            .collect();
+        let m = flujo::clasificar_login(&format!(
+            "<html><title>Otra Cosa</title>{doce}</html>"
+        ))
+        .unwrap_err()
+        .mensaje();
+        assert!(m.contains("campo12"), "faltan nombres de campo: {m}");
+        assert!(!m.contains("más"), "no había que resumir nada: {m}");
+        // Quince: se dicen doce y se dice cuántos quedan.
+        let quince: String = (1..=15)
+            .map(|i| format!("<input name=\"campo{i}\">"))
+            .collect();
+        let m = flujo::clasificar_login(&format!(
+            "<html><title>Otra Cosa</title>{quince}</html>"
+        ))
+        .unwrap_err()
+        .mensaje();
+        assert!(m.contains("campo12"), "{m}");
+        assert!(!m.contains("campo13,"), "no se dicen todos: {m}");
+        assert!(m.contains("y 3 más"), "hay que decir cuántos quedan: {m}");
     }
 
     /// El transporte del flujo CON MFA: el POST del acceso contesta la página del segundo factor y el

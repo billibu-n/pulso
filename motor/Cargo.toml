@@ -21,6 +21,15 @@ slint = { version = "1", features = ["renderer-software"] }
 # 2026-10-14). Se fija la version EXACTA y se apagan las funciones que no se usan -- solo hace falta
 # DEFLATE, que es lo que traen los ZIP normales: cada funcion de mas es una dependencia de mas.
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
+# El cliente HTTP del bloque Garmin (AUTORIZADO por el dueño el 2026-10-14: «avanza nomás con todo lo
+# que falte»). Bloqueante, con la funcion `cookies` encendida, que es lo que sostiene la sesion del
+# SSO: el login de Garmin deja cookies (CASTGC) y el paso siguiente solo funciona si se devuelven.
+# La jarra vive EN MEMORIA, dentro del `Agent`: de la sesion no se guarda nada en disco.
+#
+# TLS: las funciones por defecto son `rustls` + `rustls-webpki-roots` (ver `Cargo.lock`: entran
+# `rustls`, `ring` y `webpki-roots`). **NO se enciende `native-tls` a proposito**: obligaria a OpenSSL
+# en el equipo de quien compile, y esto es un repositorio publico.
+ureq = { version = "3.4.2", features = ["cookies"] }
 
 [[bin]]
 name = "pulso"

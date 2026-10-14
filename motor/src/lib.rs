@@ -34,6 +34,7 @@ pub mod patron;
 pub mod potencia;
 pub mod profile;
 pub mod rango;
+pub mod sincronizacion;
 pub mod tendencia;
 pub mod umbral;
 

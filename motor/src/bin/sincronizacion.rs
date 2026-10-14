@@ -20,20 +20,26 @@
 //!
 //! # ESTADO (2026-10-14) — leer esto antes de tocar nada
 //!
-//! **El flujo está portado; falta el socket.** En `motor/Cargo.toml` **no hay cliente HTTP** y este
-//! hito tiene prohibido añadirlo sin autorización del dueño (contrato §6.2). Por eso `--probar` llega
-//! hasta la comprobación de variables y **para en el primer paso de red** con un error TIPADO
-//! (`SIN_CLIENTE_HTTP`, código 8) que trae la lista de dependencias candidatas.
+//! **HITO B: el socket YA ESTÁ.** El cliente HTTP es `ureq` 3.4.2 (con la función `cookies`, TLS
+//! `rustls`: autorizado por el dueño el 2026-10-14) y el TRANSPORTE vive en `src/sincronizacion.rs`
+//! —el módulo compartido con la biblioteca del motor—, que se incluye aquí con `#[path]` para que
+//! este instrumento siga siendo un fichero suelto. **El error `SIN_CLIENTE_HTTP` (código 8) ya NO
+//! está en el camino de red**: `--probar` con credenciales llega al login de verdad.
 //!
-//! Lo que sí queda hecho, y probado, es **el flujo entero**: endpoints, parámetros, sesión, cookies,
-//! MFA, la lectura de cada respuesta y el recuento (ver `mod flujo`). Cuando el dueño autorice la
-//! dependencia, el único trabajo que queda es **implementar `Transporte` para el cliente elegido**:
-//! ni una línea del flujo cambia.
-//!
-//! **Lo que NO se hizo, y por qué**: no se llama a `curl` por proceso hijo, que sería hablar por la
-//! red sin añadir dependencia. Las credenciales viajarían a otro proceso (visibles en `/proc`, y en
-//! el historial si algún día alguien las pasara por argumento). Con una contraseña de Garmin y datos
-//! de salud, eso no se hace: se pide la dependencia y se espera.
+//! `SIN_CLIENTE_HTTP` se queda declarado a propósito, con su prueba: es el hueco que existió, y
+//! mientras el flujo no se haya medido contra Garmin de verdad sigue valiendo la regla de entonces
+//! —**el hueco se declara, no se rellena con un remedio peor**: no se llama a `curl` por proceso
+//! hijo, porque las credenciales viajarían a otro proceso, visibles en `/proc`—. El día que la
+//! primera pasada real esté hecha, ese error y `SinTransporte` se borran.
+
+use sincronizacion::{Fallo as FalloTransporte, Transporte as ClienteHttp};
+
+/// El módulo del TRANSPORTE HTTP (hito B), compartido con la biblioteca del motor. Se incluye por
+/// ruta, y no se toca `src/lib.rs`, para que este instrumento siga siendo **un fichero suelto**.
+#[path = "../sincronizacion.rs"]
+mod sincronizacion;
+
+pub use sincronizacion::Secreto;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -57,15 +63,18 @@ const CODIGO_DEMASIADAS_PETICIONES: i32 = 9;
 /// disparan el anti-abuso de Garmin, que es real (§5.2 de la investigación).
 const VENTANA_DIAS: u64 = 7;
 
-/// **La lista exacta de lo que habría que añadir a `Cargo.toml`, medida —no recordada— el 2026-10-14.**
+/// **La lista exacta de lo que hubo que añadir a `Cargo.toml`, medida —no recordada— el 2026-10-14,
+/// y ya añadido ese día** (el dueño autorizó «avanza nomás con todo lo que falte»).
 ///
 /// Medido con `cargo add --dry-run ureq --features cookies` (resuelve contra el registro y **no
 /// escribe nada**): «Adding ureq v3.4.2 to dependencies», con `Cargo.toml` intacto. Lo demás sale de
-/// la ficha de cada crate en crates.io.
+/// la ficha de cada crate en crates.io. **Se conserva aquí, entera, a propósito**: es el dato que
+/// decidió qué se añadía y qué no, y el aviso de `rquest` (yanked) y de `native-tls` (OpenSSL)
+/// sigue valiendo para la próxima vez que haya que decidir una dependencia de red.
 const DEPENDENCIAS_CANDIDATAS: &[(&str, &str)] = &[
     (
         "ureq 3",
-        "el cliente HTTP: POST de formulario, cabeceras propias, redirecciones y COOKIES (feature\n             `cookies`, que es lo que sostiene la sesión del SSO). Bloqueante, sin tokio, con TLS\n             rustls. Es el más pequeño que sirve, y esto es un instrumento de línea de comandos, no\n             un servicio. RECOMENDADO.",
+        "**AÑADIDO el 2026-10-14** (era el RECOMENDADO): el cliente HTTP: POST de formulario, cabeceras\n             propias, redirecciones y COOKIES (feature `cookies`, que es lo que sostiene la sesión del\n             SSO). Bloqueante, sin tokio, con TLS rustls. Es el más pequeño que sirve, y esto es un\n             instrumento de línea de comandos, no un servicio.",
     ),
     (
         "reqwest",
@@ -104,14 +113,27 @@ fn uso() -> String {
     );
     s.push_str("\nCÓDIGOS DE SALIDA: 0 bien · 2 uso · 3 faltan variables · 4 credenciales rechazadas ·\n");
     s.push_str("  5 MFA requerido · 6 sin red o servidor caído · 7 endpoint cambiado (forma\n");
-    s.push_str("  inesperada) · 8 falta el cliente HTTP · 9 demasiadas peticiones (anti-abuso)\n");
+    s.push_str("  inesperada) · 9 demasiadas peticiones (anti-abuso)\n");
+    s.push_str("  (el 8 «falta el cliente HTTP» ya NO existe en el camino de red: el transporte es\n");
+    s.push_str("   `ureq` 3.4.2 con `cookies`, TLS rustls, y vive en `src/sincronizacion.rs`)\n");
 
     s.push_str("\nEL FLUJO QUE SE PORTA, EN ORDEN (con su fuente, que es lo que lo hace comprobable):\n");
     for (nombre, url, fuente) in flujo::ENDPOINTS {
         s.push_str(&format!("  {nombre}\n      {url}\n      fuente: {fuente}\n"));
     }
 
-    s.push_str("\nDEPENDENCIAS QUE FALTAN (crate y para qué) — ninguna está añadida:\n");
+    s.push_str("\nCÓMO SE HABLA POR LA RED (hito B, ya está):\n");
+    s.push_str("  · cliente: `ureq` 3.4.2 bloqueante, función `cookies` (jarra EN MEMORIA dentro del\n");
+    s.push_str("    `Agent`: de la sesión no se guarda nada en disco), TLS `rustls`. Sin `native-tls`:\n");
+    s.push_str("    eso pediría OpenSSL en el equipo de quien compile, y este repositorio es público.\n");
+    s.push_str("  · un 4xx/5xx NO aborta: se LEE (`http_status_as_error(false)`). El flujo distingue\n");
+    s.push_str("    403 (permiso o `displayName`) de 429 (anti-abuso, código 9).\n");
+    s.push_str("  · NO se siguen redirecciones (`max_redirects(0)`): es lo que hacen las dos\n");
+    s.push_str("    referencias portadas, y evita que un fallo de redirección tape el estado real.\n");
+    s.push_str("  · esperas acotadas de 30 s por paso; sin espera global, porque la anti-WAF (3-8 s)\n");
+    s.push_str("    es espera DEL FLUJO y no se le puede achacar a la red.\n");
+
+    s.push_str("\nDEPENDENCIAS: qué hubo que añadir y para qué (ya añadido el 2026-10-14):\n");
     for (crate_, para_que) in DEPENDENCIAS_CANDIDATAS {
         s.push_str(&format!("  {crate_}: {para_que}\n"));
     }
@@ -164,15 +186,6 @@ mod flujo {
         "https://connectapi.garmin.com/di-oauth2-service/oauth/grant/service_ticket";
     /// `client.py:313` — `self._connectapi = f"https://connectapi.{domain}"`.
     pub const API: &str = "https://connectapi.garmin.com";
-    /// `client.py:468` — la cabecera `DI-Backend` de la sesión por cookie.
-    pub const DI_BACKEND: &str = "connectapi.garmin.com";
-    /// `client.py:466-467` — `Origin` y `Referer` de la sesión por cookie.
-    pub const ORIGEN_WEB: &str = "https://connect.garmin.com";
-    /// `client.py:165` — `NATIVE_API_USER_AGENT`.
-    pub const AGENTE: &str = "GCM-Android-5.23";
-    /// `client.py:166-169` — `X-Garmin-User-Agent`.
-    pub const AGENTE_GARMIN: &str = "com.garmin.android.apps.connectmobile/5.23; ; \
-         Google/sdk_gphone64_arm64/google; Android/33; Dalvik/2.1.0";
     /// `client.py:174-179` — `DI_CLIENT_IDS`: se prueban **en este orden** hasta que uno acepte.
     pub const CLIENTES_DI: [&str; 4] = [
         "GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2",
@@ -458,17 +471,12 @@ mod flujo {
 
     /// `client.py:1296-1306` — la reserva: si el intercambio DI no sale, la sesión se sostiene con la
     /// cookie `JWT_WEB` que deja el consumo del ticket.
+    /// El PARSEO de la cookie vive en `src/sincronizacion.rs` (hito B). Aquí se queda la
+    /// clasificación, que es del flujo: **sin `JWT_WEB` no hay reserva**, y eso no es «una sesión
+    /// floja»: es que el endpoint ha cambiado. Las dos cosas se prueban juntas, para que no puedan
+    /// separarse sin que nadie se entere.
     pub fn cookie_jwt_web(cabeceras: &[(String, String)]) -> Result<String, Fallo> {
-        for (nombre, valor) in cabeceras {
-            if nombre.eq_ignore_ascii_case("set-cookie") && valor.starts_with("JWT_WEB=") {
-                let desde = &valor["JWT_WEB=".len()..];
-                let fin = desde.find(';').unwrap_or(desde.len());
-                if fin > 0 {
-                    return Ok(desde[..fin].to_string());
-                }
-            }
-        }
-        Err(Fallo::EndpointCambiado {
+        super::sincronizacion::cookie_jwt_web(cabeceras).ok_or_else(|| Fallo::EndpointCambiado {
             esperaba: "la cookie `JWT_WEB` al consumir el ticket (client.py:1296-1306)".into(),
             llego: format!("{} cabeceras, ninguna con JWT_WEB", cabeceras.len()),
         })
@@ -511,28 +519,11 @@ mod flujo {
     /// `client.py:450-473` — **las cabeceras de la sesión**, tal como la librería las manda. Hay dos
     /// caminos y el instrumento tiene que saber los dos: con token DI va un `Bearer`; sin él, la
     /// sesión se sostiene con la cookie `JWT_WEB` más `DI-Backend` y el `Origin`/`Referer` de la web.
-    pub fn cabeceras_de_sesion(token: Option<&str>, jwt_web: Option<&str>) -> Vec<(String, String)> {
-        let mut h = vec![
-            ("User-Agent".to_string(), AGENTE.to_string()),
-            (
-                "X-Garmin-User-Agent".to_string(),
-                AGENTE_GARMIN.to_string(),
-            ),
-            ("Accept".to_string(), "application/json".to_string()),
-        ];
-        if let Some(token) = token {
-            h.push(("Authorization".to_string(), format!("Bearer {token}")));
-            return h;
-        }
-        h.push(("NK".to_string(), "NT".to_string()));
-        h.push(("Origin".to_string(), ORIGEN_WEB.to_string()));
-        h.push(("Referer".to_string(), format!("{ORIGEN_WEB}/modern/")));
-        h.push(("DI-Backend".to_string(), DI_BACKEND.to_string()));
-        if let Some(jwt) = jwt_web {
-            h.push(("Cookie".to_string(), format!("JWT_WEB={jwt}")));
-        }
-        h
-    }
+    ///
+    /// **Vive en `src/sincronizacion.rs`** (hito B): aquí solo se nombra. Una sola definición, en un
+    /// solo sitio, porque la usan el flujo y el transporte —y porque el día que Garmin cambie una de
+    /// estas cabeceras no puede haber dos listas que se contradigan.
+    pub use super::sincronizacion::cabeceras_de_sesion;
 
     /// `__init__.py:2596-2636` — la lista de actividades: `start` y `limit`, con el tope de 1000
     /// (línea 41).
@@ -729,31 +720,6 @@ mod flujo {
     }
 }
 
-/// **Una credencial.** No implementa `Display` —para que no pueda acabar imprimiéndose por descuido— y
-/// su `Debug` dice «oculto». Como el cuerpo de una petición de login es un `Secreto`, imprimir la
-/// petición entera con `{:?}` tampoco suelta la contraseña. Es la regla del hito, escrita en el tipo.
-#[derive(Clone)]
-struct Secreto(String);
-
-impl Secreto {
-    fn nueva(valor: String) -> Self {
-        Secreto(valor)
-    }
-    /// El valor, para el único sitio que lo necesita: construir el cuerpo del formulario.
-    fn expuesto(&self) -> &str {
-        &self.0
-    }
-    fn esta_vacio(&self) -> bool {
-        self.0.trim().is_empty()
-    }
-}
-
-impl fmt::Debug for Secreto {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "«oculto»")
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Errores TIPADOS, en español, cada uno con su código de salida
 // ---------------------------------------------------------------------------------------------
@@ -774,8 +740,19 @@ enum Fallo {
     DemasiadasPeticiones(String),
     /// La respuesta no tiene la forma esperada: se dice qué se esperaba y qué llegó, sin el cuerpo.
     EndpointCambiado { esperaba: String, llego: String },
-    /// El único hueco: no hay cliente HTTP en `Cargo.toml` y añadirlo necesita autorización.
+    /// El único hueco que queda, y **ya no está en el camino de red**: no hay transporte. Se conserva
+    /// con su prueba porque la regla que lo trajo sigue valiendo: el hueco se declara, no se rellena
+    /// con un remedio peor. El camino de red de hoy es `Fallo::DelTransporte`.
     SinClienteHttp,
+    /// **Lo que devuelve el TRANSPORTE (hito B) cuando no puede hablar**: se conserva tal cual —con
+    /// su código— para no perder de qué se trataba. Trae ya el «al pedir …» puesto.
+    DelTransporte(FalloTransporte),
+}
+
+impl From<FalloTransporte> for Fallo {
+    fn from(f: FalloTransporte) -> Self {
+        Fallo::DelTransporte(f)
+    }
 }
 
 impl Fallo {
@@ -797,6 +774,8 @@ impl Fallo {
             Fallo::DemasiadasPeticiones(_) => CODIGO_DEMASIADAS_PETICIONES,
             Fallo::EndpointCambiado { .. } => CODIGO_ENDPOINT_CAMBIADO,
             Fallo::SinClienteHttp => CODIGO_SIN_CLIENTE_HTTP,
+            // El código lo pone el transporte: es el mismo que el de aquí, y así no hay dos tablas.
+            Fallo::DelTransporte(f) => f.codigo(),
         }
     }
 
@@ -841,14 +820,21 @@ impl Fallo {
             ),
             Fallo::SinClienteHttp => {
                 let mut s = String::from(
-                    "No hay cliente HTTP en `motor/Cargo.toml`, y este hito tiene prohibido añadirlo \
-                     sin autorización del dueño.\n  El flujo está portado y probado; falta el socket. \
-                     Lo que habría que añadir:\n",
+                    "No hay cliente HTTP: el flujo está portado y probado, pero falta el socket.\n  \
+                     ESTE CAMINO YA NO SE USA (hito B: el transporte es `ureq` 3.4.2, ver \
+                     `src/sincronizacion.rs`).\n  Se conserva porque la regla que lo trajo sigue \
+                     valiendo: el hueco se declara, no se rellena con un remedio peor. Lo que hubo \
+                     que añadir fue:\n",
                 );
                 for (crate_, para_que) in DEPENDENCIAS_CANDIDATAS {
                     s.push_str(&format!("    · {crate_}: {para_que}\n"));
                 }
                 s
+            }
+            Fallo::DelTransporte(f) => {
+                // El transporte ya dice lo suyo; aquí solo se le añade por dónde iba el flujo. Lo
+                // que NO se le añade es nada del cuerpo ni de las cabeceras: no las tiene.
+                format!("{}", f.mensaje())
             }
         }
     }
@@ -887,7 +873,7 @@ fn forma_del_cuerpo(cuerpo: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// EL HUECO: quién habla por la red
+// QUIÉN HABLA POR LA RED (hito B: el transporte ya está)
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
@@ -898,6 +884,10 @@ enum Metodo {
 
 /// Una petición, ya montada. El cuerpo es un `Secreto` **porque el del login lleva la contraseña**, y
 /// el `Debug` está escrito a mano para dejar claro qué se puede imprimir y qué no.
+///
+/// `Clone` lo necesita el transporte FALSO de las pruebas, que guarda lo que le pidieron para poder
+/// afirmar después qué se envió. Copiar una petición copia un `Secreto`: no lo expone.
+#[derive(Clone)]
 struct Peticion {
     metodo: Metodo,
     url: String,
@@ -919,7 +909,9 @@ impl fmt::Debug for Peticion {
             // La consulta se imprime **sin valores** (ver `descripcion_publica`): uno de ellos es el
             // ticket de servicio, que es una credencial de un solo uso.
             .field("destino", &self.descripcion_publica())
-            .field("cabeceras", &self.cabeceras)
+            // Las cabeceras, **sin valores tampoco**: una de ellas es `Authorization`. Se dice el
+            // nombre y el esquema, que es lo único que puede estar en un mensaje.
+            .field("cabeceras", &self.cabeceras_publicas())
             .field("cuerpo", &self.cuerpo)
             .finish()
     }
@@ -959,17 +951,31 @@ impl Peticion {
     /// Es la regla que la propia librería aplica a sus errores (`client.py:196-210`,
     /// `_sanitize_exception_text`), y aquí no es un adorno: uno de esos valores es el ticket de
     /// servicio, que es una credencial de un solo uso. Un valor de consulta **no se escribe**.
+    ///
+    /// El texto lo construye el módulo del transporte ([`Destino`]): **una sola manera de decirlo**,
+    /// en un solo sitio, porque aquí también lo usan los mensajes de error de la red.
+    fn destino(&self) -> sincronizacion::Destino {
+        sincronizacion::Destino::de(&self.url, self.consulta.iter().map(|(k, _)| k.clone()))
+    }
+
     fn descripcion_publica(&self) -> String {
-        if self.consulta.is_empty() {
-            return self.url.clone();
-        }
-        let nombres = self
-            .consulta
+        self.destino().to_string()
+    }
+
+    /// Las cabeceras **dichas sin sus valores**: el nombre, y el esquema cuando es `Authorization`.
+    /// Nació de un fallo medido: un `Debug` de la lista de cabeceras soltaba el `Bearer` entero.
+    fn cabeceras_publicas(&self) -> Vec<(String, String)> {
+        self.cabeceras
             .iter()
-            .map(|(k, _)| format!("{k}=…"))
-            .collect::<Vec<_>>()
-            .join("&");
-        format!("{}?{nombres}", self.url)
+            .map(|(n, v)| {
+                let dicho = if n.eq_ignore_ascii_case("authorization") {
+                    sincronizacion::esquema_de_autorizacion(v)
+                } else {
+                    "…".to_string()
+                };
+                (n.clone(), dicho)
+            })
+            .collect()
     }
 }
 
@@ -993,13 +999,88 @@ impl fmt::Debug for Respuesta {
     }
 }
 
-/// **El único punto por donde hay que hablar por la red.** Cuando el dueño autorice la dependencia se
-/// implementa esto con el cliente elegido y **no se toca ni una línea del flujo**.
+impl Respuesta {
+    /// La respuesta del TRANSPORTE, traducida a la de este instrumento. El cuerpo pasa de `Secreto` a
+    /// `String` **aquí y solo aquí**: es el único punto donde el flujo puede leerlo, y es a propósito
+    /// —así el tipo que viaja por el flujo entero no se puede imprimir.
+    fn del_transporte(r: sincronizacion::Respuesta) -> Self {
+        Respuesta {
+            estado: r.estado,
+            cabeceras: r.cabeceras,
+            cuerpo: r.cuerpo.expuesto().to_string(),
+        }
+    }
+}
+
+/// **El único punto por donde se habla por la red.** La implementación de verdad es `Transporte`
+/// (abajo, con `ureq`); las pruebas inyectan una falsa, así que **el flujo entero se puede probar sin
+/// salir a internet y sin una credencial real**.
 trait Transporte {
     fn pedir(&self, peticion: &Peticion) -> Result<Respuesta, Fallo>;
 }
 
-/// Hoy no hay cliente HTTP: el hueco se declara, no se rellena con un remedio peor.
+/// **El transporte de verdad: `ureq` bloqueante con jarra de cookies en memoria.** Es una cáscara
+/// fina sobre `sincronizacion::Transporte` (el módulo compartido con la biblioteca del motor): aquí
+/// solo se traduce el `Peticion` del flujo a una llamada del cliente, y su respuesta al `Respuesta`
+/// del instrumento. **Ni una línea del flujo cambia por esto**, que era el trato del hito A.
+///
+/// El `Option` es la RED DE SEGURIDAD, y se conserva del hito A: si algún día el cliente no se puede
+/// construir, el instrumento **no se cae y no se queda mudo** —devuelve el error tipado del hueco
+/// (`SIN_CLIENTE_HTTP`, código 8) diciendo que no hay cliente HTTP—. Es la misma regla que trajo el
+/// código 8: el hueco se declara, no se rellena con un remedio peor.
+struct Cliente(Option<ClienteHttp>);
+
+impl Cliente {
+    fn nuevo() -> Self {
+        Cliente(Some(ClienteHttp::nuevo()))
+    }
+
+    /// Cuántas cookies lleva la sesión EN MEMORIA. Solo para poder decirlo: no se guardan en disco.
+    fn cookies_en_la_sesion(&self) -> usize {
+        match &self.0 {
+            Some(c) => c.cuantas_cookies(),
+            None => 0,
+        }
+    }
+
+    /// Cuánto tardó el último paso de RED. Es lo que permite separar el tiempo de la red del tiempo
+    /// de la espera anti-WAF, que es espera del flujo y no se le puede achacar a Garmin.
+    fn tardanza_de_la_red(&self) -> Option<Duration> {
+        self.0.as_ref().and_then(|c| c.ultima_tardanza())
+    }
+
+    /// ¿Falta el cliente HTTP? Es lo que `main` pregunta antes de medir: con el hueco, el flujo
+    /// pararía en el primer paso de red, así que se dice **antes** y con su código.
+    fn sin_cliente_http(&self) -> bool {
+        self.0.is_none()
+    }
+}
+
+impl Transporte for Cliente {
+    fn pedir(&self, peticion: &Peticion) -> Result<Respuesta, Fallo> {
+        let Some(cliente) = &self.0 else {
+            return Err(Fallo::SinClienteHttp);
+        };
+        let r = match peticion.metodo {
+            Metodo::Get => cliente.get(&peticion.url, &peticion.consulta, &peticion.cabeceras)?,
+            Metodo::Post => {
+                // El cuerpo de un POST ya viene codificado (y es un `Secreto`). Se envía tal cual.
+                let cuerpo = peticion
+                    .cuerpo
+                    .clone()
+                    .unwrap_or_else(|| Secreto::nueva(String::new()));
+                cliente.post_form(&peticion.url, &cuerpo, &peticion.cabeceras)?
+            }
+        };
+        Ok(Respuesta::del_transporte(r))
+    }
+}
+
+/// **El hueco, conservado a propósito, y usado de verdad.** No es el transporte del camino de red
+/// (lo es `Cliente` con `ureq`), pero el instrumento lo usa como red de seguridad cuando el cliente
+/// no está: `get` devuelve el fallo tipado del hueco, nunca una respuesta inventada. Así la regla que
+/// lo trajo sigue viva y probada —**el hueco se declara, no se rellena con un remedio peor**— y no
+/// queda código muerto al lado del camino bueno.
 struct SinTransporte;
 
 impl Transporte for SinTransporte {
@@ -1011,8 +1092,26 @@ impl Transporte for SinTransporte {
 /// Pide al transporte y, si no se pudo, **añade por dónde iba**: la URL y los nombres de los
 /// parámetros, nunca sus valores (`client.py:196-210`).
 fn pedir(t: &dyn Transporte, peticion: &Peticion) -> Result<Respuesta, Fallo> {
-    t.pedir(peticion)
-        .map_err(|fallo| fallo.al_pedir(&peticion.descripcion_publica()))
+    t.pedir(peticion).map_err(|fallo| match fallo {
+        // El fallo del transporte ya dice «al pedir …» con sus propias palabras; el de aquí (el
+        // hueco) es el único que necesita que se le añada el destino.
+        Fallo::DelTransporte(f) => {
+            Fallo::DelTransporte(con_destino(f, &peticion.descripcion_publica()))
+        }
+        otro => otro.al_pedir(&peticion.descripcion_publica()),
+    })
+}
+
+/// Añade «al pedir …» a un fallo del transporte. **Nunca al revés**: el destino va SIN valores.
+fn con_destino(f: FalloTransporte, destino: &str) -> FalloTransporte {
+    match f {
+        FalloTransporte::SinRed(porque) => {
+            FalloTransporte::SinRed(format!("{porque} (al pedir {destino})"))
+        }
+        // Un estado no necesita que se le diga la URL: el número y el destino ya son el mensaje, y
+        // así no se alarga. Se deja tal cual, que es lo que dice el transporte.
+        otro => otro,
+    }
 }
 
 /// `client.py:800-805`: el POST va como formulario, así que los valores van **codificados**. Se hace a
@@ -1200,13 +1299,23 @@ fn exigir_estado(r: &Respuesta, que: &str) -> Result<(), Fallo> {
 
 /// `client.py:127-128` y `790-793` — la espera deliberada contra el WAF. No es lentitud: es el flujo.
 /// El valor sale del reloj del sistema para no añadir el crate `rand` por esto.
+///
+/// **En las pruebas NO se espera**: la espera es parte del flujo contra Garmin, y `cargo test` no
+/// tiene por qué tardar 3-8 s por cada escenario. Lo que se prueba es el flujo, no el reloj.
 fn espera_anti_waf() {
+    // Se lee SIEMPRE, aunque en las pruebas no se espere: es la constante que el flujo de verdad usa
+    // —y la que la ayuda cita—, y una constante que nadie lee es una constante que miente.
     let (min, max) = flujo::ESPERA_ANTI_WAF_S;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u64)
-        .unwrap_or(0);
-    std::thread::sleep(Duration::from_secs(min + nanos % (max - min + 1)));
+    #[cfg(test)]
+    let _ = (min, max);
+    #[cfg(not(test))]
+    {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64)
+            .unwrap_or(0);
+        std::thread::sleep(Duration::from_secs(min + nanos % (max - min + 1)));
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1477,18 +1586,285 @@ fn main() {
         }
     };
 
-    // Hoy el transporte es el que no hay: el flujo se detiene en el primer paso de red con el error
-    // tipado que explica qué falta. Cuando el dueño autorice la dependencia, ESTA línea cambia por la
-    // implementación real de `Transporte` y nada más.
-    let transporte = SinTransporte;
+    // **HITO B: el transporte de verdad.** `ureq` bloqueante con la jarra de cookies en memoria
+    // (feature `cookies`, autorizada por el dueño el 2026-10-14). Aquí se acaba el código 8: el
+    // flujo llega al login de Garmin, y lo que devuelva será un error tipado de VERDAD
+    // (credenciales rechazadas, MFA, sin red o anti-abuso), no el hueco de antes.
+    let transporte = Cliente::nuevo();
+
+    // La red de seguridad, que es lo único que queda del hito A: si no hubiera cliente HTTP, se dice
+    // ANTES de tocar la red y con el código 8. Hoy no pasa (el cliente está), y por eso el código 8
+    // ya no puede aparecer en una corrida normal.
+    if transporte.sin_cliente_http() {
+        let fallo = Fallo::SinClienteHttp;
+        eprintln!("{}", fallo.mensaje());
+        std::process::exit(fallo.codigo());
+    }
 
     match medir(&transporte, &usuario, &clave) {
-        Ok(texto) => print!("{texto}"),
+        Ok(texto) => {
+            print!("{texto}");
+            // Se dice, sin dar el valor: cuántas cookies sostienen la sesión y cuánto de ese tiempo
+            // fue RED (el resto es la espera anti-WAF del flujo, que es por diseño).
+            eprintln!(
+                "sesión: {} cookies en memoria · último paso de red: {}",
+                transporte.cookies_en_la_sesion(),
+                match transporte.tardanza_de_la_red() {
+                    Some(t) => segundos(t),
+                    None => "sin dato".to_string(),
+                }
+            );
+        }
         Err(fallo) => {
             eprintln!("{}", fallo.mensaje());
             std::process::exit(fallo.codigo());
         }
     }
+}
+
+// =============================================================================================
+// UN TRANSPORTE FALSO, PARA PROBAR EL FLUJO ENTERO SIN RED Y SIN CREDENCIALES
+// =============================================================================================
+
+/// **El transporte que usan las pruebas: contesta lo que se le diga y no sale a internet.**
+///
+/// Existe por una razón concreta: el flujo de red NO se puede probar con las credenciales del dueño
+/// (las pone él en SU terminal), así que si no hubiera un transporte falso, el flujo entero quedaría
+/// sin probar. Con esto se comprueba, sin red: que el flujo llega hasta el final, que cada respuesta
+/// se lee como toca, y —lo que más importa— que **por el camino no se imprime ni una credencial**.
+///
+/// Guarda lo que le pidieron ([`Peticion`]) para poder afirmarlo después.
+#[cfg(test)]
+struct TransporteFalso {
+    rutas: BTreeMap<(String, String), Respuesta>,
+    pedidas: std::cell::RefCell<Vec<Peticion>>,
+}
+
+#[cfg(test)]
+impl TransporteFalso {
+    fn new() -> Self {
+        TransporteFalso {
+            rutas: BTreeMap::new(),
+            pedidas: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Registra una respuesta de GET. La ruta se compara **sin la consulta**: es lo que identifica al
+    /// endpoint, y los valores de la consulta son justo lo que no se quiere mirar.
+    fn get(mut self, url: &str, estado: u16, cuerpo: &str) -> Self {
+        self.rutas.insert(
+            ("GET".to_string(), url.to_string()),
+            Respuesta {
+                estado,
+                cabeceras: Vec::new(),
+                cuerpo: cuerpo.to_string(),
+            },
+        );
+        self
+    }
+
+    fn post(mut self, url: &str, estado: u16, cuerpo: &str, cabeceras: Vec<(String, String)>) -> Self {
+        self.rutas.insert(
+            ("POST".to_string(), url.to_string()),
+            Respuesta {
+                estado,
+                cabeceras,
+                cuerpo: cuerpo.to_string(),
+            },
+        );
+        self
+    }
+
+    /// Un GET cuya respuesta trae un `Set-Cookie`: es el caso de la primera visita al widget (que
+    /// deja las cookies de la sesión del SSO) y el de la reserva, que lee `JWT_WEB`.
+    fn get_con_cookie(mut self, url: &str, estado: u16, cuerpo: &str, set_cookie: &str) -> Self {
+        self.rutas.insert(
+            ("GET".to_string(), url.to_string()),
+            Respuesta {
+                estado,
+                cabeceras: vec![("Set-Cookie".to_string(), set_cookie.to_string())],
+                cuerpo: cuerpo.to_string(),
+            },
+        );
+        self
+    }
+
+    /// Todas las peticiones que se hicieron, en orden. Es lo que permite afirmar qué se envió.
+    fn pedidas(&self) -> Vec<Peticion> {
+        self.pedidas.borrow().clone()
+    }
+
+    /// Cuántas veces se pidió algo cuya URL contenga `trozo`.
+    fn veces_pedido(&self, trozo: &str) -> usize {
+        self.pedidas().iter().filter(|p| p.url.contains(trozo)).count()
+    }
+
+    /// Las cabeceras de la primera petición cuya URL contenga `trozo`.
+    fn cabeceras_de(&self, trozo: &str) -> Vec<(String, String)> {
+        for p in self.pedidas() {
+            let sin_consulta = p.url.split('?').next().unwrap_or(&p.url).to_string();
+            if p.url.contains(trozo) || sin_consulta.contains(trozo) {
+                return p.cabeceras.clone();
+            }
+        }
+        panic!("no se pidió nada con «{trozo}»");
+    }
+}
+
+#[cfg(test)]
+impl Transporte for TransporteFalso {
+    fn pedir(&self, peticion: &Peticion) -> Result<Respuesta, Fallo> {
+        self.pedidas.borrow_mut().push(peticion.clone());
+        let metodo = match peticion.metodo {
+            Metodo::Get => "GET",
+            Metodo::Post => "POST",
+        };
+        // Cuatro maneras de reconocer la ruta, en este orden: la URL entera, la URL sin la consulta,
+        // la URL construida desde la RUTA de la API (que es como se registran ellas: `flujo::RUTA_*`
+        // es solo el camino) y la ruta sola. El orden importa: la primera que exista manda.
+        let sin_consulta = peticion.url.split('?').next().unwrap_or(&peticion.url).to_string();
+        let ruta = sin_consulta
+            .split_once("://")
+            .map(|(_, resto)| resto)
+            .and_then(|resto| resto.find('/').map(|i| &resto[i..]))
+            .unwrap_or("");
+        let desde_la_ruta = format!("{}{}", flujo::API, ruta);
+        for clave in [
+            peticion.url.as_str(),
+            sin_consulta.as_str(),
+            desde_la_ruta.as_str(),
+            ruta,
+        ] {
+            if let Some(r) = self.rutas.get(&(metodo.to_string(), clave.to_string())) {
+                return Ok(Respuesta {
+                    estado: r.estado,
+                    cabeceras: r.cabeceras.clone(),
+                    cuerpo: r.cuerpo.clone(),
+                });
+            }
+        }
+        // Una ruta que la prueba no previó NO se inventa: se dice, y así una prueba que se deja un
+        // paso se cae en vez de pasar por casualidad.
+        Err(Fallo::SinRed(format!(
+            "la prueba no previó {metodo} {}",
+            sin_consulta
+        )))
+    }
+}
+
+/// Una respuesta de la API con datos de salud **reconocibles**: si alguno aparece en un mensaje, es
+/// que se volcó un cuerpo.
+#[cfg(test)]
+const SALUD_FALSA: &str = "DATO-DE-SALUD-QUE-NO-DEBE-SALIR";
+
+/// La página de acceso, con su `_csrf`.
+#[cfg(test)]
+const HTML_ACCESO: &str = r#"<html><title>GARMIN Authentication Application</title>
+<form><input type="hidden" name="_csrf" value="CSRF-DE-PRUEBA"></form></html>"#;
+
+/// La respuesta de éxito del login: el ticket de servicio, que es una credencial de un solo uso.
+#[cfg(test)]
+const HTML_EXITO: &str = r#"<html><title>Success</title>
+<a href="https://connect.garmin.com/modern/?ticket=ST-123456-FALSO&x=1">seguir</a></html>"#;
+
+/// El perfil: de aquí sale `displayName`, que va dentro de la URL del sueño y del pulso.
+#[cfg(test)]
+const JSON_PERFIL: &str = r#"{"displayName":"NombreFalsoDePrueba","otro":"x"}"#;
+
+/// Una respuesta de la API con `<clave>: SALUD_FALSA`, para poder buscar el dato falso.
+#[cfg(test)]
+fn json_con_salud(extra: &str) -> String {
+    format!(r#"{{"marcador":"{SALUD_FALSA}"{extra}}}"#)
+}
+
+/// Las rutas de la API que el flujo pide SIEMPRE (perfil, actividades, los cuatro diarios de los
+/// últimos siete días). Se registran para los días que el flujo va a pedir, que son los que da el
+/// reloj del sistema: por eso se calculan con las mismas funciones que usa el flujo.
+#[cfg(test)]
+fn rutas_de_la_api(t: TransporteFalso) -> TransporteFalso {
+    let pulso = json_con_salud(
+        r#","allMetrics":{"metricsMap":{"WELLNESS_RESTING_HEART_RATE":[{"calendarDate":"2026-10-12","value":48}]}}"#,
+    );
+    let mut t = t
+        .get(flujo::RUTA_PERFIL, 200, JSON_PERFIL)
+        .get(
+            flujo::RUTA_ACTIVIDADES,
+            200,
+            r#"[{"activityId":111,"startTimeLocal":"2026-10-01 07:31:22","activityType":{"typeKey":"running"}}]"#,
+        )
+        // El pulso se pide por rango: la URL base vale, y también la que lleva el displayName.
+        .get(flujo::RUTA_PULSO_REPOSO, 200, &pulso)
+        .get(
+            &format!("{}/{}", flujo::RUTA_PULSO_REPOSO, "NombreFalsoDePrueba"),
+            200,
+            &pulso,
+        );
+    for i in 0..VENTANA_DIAS {
+        let dia = hace_dias(i);
+        t = t
+            .get(
+                &format!("{}/{}", flujo::RUTA_SUENO, "NombreFalsoDePrueba"),
+                200,
+                &json_con_salud(r#","dailySleepDTO":{"sleepTimeSeconds":25200}"#),
+            )
+            .get(
+                &format!("{}/{}", flujo::RUTA_ESTRES, dia),
+                200,
+                &json_con_salud(r#","calendarDate":"2026-10-14","averageStressLevel":31"#),
+            )
+            .get(
+                &format!("{}/{}", flujo::RUTA_TRAINING, dia),
+                200,
+                &json_con_salud(r#","loQueSea":1"#),
+            );
+    }
+    t
+}
+
+/// Las tres primeras respuestas del login, hasta el ticket de servicio (el intercambio del token lo
+/// pone cada prueba, porque ahí está la diferencia entre los dos caminos).
+#[cfg(test)]
+fn hasta_el_ticket() -> TransporteFalso {
+    TransporteFalso::new()
+        // La primera visita deja la cookie de sesión del SSO: es lo que hace que el POST del login
+        // valga (y lo que sostiene el `Agent` de ureq en la vida real).
+        .get_con_cookie(
+            flujo::URL_EMBED,
+            200,
+            "<html><title>widget</title></html>",
+            "CASTGC=TGT-FALSO-DE-PRUEBA; Path=/; Secure",
+        )
+        .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+        .post(flujo::URL_SIGNIN, 200, HTML_EXITO, Vec::new())
+}
+
+/// El camino CON TOKEN: el intercambio sale bien al primer identificador de cliente.
+#[cfg(test)]
+fn con_token_di() -> TransporteFalso {
+    rutas_de_la_api(hasta_el_ticket().post(
+        flujo::URL_TOKEN_DI,
+        200,
+        r#"{"access_token":"TOKEN-DI-FALSO","expires_in":3600}"#,
+        Vec::new(),
+    ))
+}
+
+/// El camino de RESERVA: los cuatro identificadores de cliente fallan y la sesión se sostiene con la
+/// cookie `JWT_WEB` que deja el consumo del ticket (`client.py:1284-1306`).
+#[cfg(test)]
+fn por_cookie() -> TransporteFalso {
+    rutas_de_la_api(
+        hasta_el_ticket()
+            // Los cuatro identificadores de cliente fallan.
+            .post(flujo::URL_TOKEN_DI, 403, "", Vec::new())
+            // Y la misma página del widget deja la cookie `JWT_WEB` de la reserva.
+            .get_con_cookie(
+                flujo::URL_EMBED,
+                200,
+                "<html><title>widget</title></html>",
+                "JWT_WEB=JWT-FALSO-DE-PRUEBA; Path=/; Secure",
+            ),
+    )
 }
 
 // =============================================================================================
@@ -1522,8 +1898,26 @@ mod pruebas {
             t.contains("GARMIN_USUARIO") && t.contains("GARMIN_CLAVE"),
             "{t}"
         );
-        // Los códigos de salida van en la ayuda, que es donde se consultan.
-        assert!(t.contains("8 falta el cliente HTTP"), "{t}");
+        // Los códigos de salida van en la ayuda, que es donde se consultan. El 8 ya NO está en la
+        // lista: el transporte del hito B lo sacó del camino de red, y la ayuda dice por qué.
+        assert!(t.contains("9 demasiadas peticiones"), "{t}");
+        assert!(t.contains("el 8 «falta el cliente HTTP» ya NO existe"), "{t}");
+        assert!(t.contains("ureq"), "{t}");
+        assert!(t.contains("rustls"), "{t}");
+    }
+
+    #[test]
+    fn la_ayuda_dice_como_se_habla_por_la_red_y_que_no_se_siguen_redirecciones() {
+        // Lo que el dueño necesita saber ANTES de correrlo, y lo que hay que poder comprobar sin
+        // credenciales: el cliente, la jarra en memoria, que un 4xx no aborta y que no hay espera
+        // global (para no contarle a la red la espera anti-WAF del flujo).
+        let t = uso();
+        assert!(t.contains("jarra EN MEMORIA"), "{t}");
+        assert!(t.contains("http_status_as_error(false)"), "{t}");
+        assert!(t.contains("max_redirects(0)"), "{t}");
+        assert!(t.contains("403"), "{t}");
+        assert!(t.contains("429"), "{t}");
+        assert!(t.contains("sin espera global"), "{t}");
     }
 
     #[test]
@@ -1784,11 +2178,17 @@ mod pruebas {
 
     #[test]
     fn las_cabeceras_de_sesion_tienen_los_dos_caminos() {
-        let con_token = flujo::cabeceras_de_sesion(Some("TOKEN"), None);
+        // Las construye el módulo del transporte (hito B); el flujo las nombra desde su `flujo`.
+        let con_token = sincronizacion::cabeceras_de_sesion(Some("TOKEN"), None);
         assert!(con_token
             .iter()
             .any(|(k, v)| k == "Authorization" && v == "Bearer TOKEN"));
         let con_cookie = flujo::cabeceras_de_sesion(None, Some("JWT"));
+        assert_eq!(
+            con_cookie,
+            sincronizacion::cabeceras_de_sesion(None, Some("JWT")),
+            "el flujo y el módulo tienen que decir LO MISMO: es una sola lista de cabeceras"
+        );
         assert!(con_cookie.iter().any(|(k, _)| k == "DI-Backend"));
         assert!(con_cookie
             .iter()
@@ -1889,6 +2289,8 @@ mod pruebas {
 
     #[test]
     fn sin_cliente_http_el_fallo_dice_que_falta_y_que_habria_que_pedir() {
+        // El hueco se conserva a propósito (ver la cabecera del fichero): ya no es el transporte del
+        // camino de red —ese es `Cliente`, con `ureq`— pero la regla que lo trajo sigue probada.
         let fallo = SinTransporte
             .pedir(&Peticion::get("https://sso.garmin.com/x", Vec::new()))
             .unwrap_err();
@@ -1901,18 +2303,27 @@ mod pruebas {
             m.contains("yanked"),
             "el dato de rquest tiene que seguir dicho: {m}"
         );
+        // Pero tiene que quedar claro que ESTE camino ya no se usa.
+        assert!(m.contains("YA NO SE USA"), "{m}");
     }
 
     #[test]
     fn la_medicion_para_en_el_primer_paso_de_red_sin_hacer_nada_mas() {
-        // Hoy no hay transporte: el instrumento devuelve el error tipado, no un pánico.
+        // Con el hueco (un `Cliente` sin cliente HTTP dentro), el instrumento devuelve el error
+        // tipado, no un pánico —y ese es el camino que `main` corta ANTES de medir, con el código 8—.
         let fallo = medir(
-            &SinTransporte,
+            &Cliente(None),
             &Secreto::nueva("ana@ejemplo.cl".into()),
             &Secreto::nueva(FALSA.into()),
         )
         .unwrap_err();
         assert_eq!(fallo.codigo(), CODIGO_SIN_CLIENTE_HTTP);
+        // Y el camino bueno SÍ tiene cliente: `main` no puede cortar por el hueco en una corrida
+        // normal. Es la prueba de que el código 8 desapareció del camino de red.
+        assert!(
+            !Cliente::nuevo().sin_cliente_http(),
+            "el transporte de verdad tiene que estar puesto"
+        );
     }
 
     #[test]
@@ -1974,6 +2385,203 @@ mod pruebas {
         assert!(flujo::ENDPOINTS
             .iter()
             .any(|(_, u, _)| u.contains("connectapi.garmin.com")));
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // EL FLUJO ENTERO, SIN RED Y CON CREDENCIALES FALSAS
+    //
+    // El flujo de red NO se prueba con las credenciales del dueño (las pone él en SU terminal): con
+    // el transporte falso se prueba TODO lo demás, que es donde estaban los fallos posibles.
+    // -----------------------------------------------------------------------------------------
+
+    #[test]
+    fn el_flujo_entero_llega_al_final_y_ninguna_credencial_sale_por_el_camino() {
+        let t = con_token_di();
+        let resumen = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .expect("el flujo tiene que llegar hasta el final con el transporte falso");
+
+        // El recuento: lo ÚNICO que el instrumento devuelve.
+        assert!(resumen.contains("actividades"), "{resumen}");
+        assert!(resumen.contains("1 con dato"), "{resumen}");
+        assert!(resumen.contains("rango 2026-10-01 .. 2026-10-01"), "{resumen}");
+        assert!(resumen.contains("7 con dato"), "los siete diarios: {resumen}");
+        assert!(resumen.contains("pulso en reposo"), "{resumen}");
+
+        // **La regla que más importaba**: por el camino no puede salir ni la clave falsa, ni el
+        // cuerpo de una respuesta, ni el token.
+        assert!(!resumen.contains(FALSA), "salió la clave: {resumen}");
+        assert!(
+            !resumen.contains(SALUD_FALSA),
+            "salió un dato de salud: {resumen}"
+        );
+        assert!(!resumen.contains("TOKEN-DI-FALSO"), "{resumen}");
+
+        // Y el flujo hizo los deberes, contados a mano: widget + página de acceso + POST de las
+        // credenciales + POST del token + perfil + actividades + pulso por rango = 7, y 3 más por
+        // cada uno de los 7 días (sueño, estrés y training status) = 21. Total, 28.
+        let pedidas = t.pedidas();
+        assert_eq!(pedidas.len(), 28, "pasos de red");
+        assert!(!pedidas.is_empty(), "el transporte falso tiene que haber visto algo");
+
+        // Ninguna petición soltó la clave falsa ni la puso en una URL.
+        for p in &pedidas {
+            assert!(!p.url.contains(FALSA), "la clave fue en una URL: {}", p.url);
+            assert!(
+                !format!("{p:?}").contains(FALSA),
+                "la clave salió por el Debug de una petición"
+            );
+            assert!(
+                !p.descripcion_publica().contains("ST-123456-FALSO"),
+                "el ticket de servicio salió en un mensaje: {}",
+                p.descripcion_publica()
+            );
+            // Las llamadas a la API llevan el agente nativo (`client.py:165-169`). OJO, medido: los
+            // pasos del SSO (`sso.garmin.com`) NO lo llevan —van como el navegador del flujo—, así
+            // que la comprobación es sobre la API y no sobre todo el camino.
+            if p.url.contains(flujo::API) {
+                assert_eq!(
+                    p.cabeceras
+                        .iter()
+                        .find(|(k, _)| k == "User-Agent")
+                        .map(|(_, v)| v.as_str()),
+                    Some(sincronizacion::AGENTE),
+                    "sin agente nativo en {}",
+                    p.url
+                );
+                assert!(p.cabeceras.iter().any(|(k, _)| k == "X-Garmin-User-Agent"));
+            }
+        }
+        // Y los pasos del SSO, en cambio, llevan el `Referer` del widget en el POST del login.
+        let del_login = t
+            .pedidas()
+            .into_iter()
+            .find(|p| matches!(p.metodo, Metodo::Post) && p.url == flujo::URL_SIGNIN)
+            .expect("el POST del login se hizo");
+        assert!(
+            del_login
+                .cabeceras
+                .iter()
+                .any(|(k, v)| k == "Referer" && v == flujo::URL_EMBED),
+            "{:?}",
+            del_login.cabeceras
+        );
+
+        // Las llamadas a la API llevan el `Bearer` del camino con token.
+        let de_la_api = t.cabeceras_de(flujo::RUTA_PERFIL);
+        assert!(
+            de_la_api
+                .iter()
+                .any(|(k, v)| k == "Authorization" && v == "Bearer TOKEN-DI-FALSO"),
+            "{de_la_api:?}"
+        );
+        // Y el `Debug` de esa petición dice el esquema, no el token.
+        let con_bearer = t
+            .pedidas()
+            .into_iter()
+            .find(|p| p.url.contains(flujo::RUTA_PERFIL))
+            .expect("el perfil se pidió");
+        let dicho = format!("{con_bearer:?}");
+        assert!(dicho.contains("Bearer …"), "{dicho}");
+        assert!(!dicho.contains("TOKEN-DI-FALSO"), "se volcó el token: {dicho}");
+    }
+
+    #[test]
+    fn si_el_intercambio_del_token_falla_la_sesion_sigue_por_la_cookie_jwt_web() {
+        // `client.py:1284-1306`: el camino de reserva. Se prueba entero: los CUATRO identificadores
+        // de cliente se intentan en orden, y después la sesión se sostiene con `JWT_WEB`.
+        let t = por_cookie();
+        let resumen = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .expect("la reserva tiene que sostener el flujo");
+        assert!(resumen.contains("actividades"), "{resumen}");
+        assert_eq!(
+            t.veces_pedido(flujo::URL_TOKEN_DI),
+            4,
+            "se prueban los cuatro identificadores de cliente, en orden (client.py:174-179)"
+        );
+        // Y la cookie se leyó de las cabeceras: la sesión va por `JWT_WEB` + las cabeceras de la web.
+        let de_la_api = t.cabeceras_de(flujo::RUTA_PERFIL);
+        assert!(
+            de_la_api
+                .iter()
+                .any(|(k, v)| k == "Cookie" && v == "JWT_WEB=JWT-FALSO-DE-PRUEBA"),
+            "{de_la_api:?}"
+        );
+        assert!(de_la_api.iter().any(|(k, _)| k == "DI-Backend"));
+        assert!(de_la_api.iter().any(|(k, _)| k == "NK"));
+        assert!(de_la_api.iter().any(|(k, _)| k == "Origin"));
+    }
+
+    #[test]
+    fn con_credenciales_malas_el_flujo_devuelve_el_error_tipado_de_credenciales_y_no_el_8() {
+        // Lo que el dueño va a ver con una clave que no vale: código 4 (credenciales rechazadas), no
+        // el 8 del hueco. La clasificación es la de la librería (`client.py:812-881`).
+        let t = TransporteFalso::new()
+            .get(flujo::URL_EMBED, 200, "<html><title>widget</title></html>")
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            .post(
+                flujo::URL_SIGNIN,
+                200,
+                "<html><title>Account Locked</title></html>",
+                Vec::new(),
+            );
+        let fallo = medir(
+            &t,
+            &Secreto::nueva("prueba@invalido.test".into()),
+            &Secreto::nueva(FALSA.into()),
+        )
+        .unwrap_err();
+        assert_eq!(fallo.codigo(), CODIGO_CREDENCIALES);
+        assert!(
+            fallo.codigo() != CODIGO_SIN_CLIENTE_HTTP,
+            "el hueco ya no está en el camino de red"
+        );
+        assert!(
+            !fallo.mensaje().contains(FALSA),
+            "el mensaje no puede traer la clave: {}",
+            fallo.mensaje()
+        );
+    }
+
+    #[test]
+    fn un_429_por_el_camino_para_con_el_codigo_del_anti_abuso() {
+        // Con el transporte de verdad, un 429 llega como fallo tipado del transporte y conserva su
+        // código (9). Se comprueba la conversión, que es el punto donde se podría perder.
+        let del_transporte: Fallo = sincronizacion::Fallo::DemasiadasPeticiones(429).into();
+        assert_eq!(del_transporte.codigo(), CODIGO_DEMASIADAS_PETICIONES);
+        assert!(
+            del_transporte.mensaje().contains("anti-abuso"),
+            "{}",
+            del_transporte.mensaje()
+        );
+        // Un 403, en cambio, es «sin red» para el transporte y el flujo decide qué hacer con él.
+        let sin_red: Fallo = sincronizacion::Fallo::Estado(403).into();
+        assert_eq!(sin_red.codigo(), CODIGO_SIN_RED);
+        assert!(sin_red.mensaje().contains("403"), "{}", sin_red.mensaje());
+    }
+
+    #[test]
+    fn un_fallo_de_red_dice_por_donde_iba_pero_sin_los_valores_de_la_consulta() {
+        // El «al pedir …» lo añade el instrumento, y el destino va SIN valores: uno de ellos es el
+        // ticket de servicio, que es una credencial de un solo uso.
+        let t = TransporteFalso::new(); // sin ninguna ruta: todo falla
+        let peticion = Peticion::get(
+            flujo::URL_EMBED,
+            vec![("ticket".to_string(), "ST-123456-FALSO".to_string())],
+        );
+        let fallo = pedir(&t, &peticion).unwrap_err();
+        let m = fallo.mensaje();
+        assert!(m.contains("al pedir"), "{m}");
+        assert!(m.contains("ticket=…"), "{m}");
+        assert!(!m.contains("ST-123456-FALSO"), "salió el ticket: {m}");
+        assert_eq!(fallo.codigo(), CODIGO_SIN_RED);
     }
 
     #[test]

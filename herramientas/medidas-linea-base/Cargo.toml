@@ -1,0 +1,10 @@
+[package]
+name = "pulso-medir"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+fitparser = "0.11"
+motor = { path = "/home/billibu/projects/pulso/motor" }
+[[bin]]
+name = "pulso-medir"
+path = "src/main.rs"

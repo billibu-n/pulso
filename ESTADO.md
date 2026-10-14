@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **86 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **120 pruebas en verde**, cero avisos | `motor/src/` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
 | **la interfaz** | existe y **se MIDE**: 411x880, cabecera 56, nav 64, huecos repartidos | `motor/ui/` |
@@ -29,6 +29,8 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 | **la norma** | **82 reglas**, 15 patrones de fallo | `~/.dsh/skills/norma-app/SKILL.md` |
 | **los controles** | **DECIDIDO**: los de serie, con su precio medido | `docs/SLINT-…` §12 · `motor/ui/sonda-borde.slint` |
 | **8 pruebas de medición** | 6 de geometría + **2 de los controles de serie** | `cargo test --test medir-interfaz` |
+| **11 pruebas del RECORRIDO** | recorren los pasos del usuario y **exigen que sin datos NO se enseñe ningún número** | `cargo test --test recorrido` |
+| **el encargo de Farellones** | medido punto por punto: qué se puede y qué no | `docs/ENCARGO-farellones-2026.md` |
 | **la memoria entre arranques** | **5,40 s -> 0,001 s** (6.586x), con el resultado idéntico | `motor/src/memoria.rs` + `motor/src/analisis.rs` |
 
 ## 3. Qué FALTA, en orden, y por qué ese orden
@@ -53,13 +55,17 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 ├── motor/                el motor (Rust) y la interfaz (Slint)
 │   ├── src/              14 módulos: datos, rango, formulas_v2, umbral, patron, hrv,
 │   │                     contexto, informe, fit, tendencia, juicio, fuentes, adaptador
-│   ├── src/bin/          inventario (cuenta los 625), informe, ventana, y otros
-│   ├── tests/pruebas.rs  86 pruebas · tests/medir-interfaz.rs  8 pruebas de MEDICION
+│   ├── src/bin/          18: ventana (abre), y los INSTRUMENTOS de medida
+│   │                     (inventario, biomecanica, potencia, avisos, que-traen,
+│   │                      pulso-reposo, volcar-campos, medir-carga...)
+│   ├── tests/pruebas.rs  101 pruebas · medir-interfaz.rs  8 · recorrido.rs  11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
 ├── herramientas/        traer-slint.sh · html-a-texto.py · iconos-a-slint.py
-├── datos/               1003 MB DEL CLIENTE — **ignorado por git, NUNCA se sube**
+├── datos/               **1.003 MB DEL CLIENTE** — ignorado por git, NUNCA se sube.
+│                        102 FIT de entrenamiento + **1.360 ficheros de Garmin**
+│                        (sueño, pulso, estrés, training status: los diarios vienen VACIOS)
 ├── datos-de-ejemplo/    caso inventado, esto sí se publica
 └── temas/                contraste.py (los dos temas) · contraste-widgets.py (los CONTROLES)
 ```
@@ -126,9 +132,10 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 86 pruebas del motor
-cargo test --test medir-interfaz        # 8 pruebas de GEOMETRIA y de los controles
+cargo test                              # 120 pruebas (101 motor + 8 medicion + 11 recorrido)
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
+cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
+cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
 cargo run -q --bin inventario -- ../datos/garmin_files/storage   # cuenta los 625 resultados
 cargo run -q --bin ventana -- ../datos/garmin_files/storage --texto   # lo que enseña, SIN ABRIR
 cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mide la memoria
@@ -138,6 +145,38 @@ cargo run -q --release --bin medir-carga -- ../datos/garmin_files/storage   # mi
 
 - **lo visual se MIDE, no se mira** — y si no se puede medir, **eso es la tarea**;
 - **nunca abrir la ventana en la pantalla del dueño** para comprobar algo. Se mide.
+
+## 6-bis. El encargo del cliente (Farellones, 29 de noviembre de 2026)
+
+**Llegó el 2026-10-13, redactado por otra IA**, con requisitos, sugerencias y supuestos mezclados. Se
+comprobó **punto por punto contra sus datos**, y está todo en `docs/ENCARGO-farellones-2026.md`.
+**Quedan 47 días.**
+
+**Lo que hay que saber de un vistazo:**
+
+- **Sus ficheros traen MUCHO más de lo que se usaba**: TSS (18 sesiones por encima de 100), FTP **213 W**
+  detectado por Garmin, potencia, cadencia, **potencia y cadencia sentado/de pie**, respiración, y
+  **la fase de pedaleo de cada pierna** (difieren en 80 de 83 sesiones).
+- **El reparto de potencia izquierda/derecha NO está en el FIT**: lo calcula Garmin en su servidor. Lo
+  que sí es por pierna es **la fase**.
+- **Tres trampas de nombre**, documentadas con su fuente, que casi hacen acusar al cliente de un
+  desequilibrio inventado: `left_right_balance` trae **el número de serie del sensor**;
+  `avg_power_position` es **postura** (sentado/de pie) y **no lado**; `avg_*_pco` vale **0 siempre**.
+- **Sueño, pulso en reposo, estrés: 165 ficheros de cada y TODOS vacíos.** No hay serie.
+- **El pulso en reposo se separó en TRES datos distintos**, que era la causa del conflicto (48 dormido
+  de Garmin, 71 despierto de Huawei, y el mínimo en entrenamiento). **Este cliente empieza a entrenar
+  con el pulso ya alto** (mediana del mínimo: 90 ppm), así que de un entrenamiento **no** se saca.
+- **La composición corporal tiene camino y no es teclear**: **exportación oficial de Huawei**
+  (Centro de Privacidad → Request Your Data → Health), que trae peso, grasa, **agua, músculo y masa
+  ósea**. Mejor que Health Sync + Terra API, que era lo que proponía el encargo.
+- **La edad estaba mal**: dice `60` y **tiene 62** (nació el 1964-01-25). **No se arregla escribiendo
+  62** — eso caduca el 25 de enero — sino guardando la **fecha** y calculando la edad al usarla.
+
+**Y lo que NO se construye**: el «agente de IA en bucle». Ninguna de sus tres reglas lo necesita (son
+«si X, entonces Y»), y esto decide sobre el cuerpo de una persona. Sus pautas se implementan **como
+suyas**, no como hallazgos médicos.
+
+---
 
 ## 7. Lo que NO está resuelto, dicho claro
 

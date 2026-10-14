@@ -23,6 +23,7 @@
 use crate::analisis::Real;
 use crate::avisos::fecha_de_epoch;
 use crate::datos::Persona;
+use crate::sincronizar::Resumen;
 use crate::umbral;
 
 /// **Una cifra CON SU ETIQUETA DENTRO**, y con la posibilidad de **no existir**.
@@ -490,4 +491,46 @@ fn que_falta(p: &Persona) -> String {
     // Tiene umbral: entonces SI se puede diagnosticar y esta funcion no se llama. Pero si algun dia
     // se llama, es mejor decir algo cierto que cadena vacia.
     "No hay datos suficientes para calcular las zonas. Se rellenan en Datos.".to_string()
+}
+
+/// **Lo que trajo la sincronizacion con Garmin, en UNA linea.**
+///
+/// QUE ES: el unico sitio donde `sincronizar::Resumen` se convierte en texto. La pantalla **no cuenta
+/// nada** (si contara por su lado habria dos maneras de contar, y algun dia no dirian lo mismo) y
+/// **no formatea nada**: recibe esta frase ya escrita y la dibuja.
+///
+/// LAS TRES DECISIONES, y el motivo de cada una:
+///
+/// 1. **Sin novedades (0 y 0) se dice «nada nuevo», y NO se devuelve cadena vacia.** Parece lo
+///    contrario de AU-91 («un vacio no se dibuja»), y no lo es: **aqui el dato SI existe**. «No he
+///    sincronizado todavia» es `""` -- la linea no se dibuja, porque no hay nada que decir --, y
+///    «he sincronizado y no habia nada nuevo» es un hecho que el usuario tiene derecho a leer. Con
+///    cadena vacia en los dos casos, una sincronizacion que no trajo nada seria **indistinguible de
+///    no haber sincronizado nunca**, y callar despues de pulsar un boton es lo que hace pensar que el
+///    boton no funciona.
+/// 2. **Se dicen los DOS numeros, tambien cuando uno es cero** («0 actividades y 2 diarios nuevos»).
+///    Es lo que el resumen trae, con sus numeros reales; elegir cual de los dos se calla seria una
+///    regla de estilo metida aqui dentro, y ademas escondería que el aparato no trajo actividades.
+/// 3. **NO se enumeran las fechas de los diarios, nunca.** El resumen las trae
+///    (`fechas_de_diarios`) y **esta funcion no las usa**: con cinco diarios, la frase seguiria
+///    siendo UNA linea, y con cuarenta, un parrafo -- y la pantalla de 411 px no se explica (AU-44,
+///    AU-45, AU-92). El recuento es el dato; el detalle de que dias son va en la ayuda.
+///
+/// El singular se escribe como se dice («1 actividad y 1 diario nuevo»): un «1 actividades» se lee
+/// como un descuido del programa, y la pantalla es la cara del motor.
+pub fn texto_del_resumen(resumen: &Resumen) -> String {
+    if resumen.actividades == 0 && resumen.diarios == 0 {
+        return "nada nuevo".to_string();
+    }
+    let actividades = if resumen.actividades == 1 {
+        "1 actividad".to_string()
+    } else {
+        format!("{} actividades", resumen.actividades)
+    };
+    let diarios = if resumen.diarios == 1 {
+        "1 diario nuevo".to_string()
+    } else {
+        format!("{} diarios nuevos", resumen.diarios)
+    };
+    format!("{actividades} y {diarios}")
 }

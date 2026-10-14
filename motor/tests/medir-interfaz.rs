@@ -854,6 +854,34 @@ fn como_se_llama(e: &i_slint_backend_testing::ElementHandle) -> String {
     }
 }
 
+/// **Las BARRAS DE DESPLAZAMIENTO del contenido, por su caja.**
+///
+/// POR QUE HAY QUE DESCONTARLAS, y esto se midio el 2026-10-14 al anadir el bloque Garmin: la barra
+/// **no es un bloque de la seccion**, es CHROME del control de serie (`ScrollView`, AU-05), y **sale
+/// justo cuando la seccion se hace mas larga que su ventana** -- que pasa a ser el caso normal de
+/// «Datos» en cuanto la seccion crece --. Sin descontarla, el portero (AU-95) acusa a la barra de no
+/// respetar el margen de 16: **12 avisos** que hablaban del `ScrollBar`, de su `TouchArea`, de su
+/// pulgar y de sus flechas, no de nada que el usuario lea.
+///
+/// SE LOCALIZA POR TIPO Y SE DESCARTA POR CAJA: la barra son varias piezas sin parentesco util, asi
+/// que se toma la caja de cada `ScrollBar` y **todo lo que cae dentro de esa caja es la barra**. El
+/// portero sigue mirando TODO lo demas: no se abre ningun hueco.
+fn barras_de_desplazamiento(dentro: &[i_slint_backend_testing::ElementHandle]) -> Vec<(f64, f64, f64, f64)> {
+    dentro
+        .iter()
+        .filter(|e| e.type_name().map(|t| t.to_string()).as_deref() == Some("ScrollBar"))
+        .map(caja)
+        .collect()
+}
+
+/// ¿Este elemento es parte de una barra de desplazamiento?
+fn es_parte_de_la_barra(e: &i_slint_backend_testing::ElementHandle, barras: &[(f64, f64, f64, f64)]) -> bool {
+    let (x, y, w, h) = caja(e);
+    barras
+        .iter()
+        .any(|(bx, by, bw, bh)| x >= bx - 0.5 && y >= by - 0.5 && x + w <= bx + bw + 0.5 && y + h <= by + bh + 0.5)
+}
+
 /// El PORTERO (AU-95): recorre el arbol visible del contenido y devuelve, en texto, cada elemento que
 /// se sale del margen. Se devuelve la lista **entera** -- no se corta en el primero -- porque lo que
 /// hay que saber es **cuantos** y **cuales**.
@@ -863,9 +891,12 @@ fn porteria_del_contenido(v: &Ventana, etiqueta: &str) -> (usize, Vec<String>) {
     let c = cont.absolute_position();
     let t = cont.size();
     let (cx, cy, cancho, calto) = (f64::from(c.x), f64::from(c.y), f64::from(t.width), f64::from(t.height));
+    let dentro = cont.query_descendants().find_all();
+    let barras = barras_de_desplazamiento(&dentro);
     let mut medidos = 0usize;
+    let mut en_la_barra = 0usize;
     let mut faltas: Vec<String> = Vec::new();
-    for e in cont.query_descendants().find_all() {
+    for e in dentro.iter() {
         let p = e.absolute_position();
         let s = e.size();
         let (x, y, w, h) = (f64::from(p.x), f64::from(p.y), f64::from(s.width), f64::from(s.height));
@@ -878,7 +909,12 @@ fn porteria_del_contenido(v: &Ventana, etiqueta: &str) -> (usize, Vec<String>) {
         if y + h <= cy + 0.5 || y >= cy + calto - 0.5 {
             continue;
         }
-        if es_andamiaje(&e, cx, cancho) {
+        if es_andamiaje(e, cx, cancho) {
+            continue;
+        }
+        // La barra de desplazamiento NO es contenido: se descuenta, y **se dice cuantas piezas**.
+        if es_parte_de_la_barra(e, &barras) {
+            en_la_barra += 1;
             continue;
         }
         medidos += 1;
@@ -888,11 +924,15 @@ fn porteria_del_contenido(v: &Ventana, etiqueta: &str) -> (usize, Vec<String>) {
             faltas.push(format!(
                 "{} mide {w:.1}x{h:.1} en ({x:.1},{y:.1}): deja {izq:.1} a la izquierda y {der:.1} a la \
                  derecha",
-                como_se_llama(&e)
+                como_se_llama(e)
             ));
         }
     }
-    println!("  {etiqueta}: {medidos} elementos medidos (el andamiaje no cuenta), {} fuera del margen", faltas.len());
+    println!(
+        "  {etiqueta}: {medidos} elementos medidos (el andamiaje no cuenta), {} fuera del margen, \
+         {en_la_barra} piezas de la barra de desplazamiento descontadas",
+        faltas.len()
+    );
     (medidos, faltas)
 }
 
@@ -2216,6 +2256,45 @@ fn los_iconos_de_la_barra_existen_todos_en_el_catalogo() {
             "falta el icono {n} de las lineas del Resumen (§3.7)"
         );
     }
+
+    // Y LOS ICONOS ESCRITOS EN LINEA, DENTRO DE UN `Icono` (bloque Garmin, HITO C): el portero de
+    // arriba solo mira los `icono: "..."` de los DATOS, asi que un nombre inventado en un
+    // `Icono { nombre: "..." }` **no lo cazaba nadie** -- y un icono que no existe en el catalogo sale
+    // **INVISIBLE**, que es el fallo que peor se ve y el que NINGUNA prueba de geometria detecta: un
+    // hueco de 24 x 24 sigue midiendo 24 x 24. Se lee el cuerpo de cada `Icono { ... }` y se comprueban
+    // sus nombres LITERALES; `nombre: root.icono` es un dato que viene de fuera y aqui no se juzga.
+    let mut en_linea = 0;
+    for trozo in ventana.split("Icono {").skip(1) {
+        let cuerpo = trozo.split('}').next().unwrap_or_default();
+        let Some(resto) = cuerpo.split("nombre:").nth(1) else {
+            continue;
+        };
+        // Los nombres entre comillas de ese `nombre:` -- en el estado van DOS, en un ternario.
+        let mut queda = resto;
+        while let Some(i) = queda.find('"') {
+            let desde = &queda[i + 1..];
+            let Some(j) = desde.find('"') else { break };
+            let nombre = &desde[..j];
+            assert!(
+                catalogo.contains(&format!("\"{nombre}\"")),
+                "el icono «{nombre}» de un `Icono` en linea NO esta en iconos.slint: saldria invisible"
+            );
+            en_linea += 1;
+            queda = &desde[j + 1..];
+        }
+    }
+    assert!(
+        en_linea >= 4,
+        "el bloque Garmin lleva 4 nombres de icono (las dos caras del estado, la via y el resumen) y \
+         solo se han comprobado {en_linea}"
+    );
+    for n in ["ok-circulo", "informacion", "enlace", "nube-bajada"] {
+        assert!(
+            ventana.contains(&format!("\"{n}\"")),
+            "falta el icono «{n}» del bloque Garmin (HITO C)"
+        );
+    }
+    println!("  iconos del catalogo comprobados: {cuantos} de datos y {en_linea} escritos en linea");
 }
 
 // ==================================================================================================
@@ -2713,5 +2792,287 @@ fn la_precision_y_lo_que_falta_van_en_una_linea_con_su_icono_y_caben_en_su_bloqu
         textos,
         vec![sin_datos.que_falta_corto.clone()],
         "sin datos solo va la linea de lo que falta, y es la frase CORTA"
+    );
+}
+
+// ==================================================================================================
+// HITO C · EL BLOQUE GARMIN EN LA SECCION «DATOS» (fase 3, 2026-10-14)
+// ==================================================================================================
+//
+// COMO SE MIDE UN BLOQUE QUE QUEDA POR DEBAJO DEL PLIEGUE, y esto hay que explicarlo ANTES de leer los
+// numeros, porque si no la prueba parece un truco:
+//
+// la seccion «Datos» **no cabe** en la pantalla del telefono (diez campos, dos columnas, cuatro
+// botones, el tema y ahora el bloque Garmin), y **el armazon de movil mide 411 x 880 CLAVADOS**
+// (`armazon.slint:323-324`: `width: Medidas.ancho; height: Medidas.alto`, NO sigue al tamaño de la
+// ventana). Medido el 2026-10-14: con esa ventana, **todo lo que cae por debajo del pliegue no llega
+// al arbol que el backend devuelve** -- desaparecen el bloque Garmin entero y hasta el `Switch` del
+// tema --, asi que medir el Garmin ahi seria **no medirlo** y dar verde.
+//
+// LA SALIDA NO ES UN FIXTURE (que es lo que la cabecera de este fichero prohibe): se abre **la misma
+// ventana, el mismo componente `Datos` y las mismas propiedades**, con el reparto de ESCRITORIO, que
+// si sigue al tamaño de la ventana, y se le da **alto de sobra** para que la seccion quepa entera. Lo
+// que se mide es el bloque de verdad, con su margen de 16 y su ancho completo; lo unico que cambia es
+// el reparto que lo rodea.
+const ALTO_DE_SOBRA: f32 = 3000.0;
+
+/// La ventana de verdad, con alto de sobra para que la seccion «Datos» quepa entera (si no, sus
+/// ultimos bloques no se pueden medir). Deja la seccion Datos puesta.
+fn ventana_alta(alto: f32) -> Ventana {
+    i_slint_backend_testing::init_no_event_loop();
+    let v = otra_ventana();
+    preparar_datos(&v, alto);
+    v
+}
+
+/// Lo mismo, para la SEGUNDA ventana de una prueba (`init_no_event_loop` solo se puede llamar una vez
+/// por hilo: la segunda vez panica).
+fn preparar_datos(v: &Ventana, alto: f32) {
+    v.set_ancho_ventana(ESCRITORIO.0 as f32);
+    v.set_alto_ventana(alto);
+    v.set_seccion_activa(3);
+}
+
+/// El Garmin con datos: conectado, por SSO web, sin estar trabajando, y con lo que trajo la ultima
+/// sincronizacion. **El texto del resumen es el del contrato**, escrito como lo escribe el motor.
+fn garmin_con_datos(v: &Ventana) {
+    v.set_garmin_conectado(true);
+    v.set_garmin_via("SSO web".into());
+    v.set_garmin_sincronizando(false);
+    v.set_garmin_resumen("3 actividades y 2 diarios nuevos".into());
+}
+
+/// Las medidas de una pieza, en un texto, para que un fallo diga DONDE esta mal.
+fn caja(e: &i_slint_backend_testing::ElementHandle) -> (f64, f64, f64, f64) {
+    let p = e.absolute_position();
+    let t = e.size();
+    (f64::from(p.x), f64::from(p.y), f64::from(t.width), f64::from(t.height))
+}
+
+#[test]
+fn el_bloque_garmin_esta_en_datos_con_sus_piezas_y_el_marco_no_recorta_al_boton() {
+    // §3.11 (controles de serie, con marco por fuera) aplicado al bloque Garmin del HITO C: titulo de
+    // bloque a 14/700, etiquetas a 12, el control a 48, marco de 1 px con el token `linea`, `padding`
+    // del layout, y **ancho completo**.
+    let v = ventana_alta(ALTO_DE_SOBRA);
+    garmin_con_datos(&v);
+
+    let todos = ElementQuery::from_root(&v).find_all();
+    let ids: Vec<String> = todos
+        .iter()
+        .filter_map(|e| e.accessible_id().map(|s| s.to_string()))
+        .collect();
+    for id in ["garmin-marco", "garmin-titulo", "garmin-estado", "garmin-via", "garmin-sincronizar", "garmin-resumen"] {
+        assert!(ids.contains(&id.to_string()), "falta la pieza «{id}» del bloque Garmin: {ids:?}");
+    }
+
+    // EL TITULO DEL BLOQUE Y EL ESTADO: el titulo es mas alto que las etiquetas porque va a 14 y ellas
+    // a 12 -- la caja de una linea de 12 mide 17 (ya medido en este fichero), y la de 14 mide mas. Es
+    // la unica forma de medir TIPOGRAFIA desde la geometria: no hay otra.
+    let titulo = buscar(&todos, "garmin-titulo").expect("el titulo del bloque");
+    let estado = buscar(&todos, "garmin-estado").expect("el estado");
+    let (_, _, _, alto_titulo) = caja(titulo);
+    let (_, _, _, alto_estado) = caja(estado);
+    println!("  titulo {alto_titulo:.1} de alto, etiqueta {alto_estado:.1} (12 px -> caja 17)");
+    assert!(
+        (alto_estado - doc::CAJA_ETIQUETA).abs() < 1.5,
+        "las etiquetas del bloque van a 12 px (§3.11): su caja mide {alto_estado:.1} y deberia medir {}",
+        doc::CAJA_ETIQUETA
+    );
+    assert!(
+        alto_titulo > alto_estado,
+        "el titulo del bloque va a 14 (body) 700 y las etiquetas a 12 (§3.11): el titulo mide \
+         {alto_titulo:.1} y la etiqueta {alto_estado:.1}"
+    );
+
+    // EL TEXTO DE LAS PIEZAS: lo que se lee es lo que dice el contrato.
+    assert_eq!(texto_de(estado), "Conectado", "conectado, el estado dice «Conectado»");
+    assert_eq!(texto_de(buscar(&todos, "garmin-via").expect("la via")), "SSO web");
+    assert_eq!(
+        texto_de(buscar(&todos, "garmin-resumen").expect("el resumen")),
+        "3 actividades y 2 diarios nuevos"
+    );
+    assert_eq!(
+        texto_de(buscar(&todos, "garmin-sincronizar").expect("el boton")),
+        "Sincronizar",
+        "el boton dice lo que hace"
+    );
+
+    // EL ESTADO SIN CONECTAR, y es la misma pieza: no una segunda linea ni un segundo bloque.
+    v.set_garmin_conectado(false);
+    v.set_garmin_via("".into());
+    let todos = ElementQuery::from_root(&v).find_all();
+    let estado = buscar(&todos, "garmin-estado").expect("el estado sigue estando");
+    assert_eq!(texto_de(estado), "No conectado", "sin conectar, el estado lo dice");
+    assert!(
+        buscar(&todos, "garmin-via").is_none(),
+        "sin via no se dibuja la linea de la via (AU-91: un vacio no se dibuja)"
+    );
+
+    // Y EL BOTON CON EL MARCO: 48 de alto (minimo tactil, §3.11), dentro del marco y sin que el marco
+    // lo recorte por ningun lado, y ancho completo (el estilo trae `horizontal-stretch: 0`).
+    garmin_con_datos(&v);
+    let todos = ElementQuery::from_root(&v).find_all();
+    let marco = buscar(&todos, "garmin-marco").expect("el marco");
+    let boton = buscar(&todos, "garmin-sincronizar").expect("el boton");
+    let (mx, my, mw, mh) = caja(marco);
+    let (bx, by, bw, bh) = caja(boton);
+    println!("  marco {mw:.0}x{mh:.0} en ({mx:.0},{my:.0}) · boton {bw:.0}x{bh:.0} en ({bx:.0},{by:.0})");
+    assert!(bh >= 48.0, "el control del bloque tiene que llegar a 48 dp (§3.11), y mide {bh:.0}");
+    // ANCHO COMPLETO: el marco ocupa TODO el ancho del contenido menos su margen de 16 por lado.
+    let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
+    let (cx, _, cancho, _) = caja(cont);
+    assert!(
+        (mw - (cancho - 2.0 * doc::MARGEN)).abs() < 1.5,
+        "el bloque tiene que ocupar el ancho completo de la pantalla menos su margen (§3.11): mide \
+         {mw:.0} donde el contrato dice {:.0}",
+        cancho - 2.0 * doc::MARGEN
+    );
+    assert!(
+        (mx - cx - doc::MARGEN).abs() < 1.0,
+        "el bloque tiene que empezar en el margen de 16 de la pantalla: empieza en {mx:.1} y el \
+         contenido en {cx:.1}"
+    );
+    let izq = bx - mx;
+    let der = (mx + mw) - (bx + bw);
+    let arr = by - my;
+    let aba = (my + mh) - (by + bh);
+    println!("  hueco alrededor del boton: izq {izq:.0}, arriba {arr:.0}, der {der:.0}, abajo {aba:.0}");
+    for (lado, hueco) in [("izquierda", izq), ("arriba", arr), ("derecha", der), ("abajo", aba)] {
+        assert!(hueco > 1.0, "el marco tiene que dejar hueco por {lado}, y deja {hueco:.1}: lo esta recortando");
+    }
+    assert!(
+        bw > 0.8 * mw,
+        "el control tiene que ir a ancho completo (AU: el estilo trae horizontal-stretch 0): mide \
+         {bw:.0} dentro de un marco de {mw:.0}"
+    );
+}
+
+#[test]
+fn sin_resumen_la_linea_del_resumen_no_esta_en_el_arbol_ni_reserva_su_sitio() {
+    // AU-91: **un vacio no se dibuja, ni su marco, ni su hueco**. Se comprueba de las dos maneras que
+    // hacen falta, porque una sola no prueba lo mismo:
+    //   1. NO ESTA EN EL ARBOL: sin resumen, no hay elemento con ese nombre -- ni vacio ni oculto (un
+    //      `visible: false` seguiria estando, y es justo lo que la norma prohibe);
+    //   2. NO RESERVA SU SITIO: el bloque ENCOGE exactamente lo que media la linea que desaparece
+    //      (44 de linea + 8 de hueco). Sin esto, la linea podria estar fuera del arbol y **seguir
+    //      dejando el hueco**, que se ve igual de mal.
+    let alto = ALTO_DE_SOBRA;
+    let v = ventana_alta(alto);
+    garmin_con_datos(&v);
+
+    let con = {
+        let todos = ElementQuery::from_root(&v).find_all();
+        assert_eq!(
+            con_id(&todos, "garmin-resumen").len(),
+            1,
+            "con resumen hay UNA linea, y solo una (§3.7: una linea, con su icono)"
+        );
+        let linea = buscar(&todos, "garmin-resumen").expect("la linea del resumen");
+        let marco = buscar(&todos, "garmin-marco").expect("el marco");
+        let (lx, ly, lw, lh) = caja(linea);
+        let (mx, my, mw, mh) = caja(marco);
+        println!("  con resumen: el bloque mide {mh:.0} y la linea {lw:.0}x{lh:.0} en ({lx:.0},{ly:.0})");
+        // UNA LINEA: la caja de una sola linea de 12 px mide 17. Con dos serian 34 (§3.7 deja hasta dos
+        // en el aviso largo, pero aqui la frase es un recuento: **una**).
+        assert!(
+            lh <= doc::CAJA_ETIQUETA + 2.0,
+            "el resumen tiene que ser UNA linea: su caja mide {lh:.1} de alto"
+        );
+        assert!(
+            ly + lh <= my + mh + 0.5,
+            "la linea del resumen se sale por debajo de su bloque: acaba en {:.1} y el bloque en {:.1}",
+            ly + lh,
+            my + mh
+        );
+        assert!(
+            lx >= mx && lx + lw <= mx + mw + 0.5,
+            "la linea del resumen se sale de su bloque: va de {lx:.1} a {:.1} dentro de {mx:.1}..{:.1}",
+            lx + lw,
+            mx + mw
+        );
+        mh
+    };
+
+    // SIN RESUMEN: la linea no existe, y el bloque encoge lo que media. **La via se deja puesta a
+    // proposito**: si se quitara tambien, la diferencia de alto mezclaria DOS lineas (la via y el
+    // resumen) y el numero 52 no diria de cual de las dos habla.
+    let v2 = otra_ventana();
+    preparar_datos(&v2, alto);
+    v2.set_garmin_conectado(true);
+    v2.set_garmin_via("SSO web".into());
+    v2.set_garmin_resumen("".into());
+    let sin = {
+        let todos = ElementQuery::from_root(&v2).find_all();
+        assert_eq!(
+            con_id(&todos, "garmin-resumen").len(),
+            0,
+            "sin resumen la linea NO puede estar en el arbol (ni hueca ni oculta): AU-91"
+        );
+        // Y tampoco una linea vacia con su icono: se cuentan los textos vacios de dentro del marco.
+        let marco = buscar(&todos, "garmin-marco").expect("el marco");
+        let vacios = marco
+            .query_descendants()
+            .find_all()
+            .iter()
+            .filter(|e| e.accessible_id().is_some() && texto_de(e).is_empty())
+            .count();
+        assert_eq!(vacios, 0, "no puede quedar una pieza con nombre y sin texto: {vacios}");
+        caja(marco).3
+    };
+    println!("  con resumen el bloque mide {con:.0}; sin resumen, {sin:.0} (diferencia {:.0})", con - sin);
+    assert!(
+        con - sin >= 40.0,
+        "sin resumen el bloque tiene que ENCOGER lo que media la linea (44 + 8 de hueco): encoge {:.0}",
+        con - sin
+    );
+    assert!(
+        (con - sin - 52.0).abs() < 2.0,
+        "el sitio que libera el resumen tiene que ser exactamente la linea (44) mas el hueco (8) = 52, \
+         y libera {:.0}",
+        con - sin
+    );
+}
+
+#[test]
+fn el_bloque_garmin_cae_dentro_del_margen_de_16_de_la_pantalla() {
+    // EL PORTERO (AU-95) aplicado al bloque nuevo, y hay que aplicarselo A MANO por un motivo medido:
+    // el portero global (`todos_los_bloques_del_contenido_llevan_el_margen_de_16`) mira la seccion
+    // «Datos» con la ventana de 411 x 880, donde **este bloque queda por debajo del pliegue y no
+    // llega al arbol**. Aqui se mide con alto de sobra, o sea que el bloque SI se mide, y se comprueba
+    // lo mismo que el portero comprueba en los demas: que nada de dentro se sale de [16, 395].
+    let v = ventana_alta(ALTO_DE_SOBRA);
+    garmin_con_datos(&v);
+    let todos = ElementQuery::from_root(&v).find_all();
+    let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
+    let (cx, _, cancho, _) = caja(cont);
+    let marco = buscar(&todos, "garmin-marco").expect("el marco del bloque Garmin");
+
+    let mut faltas: Vec<String> = Vec::new();
+    let mut medidos = 0usize;
+    // El marco Y todo lo que lleva dentro: es la misma cuenta que hace el portero global.
+    let mut revisar = |e: &i_slint_backend_testing::ElementHandle| {
+        let (x, _, w, h) = caja(e);
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        medidos += 1;
+        let izq = x - cx;
+        let der = (cx + cancho) - (x + w);
+        if izq < doc::MARGEN - 0.5 || der < doc::MARGEN - 0.5 {
+            faltas.push(format!("{} deja {izq:.1} a la izquierda y {der:.1} a la derecha", como_se_llama(e)));
+        }
+    };
+    revisar(marco);
+    for e in marco.query_descendants().find_all() {
+        revisar(&e);
+    }
+    println!("  bloque Garmin: {medidos} elementos medidos, {} fuera del margen de 16", faltas.len());
+    assert!(medidos >= 8, "el bloque tiene que tener piezas que medir, y solo se han medido {medidos}");
+    assert!(
+        faltas.is_empty(),
+        "hay {} elementos del bloque Garmin fuera del margen de 16 (AU-95):\n  - {}",
+        faltas.len(),
+        faltas.join("\n  - ")
     );
 }

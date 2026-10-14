@@ -3739,3 +3739,89 @@ fn una_composicion_vacia_deja_todo_en_falta() {
     assert!(c.fecha.falta() && c.peso_kg.falta() && c.grasa_corporal_pct.falta());
     assert!(c.agua_corporal_pct.falta() && c.masa_muscular_kg.falta() && c.masa_osea_kg.falta());
 }
+
+// ==================================================================================================
+// HITO C · LO QUE TRAJO LA SINCRONIZACION CON GARMIN, EN UNA LINEA
+// ==================================================================================================
+//
+// POR QUE ESTA PRUEBA VIVE AQUI Y NO EN `medir-interfaz.rs`: `texto_del_resumen` es una funcion PURA
+// del motor (no toca Slint, no toca el disco, no abre nada), y este es el fichero de las pruebas del
+// motor. La GEOMETRIA del bloque Garmin -- el marco, el boton de 48, la linea que no se dibuja si esta
+// vacia -- se mide en `medir-interfaz.rs`, que es donde se mide la pantalla.
+
+/// El resumen de una sincronizacion, tal como lo devuelve `sincronizar::resumen_de_nuevo`.
+fn resumen(actividades: usize, diarios: usize, fechas: &[&str]) -> motor::sincronizar::Resumen {
+    motor::sincronizar::Resumen {
+        actividades,
+        diarios,
+        fechas_de_diarios: fechas.iter().map(|f| f.to_string()).collect(),
+    }
+}
+
+#[test]
+fn el_resumen_de_garmin_son_los_numeros_reales_en_una_linea_y_sin_fechas() {
+    // EL CONTRATO: UNA linea, los numeros REALES que trae el resumen, y **nunca la lista de fechas**
+    // (con cinco diarios la frase seguiria siendo una linea; con cuarenta, un parrafo, y la pantalla de
+    // 411 px no se explica: AU-44, AU-45, AU-92).
+
+    // 0 y 0: se dice «nada nuevo», y NO cadena vacia. La cadena vacia esta reservada para «no se ha
+    // sincronizado todavia» (la linea no se dibuja, AU-91); si las dos cosas dieran lo mismo, una
+    // sincronizacion que no trajo nada seria indistinguible de no haber sincronizado, y **callar
+    // despues de pulsar un boton es lo que hace pensar que el boton no funciona**.
+    let vacio = motor::cara::texto_del_resumen(&resumen(0, 0, &[]));
+    assert_eq!(vacio, "nada nuevo", "0 y 0 se dice, no se calla");
+    assert!(!vacio.contains('\n'), "el resumen es UNA linea: {vacio:?}");
+
+    // 3 y 2: los numeros reales, ni uno mas ni uno menos.
+    let tres = motor::cara::texto_del_resumen(&resumen(3, 2, &["2026-10-01", "2026-10-02"]));
+    assert_eq!(tres, "3 actividades y 2 diarios nuevos", "el resumen dice lo que trajo");
+    println!("  3 actividades y 2 diarios -> «{tres}» ({} caracteres)", tres.chars().count());
+
+    // UNO: se escribe como se dice. «1 actividades» se lee como un descuido del programa, y la
+    // pantalla es la cara del motor.
+    assert_eq!(
+        motor::cara::texto_del_resumen(&resumen(1, 1, &["2026-10-01"])),
+        "1 actividad y 1 diario nuevo"
+    );
+    assert_eq!(
+        motor::cara::texto_del_resumen(&resumen(2, 1, &["2026-10-01"])),
+        "2 actividades y 1 diario nuevo"
+    );
+
+    // UNO DE LOS DOS EN CERO: se dicen los DOS numeros, porque es lo que el resumen trae. Elegir cual
+    // se calla seria una regla de estilo escondida aqui, y ademas ocultaria que el aparato no trajo
+    // actividades.
+    assert_eq!(
+        motor::cara::texto_del_resumen(&resumen(0, 2, &["2026-10-01", "2026-10-02"])),
+        "0 actividades y 2 diarios nuevos"
+    );
+    assert_eq!(
+        motor::cara::texto_del_resumen(&resumen(3, 0, &[])),
+        "3 actividades y 0 diarios nuevos"
+    );
+
+    // Y NUNCA LAS FECHAS, con muchas fechas: ni una. Se comprueban las dos cosas que se pueden
+    // comprobar sin leer la frase a ojo -- que no aparece ninguna de las fechas, y que la frase no
+    // crece con ellas (la misma cuenta con CERO fechas que con cuarenta).
+    let muchas: Vec<&str> = vec![
+        "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05",
+        "2026-09-06", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10",
+    ];
+    let con_fechas = motor::cara::texto_del_resumen(&resumen(7, 10, &muchas));
+    for fecha in &muchas {
+        assert!(
+            !con_fechas.contains(fecha),
+            "el resumen NO enumera las fechas de los diarios, y aparece «{fecha}» en «{con_fechas}»"
+        );
+    }
+    assert_eq!(
+        con_fechas,
+        motor::cara::texto_del_resumen(&resumen(7, 10, &[])),
+        "las fechas no pueden cambiar la frase: con diez y con ninguna tiene que decir lo mismo"
+    );
+    assert!(
+        !con_fechas.contains('\n') && con_fechas.chars().count() <= 64,
+        "el resumen es UNA linea y CORTA (la pantalla no se explica): «{con_fechas}»"
+    );
+    println!("  7 actividades y 10 diarios (con sus fechas) -> «{con_fechas}»");
+}

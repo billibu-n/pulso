@@ -575,7 +575,23 @@ component Datos inherits VerticalLayout {
     in property <string> mensaje;
     in property <bool> error: false;
     in property <string> ruta;
+    // ---- GARMIN: el estado, la via, si esta trabajando, y lo que trajo (HITO C) ----
+    //
+    // SON CUATRO CAMPOS Y NO UNO SOLO CON EL TEXTO YA MONTADO: la pantalla NO formatea numeros de
+    // significado (solo el motor decide que se enseña). `garmin_resumen` llega **ya escrito** por
+    // `cara::texto_del_resumen`, y los otros tres son estado, no texto: el icono del estado y el
+    // apagado del boton se deciden aqui a partir de un `bool`, no de una cadena que habria que
+    // interpretar (AU-88: leer un simbolo es donde la pantalla empieza a mentir).
+    in property <bool> garmin_conectado: false;
+    // Vacio = no se sabe por donde; «SSO web» o «movil DI» cuando se sabe.
+    in property <string> garmin_via;
+    in property <bool> garmin_sincronizando: false;
+    // UNA linea ya escrita por el motor, o vacio (y entonces no se dibuja).
+    in property <string> garmin_resumen;
     callback guardar;
+    // Sincronizar **no sincroniza aqui**: pide. Quien la conecte decide que pasa (hoy puede no hacer
+    // nada): la RED queda fuera de la vista y del HITO C.
+    callback sincronizar-garmin;
     // Abre la capa del selector. La capa se dibuja en la VENTANA, no aqui: este panel solo pide.
     callback abrir-selector;
 
@@ -729,6 +745,145 @@ component Datos inherits VerticalLayout {
         }
     }
 
+    // EL BLOQUE GARMIN: **conectar, decir por que via, y sincronizar**, en un bloque con su marco.
+    //
+    // POR QUE VA AQUI Y NO EN UNA SECCION NUEVA: la navegacion de CUATRO esta aprobada y medida
+    // (`estado:301-307`), y Garmin es **otra forma de traer los datos de la persona**, que es lo que
+    // esta seccion ya hace con «Buscar mis ficheros». Dos formas de traer datos, un solo sitio.
+    //
+    // Y AQUI NO HAY RED. El boton **no sincroniza**: dispara la callback `sincronizar-garmin` y se
+    // para. La pantalla declara lo que el usuario puede pedir; **cuando se llama al flujo de verdad es
+    // decision del dueño** (es la integracion del flujo en la aplicacion, la misma decision pendiente
+    // que la accion primaria). Si aqui se llamara al motor, la vista tendria red, disco y estado, y
+    // esto dejaria de ser una vista.
+    Bloque {
+        Rectangle {
+            // EL MARCO POR FUERA, de 1 px con el token `linea` (§3.11), por el motivo ya medido en los
+            // campos y en los botones: en el tema negro el contorno de serie da 1,14:1 y **no se ve**.
+            border-width: 1px;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            border-radius: Medidas.radio;
+            // EL BLOQUE ENTERO CON NOMBRE (AU-63): sin nombre, «el marco tiene 1 px, no recorta al
+            // boton y ocupa el ancho completo» no se puede comprobar -- y lo que no se mide es justo
+            // lo que se rompe sin que nadie lo vea.
+            accessible-role: region;
+            accessible-id: "garmin-marco";
+            // LA ALTURA SE LE PIDE AL HIJO. Calcularla con `self.preferred-height` del envoltorio es
+            // el fallo ya medido (marco de 4 px de alto con el control saliendose).
+            height: self.preferred-height;
+            VerticalLayout {
+                // El hueco del marco lo pone el `padding` del layout (§3.11), no una cuenta.
+                padding: 12px;
+                spacing: 8px;
+
+                // (a0) EL TITULO DEL BLOQUE: 14 (body) 700, como pide §3.11.
+                Text {
+                    accessible-role: text;
+                    accessible-id: "garmin-titulo";
+                    text: "Garmin";
+                    font-size: 14px; font-weight: 700;
+                    color: root.oscuro ? Oscuro.fg : Claro.fg;
+                }
+
+                // (a) EL ESTADO: «Conectado» o «No conectado», **con su icono del catalogo**. Los dos
+                // nombres existen en `iconos.slint` y no se inventa ninguno: el portero de iconos
+                // vigila que todo nombre usado este en el catalogo de 192.
+                HorizontalLayout {
+                    height: 44px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icono {
+                            nombre: root.garmin_conectado ? "ok-circulo" : "informacion";
+                            tamano: 24px;
+                            tono: root.oscuro
+                                ? (root.garmin_conectado ? Oscuro.ok : Oscuro.muted)
+                                : (root.garmin_conectado ? Claro.ok : Claro.muted);
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            accessible-role: text;
+                            accessible-id: "garmin-estado";
+                            text: root.garmin_conectado ? "Conectado" : "No conectado";
+                            font-size: 12px;
+                            color: root.oscuro ? Oscuro.fg : Claro.fg;
+                        }
+                    }
+                }
+
+                // (b) LA VIA, **y solo si hay via** (AU-91: un vacio no se dibuja, ni su marco). La
+                // cadena vacia es «no se sabe por donde», y eso no se escribe: no hay nada que leer.
+                if root.garmin_via != "" : HorizontalLayout {
+                    height: 44px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icono { nombre: "enlace"; tamano: 24px; tono: root.oscuro ? Oscuro.muted : Claro.muted; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            accessible-role: text;
+                            accessible-id: "garmin-via";
+                            text: root.garmin_via;
+                            font-size: 12px;
+                            color: root.oscuro ? Oscuro.muted : Claro.muted;
+                        }
+                    }
+                }
+
+                // (c) SINCRONIZAR: es EL CONTROL del bloque, con marco por fuera, `padding` 2 y **48 de
+                // alto** (§3.11: el estilo trae 32 y el minimo del proyecto son 48). Mientras
+                // `garmin_sincronizando` sea cierto el boton se apaga y lo dice: **un boton que se
+                // puede volver a pulsar mientras trabaja es una segunda sincronizacion**.
+                Rectangle {
+                    border-width: 1px;
+                    border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+                    border-radius: 8px;
+                    height: self.preferred-height;
+                    VerticalLayout {
+                        padding: 2px;
+                        Button {
+                            accessible-id: "garmin-sincronizar";
+                            height: max(48px, self.preferred-height);
+                            text: root.garmin_sincronizando ? "Sincronizando..." : "Sincronizar";
+                            enabled: !root.garmin_sincronizando;
+                            clicked => { root.sincronizar-garmin(); }
+                        }
+                    }
+                }
+
+                // (d) LO QUE TRAJO LA SINCRONIZACION, **en UNA linea y con su icono** (§3.7, AU-92), y
+                // **no se dibuja si esta vacia** (AU-91): sin sincronizar todavia no hay nada que
+                // decir, y una linea hueca con su icono diria que si lo hay. La frase la escribe el
+                // motor (`cara::texto_del_resumen`) y nunca enumera fechas: la pantalla no se explica.
+                if root.garmin_resumen != "" : HorizontalLayout {
+                    height: 44px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icono { nombre: "nube-bajada"; tamano: 24px; tono: root.oscuro ? Oscuro.muted : Claro.muted; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            accessible-role: text;
+                            accessible-id: "garmin-resumen";
+                            text: root.garmin_resumen;
+                            font-size: 12px;
+                            color: root.oscuro ? Oscuro.fg : Claro.fg;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // EL TEMA. Manda SIEMPRE el nuestro, nunca el del sistema (ver `Palette` en la raiz), y este es
     // el mando: cambiar de tema es cambiar UNA propiedad.
     Bloque {
@@ -776,6 +931,21 @@ export component Ventana inherits Window {
     in property <string> mensaje_guardado;
     in property <bool> error_al_guardar: false;
     in property <string> ruta_del_perfil;
+
+    // ---- GARMIN (HITO C): el mismo contrato de cuatro campos que lee la seccion «Datos» ----
+    //
+    // Son `in` y no `in-out` porque **quien las escribe es Rust**: el estado de la conexion es del
+    // motor (lo sabe quien habla con Garmin), no de la pantalla. Lo `in-out` de esta ventana es lo que
+    // el USUARIO cambia con el dedo (el tema, la seccion, los campos, el selector).
+    in property <bool> garmin_conectado: false;
+    in property <string> garmin_via;
+    in property <bool> garmin_sincronizando: false;
+    in property <string> garmin_resumen;
+    // EL BOTON PIDE, NO HACE, y por eso esta callback se declara **SIN CONECTAR a proposito**:
+    // integrar el flujo de sincronizacion en la aplicacion es decision del dueño (como la accion
+    // primaria). Mientras no se conecte, pulsar «Sincronizar» no hace nada, y no es un olvido: es que
+    // **la RED queda fuera** de este hito.
+    callback sincronizar-garmin;
 
     // ---- EL SELECTOR DE CARPETA: la capa que se superpone para elegir donde estan sus ficheros ----
     // Todo lo de abajo lo calcula Rust con `carpeta::abrir`. Aqui solo se dibuja.
@@ -869,8 +1039,15 @@ export component Ventana inherits Window {
             mensaje: root.mensaje_guardado;
             error: root.error_al_guardar;
             ruta: root.ruta_del_perfil;
+            garmin_conectado: root.garmin_conectado;
+            garmin_via: root.garmin_via;
+            garmin_sincronizando: root.garmin_sincronizando;
+            garmin_resumen: root.garmin_resumen;
             guardar => { root.guardar-datos(root.campos); }
             abrir-selector => { root.abrir-selector(); }
+            // El armazon de la seccion no decide nada: pasa el aviso hacia arriba, a la ventana, que
+            // es donde se conecta (o no) el flujo. Una sola costura para los dos armazones.
+            sincronizar-garmin => { root.sincronizar-garmin(); }
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
@@ -899,8 +1076,15 @@ export component Ventana inherits Window {
             mensaje: root.mensaje_guardado;
             error: root.error_al_guardar;
             ruta: root.ruta_del_perfil;
+            garmin_conectado: root.garmin_conectado;
+            garmin_via: root.garmin_via;
+            garmin_sincronizando: root.garmin_sincronizando;
+            garmin_resumen: root.garmin_resumen;
             guardar => { root.guardar-datos(root.campos); }
             abrir-selector => { root.abrir-selector(); }
+            // El armazon de la seccion no decide nada: pasa el aviso hacia arriba, a la ventana, que
+            // es donde se conecta (o no) el flujo. Una sola costura para los dos armazones.
+            sincronizar-garmin => { root.sincronizar-garmin(); }
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;

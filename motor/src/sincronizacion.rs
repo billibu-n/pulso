@@ -50,6 +50,11 @@
 //!    `_sanitize_exception_text`).
 //! 3. Ningún texto de este módulo incluye el valor de una cabecera: de `Authorization` solo se puede
 //!    decir el **esquema** ([`esquema_de_autorizacion`]).
+//! 4. De la **jarra** se dicen los **NOMBRES** de las cookies, nunca sus valores
+//!    ([`Transporte::nombres_de_cookies`]): el nombre de una cookie de Garmin no es un secreto —sirve
+//!    justo para comparar esta jarra con la de la biblioteca portada cuando contesta 401— y su valor
+//!    sí lo es. El método devuelve nombres y no parejas a propósito: **lo que no se puede pedir, no
+//!    se puede imprimir**.
 //!
 //! ## DÓNDE VIVE CADA COSA
 //!
@@ -536,6 +541,30 @@ impl Transporte {
         self.agente.cookie_jar_lock().iter().count()
     }
 
+    /// **Los NOMBRES de las cookies de la jarra, NUNCA sus valores.** Existe para el diagnóstico del
+    /// rastreo: comparar la jarra de este cliente con la de la biblioteca portada (que en Python usa
+    /// `curl_cffi`) es lo que permite ver **qué cookie falta** cuando Garmin contesta 401, y un
+    /// recuento no lo dice. El nombre de una cookie no es un secreto —lo es su valor, y el valor no
+    /// sale de aquí: este método no lo toca—.
+    ///
+    /// Va por la MISMA vía que [`Transporte::cuantas_cookies`] (el `iter()` de la jarra de `ureq`,
+    /// que visita las cookies **no caducadas**), así que los dos números no pueden discrepar.
+    ///
+    /// **Orden alfabético y sin repetidos**, y a propósito: la jarra de `cookie_store` guarda las
+    /// cookies en un mapa, así que su orden de recorrido **no es estable** entre ejecuciones, y un
+    /// rastro que cambia de orden sin que cambie la sesión no sirve para compararlo con el de ayer.
+    pub fn nombres_de_cookies(&self) -> Vec<String> {
+        let mut nombres: Vec<String> = self
+            .agente
+            .cookie_jar_lock()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+        nombres.sort();
+        nombres.dedup();
+        nombres
+    }
+
     /// GET con parámetros de consulta. Devuelve el estado y el cuerpo, pase lo que pase con el
     /// estado: los 4xx/5xx **se leen**.
     pub fn get(
@@ -622,6 +651,13 @@ pub struct SinTransporte;
 
 #[cfg(test)]
 impl SinTransporte {
+    /// **El hueco no tiene jarra, así que no tiene nombres que dar.** Devuelve vacío en vez de
+    /// inventarse una lista: el rastro, al verlo vacío, deja la frase sin los dos puntos —«sin dato»
+    /// y «lista vacía» no se confunden—.
+    pub fn nombres_de_cookies(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     pub fn get(
         &self,
         _url: &str,
@@ -649,7 +685,52 @@ mod pruebas {
     fn el_transporte_se_construye_sin_red_y_con_la_jarra_vacia() {
         let t = Transporte::nuevo();
         assert_eq!(t.cuantas_cookies(), 0, "la jarra empieza vacía y en memoria");
+        assert!(
+            t.nombres_de_cookies().is_empty(),
+            "una jarra vacía no tiene nombres que dar"
+        );
         assert!(t.ultima_tardanza().is_none(), "todavía no ha pedido nada");
+    }
+
+    /// **La regla de secretos, probada en la jarra DE VERDAD.** Se meten en la jarra del `Agent` de
+    /// `ureq` cuatro cookies —`SESSION` y `CASTGC`, cada una en dos dominios— con un valor falso y
+    /// reconocible: los NOMBRES salen, el VALOR no sale por ningún lado.
+    ///
+    /// No sale a la red: la jarra es local, y `Set-Cookie` en la vida real hace exactamente esto.
+    #[test]
+    fn la_jarra_da_los_nombres_de_las_cookies_y_nunca_sus_valores() {
+        let t = Transporte::nuevo();
+        {
+            // El cerrojo se suelta ANTES de preguntar los nombres: la jarra es un `Mutex`, y
+            // preguntar con el cerrojo puesto en la mano sería un interbloqueo, no una prueba.
+            let mut jarra = t.agente.cookie_jar_lock();
+            for sitio in [
+                "https://sso.garmin.com/sso/signin",
+                "https://connect.garmin.com/modern/",
+            ] {
+                let uri: ureq::http::Uri = sitio.parse().expect("una URL de Garmin");
+                for nombre in ["SESSION", "CASTGC"] {
+                    let cookie = ureq::Cookie::parse(format!("{nombre}={FALSA}"), &uri)
+                        .expect("una cookie como la de un `Set-Cookie`");
+                    jarra.insert(cookie, &uri).expect("la jarra la acepta");
+                }
+            }
+        }
+        assert_eq!(
+            t.cuantas_cookies(),
+            4,
+            "cuatro entradas: los dos nombres, cada uno en dos dominios"
+        );
+        assert_eq!(
+            t.nombres_de_cookies(),
+            vec!["CASTGC".to_string(), "SESSION".to_string()],
+            "los nombres, sin repetidos (el mismo nombre en dos dominios es UNA entrada de la lista) \
+             y en orden alfabético, que es el único orden estable"
+        );
+        // Y el valor no se cuela ni por el `Debug` del transporte ni por la lista de nombres.
+        let dicho = format!("{t:?} · {:?}", t.nombres_de_cookies());
+        assert!(!dicho.contains(FALSA), "salió el VALOR de una cookie: {dicho}");
+        assert!(dicho.contains("cookies en memoria: 4"), "{dicho}");
     }
 
     #[test]
@@ -837,6 +918,12 @@ mod pruebas {
             fallo.mensaje().contains("SIN_CLIENTE_HTTP"),
             "{}",
             fallo.mensaje()
+        );
+        // Y **no tiene jarra**: no da nombres de cookies en vez de inventarse una lista, que es lo
+        // que deja al rastro decir «sin dato» en lugar de «ninguna».
+        assert!(
+            SinTransporte.nombres_de_cookies().is_empty(),
+            "el hueco no tiene jarra y no puede tener nombres"
         );
     }
 

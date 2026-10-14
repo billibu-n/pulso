@@ -111,7 +111,8 @@ fn uso() -> String {
          \x20                       número y su nombre, la URL de destino (es pública), los NOMBRES de\n\
          \x20                       los parámetros que envía (nunca sus valores), el `content-type`,\n\
          \x20                       el estado HTTP, el tamaño del cuerpo en bytes, cuántas cookies lleva\n\
-         \x20                       la jarra de sesión y si la respuesta trae `set-cookie` o `location`\n\
+         \x20                       la jarra de sesión y sus NOMBRES (nunca sus valores), y si la\n\
+         \x20                       respuesta trae `set-cookie` o `location`\n\
          \x20                       (sí/no, nunca su valor).\n\
          \x20                       NUNCA imprime usuario, clave, `_csrf`, ticket, token ni valores de\n\
          \x20                       cookies. El POST del acceso lleva la consulta del `signin` y el\n\
@@ -1802,7 +1803,7 @@ impl Respuesta {
 /// (abajo, con `ureq`); las pruebas inyectan una falsa, así que **el flujo entero se puede probar sin
 /// salir a internet y sin una credencial real**.
 ///
-/// Los tres métodos de abajo tienen implementación por defecto porque **el flujo no los necesita
+/// Los cuatro métodos de abajo tienen implementación por defecto porque **el flujo no los necesita
 /// para funcionar**: solo los usa el rastreo (`--rastrear`). Un transporte que no sepa contestarlos
 /// —el falso de las pruebas, por ejemplo— sigue sirviendo para todo lo demás, que es lo que evita
 /// tener dos flujos: uno con rastreo y otro sin él.
@@ -1816,6 +1817,19 @@ trait Transporte {
     /// Cuántas cookies lleva la sesión en memoria AHORA (justo después del paso).
     fn cookies_en_la_sesion(&self) -> usize {
         0
+    }
+
+    /// **Los NOMBRES de las cookies de la jarra, NUNCA sus VALORES.** Lo usa el rastreo para el
+    /// diagnóstico del 401: comparar la jarra de este cliente con la de la biblioteca portada
+    /// (`curl_cffi`, en Python) exige saber **qué cookies hay**, y un recuento no lo dice. El nombre
+    /// de una cookie no es un secreto; su valor sí, y este método no lo toca.
+    ///
+    /// **Sin repetidos y en orden alfabético** (el de la jarra no es estable: `cookie_store` la
+    /// guarda en un mapa, y un rastro que cambia de orden sin que cambie la sesión no se puede
+    /// comparar con el de ayer). Vacío significa «este transporte no tiene jarra que enseñar», y el
+    /// rastro deja entonces la frase sin los dos puntos: **no se inventa una lista**.
+    fn nombres_de_cookies(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// **Los nombres de las cabeceras con las que salió la última petición, y su `Content-Type`.**
@@ -1894,6 +1908,17 @@ impl Transporte for Cliente {
         }
     }
 
+    /// **Los NOMBRES de las cookies de la jarra, nunca sus valores.** Los saca el módulo del
+    /// transporte por la MISMA vía que `cuantas_cookies` (la jarra del `Agent` de `ureq`), así que el
+    /// número y la lista no pueden discrepar. Es lo que el rastreo necesita para comparar esta jarra
+    /// con la de la biblioteca portada cuando Garmin contesta 401.
+    fn nombres_de_cookies(&self) -> Vec<String> {
+        match &self.0 {
+            Some(c) => c.nombres_de_cookies(),
+            None => Vec::new(),
+        }
+    }
+
     fn salida(&self) -> sincronizacion::Salida {
         match &self.0 {
             Some(c) => c.salida(),
@@ -1916,6 +1941,13 @@ struct SinTransporte;
 impl Transporte for SinTransporte {
     fn pedir(&self, _peticion: &Peticion) -> Result<Respuesta, Fallo> {
         Err(Fallo::SinClienteHttp)
+    }
+
+    /// **El hueco no tiene jarra**, así que no tiene nombres que dar: vacío, explícito, en vez de
+    /// dejar que se lea como «una jarra sin cookies». Es la misma regla que `pedir`: lo que no hay se
+    /// declara, no se rellena.
+    fn nombres_de_cookies(&self) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -2235,9 +2267,20 @@ impl<'a> Rastro<'a> {
                 solo_del_cliente.join(", ")
             ));
         }
+        // **El recuento Y los nombres, nunca los valores.** El recuento dice que la sesión se
+        // sostiene; los nombres son lo que permite ver, contra la jarra de la biblioteca portada,
+        // QUÉ cookie falta cuando Garmin contesta 401 (un 3 no distingue «faltan dos» de «falta
+        // esta»). Si el transporte no da nombres, la frase se queda como estaba: sin los dos puntos,
+        // porque «no tengo lista» y «la lista está vacía» no son lo mismo.
+        let nombres_de_cookies = self.interior.nombres_de_cookies();
         s.push_str(&format!(
-            "   cookies         {} en la jarra de la sesión (en memoria)\n",
-            self.interior.cookies_en_la_sesion()
+            "   cookies         {} en la jarra de la sesión (en memoria){}\n",
+            self.interior.cookies_en_la_sesion(),
+            if nombres_de_cookies.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", nombres_de_cookies.join(", "))
+            }
         ));
         match respuesta {
             Some(r) => s.push_str(&format!(
@@ -3169,6 +3212,12 @@ struct TransporteFalso {
     /// **Lo que el rastro dirá que salió.** El transporte de verdad lo MIDE (el middleware de
     /// `ureq`); el falso lo copia de aquí, para poder probar la comparación de cabeceras sin red.
     salida: sincronizacion::Salida,
+    /// **La jarra de prueba: el NOMBRE y el VALOR de cada cookie.** El valor está aquí a propósito
+    /// —y no fuera—: es lo que permite afirmar que el rastro dice el nombre y **no suelta el valor**.
+    /// Un falso que solo guardara nombres haría pasar esa prueba sin probar nada. La llena
+    /// [`TransporteFalso::con_cookie`]; vacía por defecto, que es el caso de los flujos que no
+    /// hablan de cookies.
+    jarra: Vec<(String, String)>,
 }
 
 #[cfg(test)]
@@ -3178,7 +3227,15 @@ impl TransporteFalso {
             rutas: BTreeMap::new(),
             pedidas: std::cell::RefCell::new(Vec::new()),
             salida: sincronizacion::Salida::default(),
+            jarra: Vec::new(),
         }
+    }
+
+    /// Una cookie en la jarra de prueba: **nombre y valor**. El valor se guarda para poder afirmar
+    /// que NO sale en el rastro; el nombre es lo que el rastro sí tiene que decir.
+    fn con_cookie(mut self, nombre: &str, valor: &str) -> Self {
+        self.jarra.push((nombre.to_string(), valor.to_string()));
+        self
     }
 
     /// Lo que este transporte dirá que envió. Los nombres, sin valores.
@@ -3291,6 +3348,23 @@ impl Transporte for TransporteFalso {
 
     fn salida(&self) -> sincronizacion::Salida {
         self.salida.clone()
+    }
+
+    /// Cuántas cookies dice el falso que lleva la sesión: **las que tiene en su jarra de prueba**.
+    /// Se cuenta con la misma jarra que alimenta los nombres, para que el 3 y la lista no se
+    /// contradigan en la misma línea del rastro.
+    fn cookies_en_la_sesion(&self) -> usize {
+        self.jarra.len()
+    }
+
+    /// **Los NOMBRES, jamás los valores**: el falso guarda parejas (nombre, valor) y solo suelta el
+    /// nombre. Mismo orden y mismos criterios que el transporte de verdad (sin repetidos y
+    /// alfabético), porque el rastro que se lee es el mismo.
+    fn nombres_de_cookies(&self) -> Vec<String> {
+        let mut nombres: Vec<String> = self.jarra.iter().map(|(n, _)| n.clone()).collect();
+        nombres.sort();
+        nombres.dedup();
+        nombres
     }
 }
 
@@ -3458,6 +3532,9 @@ mod pruebas {
         // falsas se ve lo mismo: es la promesa que la prueba de abajo comprueba de verdad.
         assert!(t.contains("NUNCA imprime usuario"), "{t}");
         assert!(t.contains("NOMBRES"), "{t}");
+        // Y de la jarra se dicen los NOMBRES, no sus valores: la misma promesa que cumple la línea
+        // del rastro (y que comprueba `el_rastro_dice_los_nombres_de_las_cookies_y_nunca_sus_valores`).
+        assert!(t.contains("sus NOMBRES (nunca sus valores)"), "{t}");
     }
 
     // -----------------------------------------------------------------------------------------
@@ -3518,7 +3595,10 @@ mod pruebas {
                 JSON_DEL_500,
                 vec![("Set-Cookie".to_string(), "LOCALE=en; Path=/".to_string())],
             )
-            .salida(lo_que_sale_en_el_acceso());
+            .salida(lo_que_sale_en_el_acceso())
+            // La jarra de la sesión: la cookie que deja el widget, con su valor. Es lo que el
+            // rastro tiene que decir por su NOMBRE.
+            .con_cookie("CASTGC", "TGT-FALSO-DE-PRUEBA");
         let rastro = Rastro::recogiendo(&t);
         let fallo = medir_sin_mfa(
             &rastro,
@@ -3560,7 +3640,16 @@ mod pruebas {
         assert!(dicho.contains("bytes"), "el tamaño del cuerpo: {dicho}");
         assert!(dicho.contains("set-cookie: sí"), "{dicho}");
         assert!(dicho.contains("location: no"), "{dicho}");
-        assert!(dicho.contains("cookies"), "las cookies de la jarra: {dicho}");
+        // La jarra: el recuento Y los nombres, en la misma línea. El nombre va TAL CUAL (no es un
+        // secreto); el valor de esa cookie no sale por ningún lado.
+        assert!(
+            dicho.contains("cookies         1 en la jarra de la sesión (en memoria): CASTGC"),
+            "las cookies de la jarra, con sus nombres: {dicho}"
+        );
+        assert!(
+            !dicho.contains("TGT-FALSO-DE-PRUEBA"),
+            "salió el VALOR de una cookie: {dicho}"
+        );
         // 4) El cuerpo de la respuesta NO se vuelca, ni siquiera teniendo un marcador dentro.
         assert!(!dicho.contains("MARCADOR-DEL-CUERPO"), "se volcó el cuerpo: {dicho}");
         // 5) Y el diagnóstico, pegado al POST que falla: con el disfraz completo no falta ninguna
@@ -3587,6 +3676,62 @@ mod pruebas {
         assert!(dicho.contains("nosotros mandamos y ELLA NO: nada"), "{dicho}");
         // El flujo paró donde tenía que parar, y con el mismo código que `--probar`.
         assert_eq!(fallo.codigo(), CODIGO_SIN_RED, "{}", fallo.mensaje());
+    }
+
+    /// **LA REGLA DE SECRETOS, en la línea de las cookies: los NOMBRES sí, los VALORES jamás.**
+    ///
+    /// La jarra de prueba los TIENE —nombre y valor, como la jarra de verdad de `ureq`—, y por eso
+    /// esta prueba prueba algo: un falso que solo guardara nombres pasaría el `assert` sin haber
+    /// enseñado nunca un valor al rastro. Es el diagnóstico que se pidió: sin nombres no se puede
+    /// comparar esta jarra con la de la biblioteca portada cuando Garmin contesta 401.
+    #[test]
+    fn el_rastro_dice_los_nombres_de_las_cookies_y_nunca_sus_valores() {
+        // Dos valores falsos y reconocibles: si alguno aparece en el rastro, es que se ha colado.
+        const VALOR_DE_LA_CLAVE: &str = "CLAVE-FALSA-XYZ-1234";
+        const VALOR_DE_LA_SESION: &str = "VALOR-DE-COOKIE-FALSO";
+        let t = TransporteFalso::new()
+            .get_con_cookie(
+                flujo::URL_EMBED,
+                200,
+                "<html><title>widget</title></html>",
+                "SESSION_GARMIN=x; Path=/",
+            )
+            .get(flujo::URL_SIGNIN, 200, HTML_ACCESO)
+            .post(flujo::URL_SIGNIN, 500, JSON_DEL_500, Vec::new())
+            // Tres entradas en la jarra: un nombre repetido en dos dominios cuenta UNA vez en la
+            // lista de nombres, pero son dos cookies.
+            .con_cookie("SESSION_GARMIN", VALOR_DE_LA_CLAVE)
+            .con_cookie("GARMIN_SESSION_ID", VALOR_DE_LA_SESION)
+            .con_cookie("SESSION_GARMIN", VALOR_DE_LA_SESION)
+            .salida(lo_que_sale_en_el_acceso());
+        let rastro = Rastro::recogiendo(&t);
+        // La clave de arriba es, además, la que el flujo manda al acceso: así el mismo texto falso
+        // está DENTRO del flujo y fuera del rastro, que es justo lo que hay que poder afirmar.
+        let _ = medir_sin_mfa(
+            &rastro,
+            &Secreto::nueva("ana@ejemplo.cl".into()),
+            &Secreto::nueva(VALOR_DE_LA_CLAVE.into()),
+        )
+        .unwrap_err();
+        let dicho = rastro.texto();
+
+        // 1) El recuento y los nombres, en la misma línea y en el formato acordado.
+        assert!(
+            dicho.contains("cookies         3 en la jarra de la sesión (en memoria): GARMIN_SESSION_ID, SESSION_GARMIN"),
+            "el recuento y los nombres, sin repetidos y alfabéticos: {dicho}"
+        );
+        // 2) Los nombres salen TAL CUAL (no son un secreto).
+        assert!(dicho.contains("GARMIN_SESSION_ID"), "{dicho}");
+        assert!(dicho.contains("SESSION_GARMIN"), "{dicho}");
+        // 3) Y NINGÚN valor: ni el de la jarra ni, mucho menos, la credencial del acceso.
+        assert!(
+            !dicho.contains(VALOR_DE_LA_CLAVE),
+            "salió el VALOR de una cookie (o la clave): {dicho}"
+        );
+        assert!(
+            !dicho.contains(VALOR_DE_LA_SESION),
+            "salió el VALOR de una cookie: {dicho}"
+        );
     }
 
     #[test]

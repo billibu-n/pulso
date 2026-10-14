@@ -1,0 +1,135 @@
+// EL SELECTOR DE CARPETA: la CAPA que se superpone para elegir donde estan los ficheros.
+//
+// POR QUE UNA CAPA Y NO UNA SECCION: la navegacion tiene CUATRO secciones y esta MEDIDA (la prueba
+// exige los cuatro huecos a 411/4). Es el diseño aprobado, y añadir una quinta por mi cuenta seria
+// cambiarlo sin el dueño. Y NO va dentro de «Datos» porque ese panel ya lleva diez campos en dos
+// columnas para que quepan: meter la lista ahi lo desbordaria.
+//
+// AQUI NO SE DECIDE NADA: la lista, el numero de FIT y el aviso llegan ya calculados por
+// carpeta::abrir (Rust, con sus pruebas). Este fichero solo los dibuja.
+
+import { Claro, Oscuro } from "temas.slint";
+import { Button } from "std-widgets.slint";
+
+/// Una subcarpeta, con cuantos FIT tiene. El numero es la INTUICION: reconocer la carpeta de un vistazo.
+export struct EntradaCarpeta {
+    nombre: string,
+    cuantos: int,
+}
+
+export component SelectorCarpeta inherits Rectangle {
+    in property <bool> oscuro: false;
+    in property <string> ruta;
+    in property <int> fit_aqui: 0;
+    in property <bool> puede_subir: false;
+    in property <string> aviso;
+    in property <[EntradaCarpeta]> carpetas;
+
+    callback subir;
+    callback usar;
+    callback elegir(int);
+    callback cerrar;
+
+    background: oscuro ? Oscuro.bg : Claro.bg;
+    width: 100%;
+    height: 100%;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+        alignment: start;
+
+        Text {
+            text: "Elige tu carpeta";
+            font-size: 15px;
+            font-weight: 700;
+            color: oscuro ? Oscuro.fg : Claro.fg;
+        }
+        Text {
+            text: "Tus ficheros no salen de tu equipo. Aqui abajo se ven solo las carpetas.";
+            font-size: 11px;
+            wrap: word-wrap;
+            color: oscuro ? Oscuro.muted : Claro.muted;
+        }
+        Text {
+            accessible-id: "selector-ruta";
+            text: ruta;
+            font-size: 12px;
+            wrap: word-wrap;
+            color: oscuro ? Oscuro.fg : Claro.fg;
+        }
+        Text {
+            accessible-id: "selector-fit";
+            text: "FIT en esta carpeta: " + fit_aqui;
+            font-size: 12px;
+            color: oscuro ? Oscuro.ok : Claro.ok;
+        }
+        Text {
+            accessible-id: "selector-aviso";
+            text: aviso;
+            font-size: 11px;
+            wrap: word-wrap;
+            color: oscuro ? Oscuro.aviso : Claro.aviso;
+            visible: aviso != "";
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            if root.puede_subir : Rectangle {
+                border-width: 2px;
+                border-color: oscuro ? Oscuro.linea : Claro.linea;
+                border-radius: 8px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding: 2px;
+                    Button {
+                        accessible-id: "selector-subir";
+                        height: max(48px, self.preferred-height);
+                        text: "Subir";
+                        clicked => { root.subir(); }
+                    }
+                }
+            }
+            Rectangle {
+                border-width: 2px;
+                border-color: oscuro ? Oscuro.linea : Claro.linea;
+                border-radius: 8px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding: 2px;
+                    Button {
+                        accessible-id: "selector-usar";
+                        height: max(48px, self.preferred-height);
+                        text: "Usar esta carpeta (" + fit_aqui + ")";
+                        primary: true;
+                        enabled: fit_aqui > 0;
+                        clicked => { root.usar(); }
+                    }
+                }
+            }
+            Rectangle {
+                border-width: 2px;
+                border-color: oscuro ? Oscuro.linea : Claro.linea;
+                border-radius: 8px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding: 2px;
+                    Button {
+                        accessible-id: "selector-cerrar";
+                        height: max(48px, self.preferred-height);
+                        text: "Cerrar";
+                        clicked => { root.cerrar(); }
+                    }
+                }
+            }
+        }
+
+        // LAS SUBCARPETAS, cada una con su numero de FIT.
+        for e[i] in root.carpetas : Button {
+            accessible-id: "selector-entrada";
+            text: e.nombre + "   (" + e.cuantos + " FIT)";
+            clicked => { root.elegir(i); }
+        }
+    }
+}

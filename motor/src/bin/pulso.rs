@@ -27,7 +27,9 @@ use motor::analisis::{self, Real};
 use motor::cara::{self, Ensenado};
 use motor::datos::{Dato, Persona, Sexo};
 use motor::{carpeta, memoria, profile};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Donde se guarda la memoria del analisis. **Junto al perfil**, para que las dos cosas viajen juntas.
 ///
@@ -156,6 +158,33 @@ fn el_analisis(carpeta: &Path, ruta_memoria: &Path) -> Option<Real> {
     } else {
         None
     }
+}
+
+/// **Pinta el selector**: la lista de carpetas, el numero de FIT y el aviso.
+///
+/// No decide nada: carpeta::abrir ya calculo la vista, con sus pruebas. Aqui solo se traduce a las
+/// propiedades que dibuja el componente SelectorCarpeta.
+fn pintar_selector(ventana: &Ventana, dir: &Path) {
+    let v = carpeta::abrir(dir);
+    let ruta = v
+        .ruta
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    ventana.set_carpeta_ruta(ruta.into());
+    ventana.set_carpeta_fit(v.fit_aqui as i32);
+    ventana.set_carpeta_puede_subir(v.subir_a.is_some());
+    ventana.set_carpeta_aviso(v.aviso.clone().unwrap_or_default().into());
+    let entradas: Vec<EntradaCarpeta> = v
+        .entradas
+        .iter()
+        .map(|e| EntradaCarpeta {
+            nombre: slint::SharedString::from(e.nombre.as_str()),
+            cuantos: e.cuantos_fit as i32,
+        })
+        .collect();
+    let modelo = slint::VecModel::from_slice(&entradas);
+    ventana.set_carpetas(slint::ModelRc::new(modelo));
 }
 
 /// Escribe en la ventana lo que hay que enseñar. **No decide nada**: recibe y escribe.
@@ -302,18 +331,20 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- LA CARPETA DE DATOS ----
-    // Por linea de ordenes mientras no haya dialogo de carpeta. **Es un atajo consciente**: el cliente
-    // ya tiene sus ficheros, y esto hace que la aplicacion le sirva HOY, sin cuentas ni permisos ni
-    // internet. El paso de «elegir la carpeta con un boton» es lo siguiente.
-    let carpeta = std::env::args()
-        .nth(1)
-        .filter(|a| !a.starts_with("--"))
-        .unwrap_or_else(|| "../datos/garmin_files/storage".to_string());
-    let carpeta = PathBuf::from(carpeta);
+    // La de arranque entra por linea de ordenes, y ademas **se puede cambiar sin reiniciar** desde el
+    // selector (el boton «Buscar mis ficheros»). Por eso va compartida: los manejadores la leen y la
+    // cambian, y el analisis siguiente usa la nueva.
+    let carpeta = PathBuf::from(
+        std::env::args()
+            .nth(1)
+            .filter(|a| !a.starts_with("--"))
+            .unwrap_or_else(|| "../datos/garmin_files/storage".to_string()),
+    );
+    let carpeta = Rc::new(RefCell::new(carpeta));
 
     // ---- Y EL ANALISIS, CON MEMORIA ----
     let ruta_memoria = ruta_de_la_memoria(&ruta_perfil);
-    let real = el_analisis(&carpeta, &ruta_memoria);
+    let real = el_analisis(carpeta.borrow().as_path(), &ruta_memoria);
 
     // ---- LO QUE SE ENSEÑA: LO DECIDE `cara`, NO ESTE FICHERO ----
     let ensenado = cara::lo_que_ensena(&persona, real.as_ref());
@@ -399,12 +430,80 @@ fn main() -> Result<(), slint::PlatformError> {
                     w.set_mensaje_guardado("Guardado.".into());
                     w.set_error_al_guardar(false);
                     // Y SE VUELVE A CALCULAR CON SUS DATOS NUEVOS.
-                    let real = el_analisis(&carpeta_guardar, &ruta_memoria_guardar);
+                    let real = el_analisis(carpeta_guardar.borrow().as_path(), &ruta_memoria_guardar);
                     let e = cara::lo_que_ensena(&nueva, real.as_ref());
                     pintar(&w, &e);
                     w.set_campos(campos_de(&nueva));
                 }
             },
+        }
+    });
+
+    // ---- EL SELECTOR DE CARPETA ----
+    // La capa superpuesta se dibuja en la ventana; aqui se le da lo que tiene que enseñar y se atiende
+    // lo que el cliente pulsa. Al USAR una carpeta se vuelve a analizar SIN reiniciar: sus resultados
+    // pasan a ser los de la carpeta que acaba de elegir.
+    pintar_selector(&ventana, carpeta.borrow().as_path());
+    let debil = ventana.as_weak();
+
+    ventana.on_abrir_selector({
+        let w = debil.clone();
+        let d = carpeta.clone();
+        move || {
+            if let Some(v) = w.upgrade() {
+                pintar_selector(&v, d.borrow().as_path());
+                v.set_eligiendo(true);
+            }
+        }
+    });
+    ventana.on_cerrar_selector({
+        let w = debil.clone();
+        move || {
+            if let Some(v) = w.upgrade() {
+                v.set_eligiendo(false);
+            }
+        }
+    });
+    ventana.on_subir_carpeta({
+        let w = debil.clone();
+        let d = carpeta.clone();
+        move || {
+            if let Some(v) = w.upgrade() {
+                // Se calcula el padre ANTES de tocarlo: un borrow y un borrow_mut a la vez seria un panic.
+                let padre = carpeta::ruta_padre(d.borrow().as_path());
+                if let Some(p) = padre {
+                    *d.borrow_mut() = p;
+                }
+                pintar_selector(&v, d.borrow().as_path());
+            }
+        }
+    });
+    ventana.on_elegir_subcarpeta({
+        let w = debil.clone();
+        let d = carpeta.clone();
+        move |i| {
+            if let Some(v) = w.upgrade() {
+                let actual = d.borrow().clone();
+                if let Some(nombre) = carpeta::subcarpetas(&actual).get(i as usize).cloned() {
+                    *d.borrow_mut() = actual.join(nombre);
+                    pintar_selector(&v, d.borrow().as_path());
+                }
+            }
+        }
+    });
+    ventana.on_usar_carpeta({
+        let w = debil.clone();
+        let d = carpeta.clone();
+        let mem = ruta_memoria.clone();
+        let perfil = ruta_perfil.clone();
+        move || {
+            if let Some(v) = w.upgrade() {
+                v.set_eligiendo(false);
+                let real = el_analisis(d.borrow().as_path(), &mem);
+                let persona = profile::leer(&perfil).unwrap_or_else(|_| Persona::desconocida());
+                let e = cara::lo_que_ensena(&persona, real.as_ref());
+                pintar(&v, &e);
+            }
         }
     });
 

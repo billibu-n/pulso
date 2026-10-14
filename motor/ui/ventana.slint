@@ -10,6 +10,8 @@
 
 import { Claro, Oscuro } from "temas.slint";
 import { ArmazonEscritorio, ArmazonMovil, Medidas, Seccion } from "armazon.slint";
+// EL SELECTOR DE CARPETA, en su propio fichero: es una capa superpuesta y no toca la navegacion.
+import { EntradaCarpeta, SelectorCarpeta } from "selector.slint";
 // LOS CONTROLES DE SERIE, que son una decision tomada del dueño: traen probado el foco, el teclado,
 // el estado pulsado y la accesibilidad, que es justo lo que habria que construir y probar a mano.
 // Lo que NO traen son nuestros colores; eso se resuelve abajo, en la raiz, con `Palette`.
@@ -284,6 +286,8 @@ component Datos inherits VerticalLayout {
     in property <bool> error: false;
     in property <string> ruta;
     callback guardar;
+    // Abre la capa del selector. La capa se dibuja en la VENTANA, no aqui: este panel solo pide.
+    callback abrir-selector;
 
     spacing: 10px;
 
@@ -393,6 +397,24 @@ component Datos inherits VerticalLayout {
         color: root.oscuro ? Oscuro.muted : Claro.muted;
     }
 
+    // BUSCAR SUS FICHEROS. Es EL ATAJO QUE MAS VALE: sin cuenta, ni permiso, ni internet, porque sus
+    // datos ya estan en su equipo. Abre la capa del selector, que se dibuja sobre la ventana entera.
+    Rectangle {
+        border-width: 2px;
+        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+        border-radius: 8px;
+        height: self.preferred-height;
+        VerticalLayout {
+            padding: 2px;
+            Button {
+                accessible-id: "datos-buscar";
+                height: max(48px, self.preferred-height);
+                text: "Buscar mis ficheros";
+                clicked => { root.abrir-selector(); }
+            }
+        }
+    }
+
     // EL TEMA. Manda SIEMPRE el nuestro, nunca el del sistema (ver `Palette` en la raiz), y este es
     // el mando: cambiar de tema es cambiar UNA propiedad.
     Switch {
@@ -432,6 +454,20 @@ export component Ventana inherits Window {
     in property <string> mensaje_guardado;
     in property <bool> error_al_guardar: false;
     in property <string> ruta_del_perfil;
+
+    // ---- EL SELECTOR DE CARPETA: la capa que se superpone para elegir donde estan sus ficheros ----
+    // Todo lo de abajo lo calcula Rust con `carpeta::abrir`. Aqui solo se dibuja.
+    in-out property <bool> eligiendo: false;
+    in property <string> carpeta_ruta;
+    in property <int> carpeta_fit: 0;
+    in property <bool> carpeta_puede_subir: false;
+    in property <string> carpeta_aviso;
+    in property <[EntradaCarpeta]> carpetas;
+    callback abrir-selector;
+    callback cerrar-selector;
+    callback subir-carpeta;
+    callback usar-carpeta;
+    callback elegir-subcarpeta(int);
 
     // PARA MEDIR EL TEMA DE LOS CONTROLES DE SERIE DESDE UNA PRUEBA: no hay otra forma de consultar
     // un global de Slint desde Rust, y esta linea es la que demuestra que el esquema sigue a nuestro
@@ -493,6 +529,7 @@ export component Ventana inherits Window {
             error: root.error_al_guardar;
             ruta: root.ruta_del_perfil;
             guardar => { root.guardar-datos(root.campos); }
+            abrir-selector => { root.abrir-selector(); }
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
@@ -515,6 +552,7 @@ export component Ventana inherits Window {
             error: root.error_al_guardar;
             ruta: root.ruta_del_perfil;
             guardar => { root.guardar-datos(root.campos); }
+            abrir-selector => { root.abrir-selector(); }
         }
         if root.seccion_activa != 3 : Contenido {
             oscuro: root.oscuro;
@@ -523,5 +561,19 @@ export component Ventana inherits Window {
             zonas_niveles: root.zonas_niveles;
             precision: root.precision; aviso: root.aviso; vacio: root.vacio;
         }
+    }
+
+    // LA CAPA, DECLARADA LA ULTIMA para quedar POR ENCIMA de los dos armazones.
+    if root.eligiendo : SelectorCarpeta {
+        oscuro: root.oscuro;
+        ruta: root.carpeta_ruta;
+        fit_aqui: root.carpeta_fit;
+        puede_subir: root.carpeta_puede_subir;
+        aviso: root.carpeta_aviso;
+        carpetas: root.carpetas;
+        subir => { root.subir-carpeta(); }
+        usar => { root.usar-carpeta(); }
+        elegir(i) => { root.elegir-subcarpeta(i); }
+        cerrar => { root.cerrar-selector(); }
     }
 }

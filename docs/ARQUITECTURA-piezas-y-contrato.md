@@ -8,7 +8,7 @@ crítica del dueño que es correcta y hay que dejar escrita:
 > auto: el motor, la transmisión… Todos son piezas independientes que se acoplan entre sí.»*
 
 **Y LO QUE PASÓ, dicho sin adornos**: se construyeron **el motor, la transmisión y las ruedas**, cada uno
-por separado y bien —el motor con 188 pruebas— y **se descubrió al final que no había bancada**. La pieza
+por separado y bien —el motor con 189 pruebas— y **se descubrió al final que no había bancada**. La pieza
 que acopla todo, `pulso.rs` (entonces `ventana.rs`), fue **la última y la más frágil**: se escribió de una vez, no compilaba, y
 hubo que delegar el arreglo. **Eso no es mala suerte: es haber empezado a ejecutar sin los planos.**
 
@@ -173,9 +173,10 @@ estará bien hecha. **Eso es lo que se puede comprobar, y por eso es lo que se e
 - **La fecha de nacimiento YA ESTÁ en `Persona`** (`datos.rs`), y la edad se calcula al usarla. Lo que
   falta es **exponerla en la pantalla de Datos**: el campo está en el modelo y en el fichero, pero no en
   el formulario.
-- **Ninguna pieza del borde sabe elegir una carpeta.** Hoy la ruta entra por línea de órdenes. **Medido**:
-  Slint 1.18.1 **no trae `FileDialog` ni `FolderDialog`**; el selector hay que **escribirlo** (sin
-  dependencia nueva) o autorizar `rfd`.
+- **El borde YA sabe elegir una carpeta** (2026-10-14): el selector es **propio y superpuesto**
+  (`motor/ui/selector.slint` + `motor/src/carpeta.rs`), **sin dependencia nueva**. Medido: Slint 1.18.1 no
+  trae diálogo, la capa existe y su botón llega a **48 dp**. Se abre desde «Datos» y **vuelve a analizar
+  al elegir**, sin reiniciar.
 - **El estado del arte está REVISADO fila a fila** (2026-10-14): `docs/ESTADO-DEL-ARTE.md` se reescribió
   tras abrir las 41 direcciones y comprobar cada DOI. Aparecieron **fuentes falsas** (DOI inexistentes,
   un autor inventado, un artículo que era de otro tema) y se corrigieron o se dejaron **SIN FUENTE

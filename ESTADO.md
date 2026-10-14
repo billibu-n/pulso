@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **188 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **189 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -59,7 +59,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/bin/          18: pulso (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs 155 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
+│   ├── tests/pruebas.rs 155 pruebas · huawei.rs 12 · medir-interfaz.rs 9 · recorrido.rs 11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 188 pruebas, en verde, 0 avisos
+cargo test                              # 189 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -254,7 +254,7 @@ es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye*
 Y el binario de la aplicación **se llama `pulso`**: `ventana.rs` → `pulso.rs`, y `default-run = "pulso"`
 hace que **`cargo run` a secas sea LA aplicación**. Los otros 17 son **instrumentos de medida**, no la
 aplicación.
-**Medido**: **188 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei` + 5 del selector).
+**Medido**: **189 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei` + 5 del selector + 1 de la capa medida).
 
 **2 · DECISIÓN DEL DUEÑO (2026-10-14): el aviso de la rodilla NO dice «diagnóstico».** Se le preguntó,
 porque el encargo pedía dos cosas que no caben a la vez («di que no es un diagnóstico» y «que el texto
@@ -292,14 +292,15 @@ era la correcta: falló el modelo, no la ruta.** Los informes están en
 `docs/ESTADO-DEL-ARTE-revision-1-2.md` y `-3-6.md`.
 
 **EN MARCHA (no cerrado, y hay que retomarlo):**
-- **Elegir la carpeta con un botón** (paso 5): **EN CURSO**. **Medido**: Slint 1.18.1 **no trae
+- **Elegir la carpeta con un botón** (paso 5): **HECHO Y MEDIDO (2026-10-14).** **Medido**: Slint 1.18.1 **no trae
   `FileDialog` ni `FolderDialog`** (búsqueda sobre los 13 crates instalados). **Decisión: selector
   propio, sin dependencia nueva** (autorizar `rfd` es la otra vía, y no se toma sin el dueño). **YA
   HECHO**: el contrato (`docs/CONTRATO-carpeta.md`) y el **núcleo probado** (`motor/src/carpeta.rs`, 5
   pruebas): lista subcarpetas sin ocultas ni ficheros, sube hasta la raíz, no revienta con una carpeta
   ilegible, y **calcula lo que el panel tiene que dibujar** (`abrir` devuelve la lista con **cuántos FIT
-  tiene cada carpeta**, que es la intuición). **FALTA la capa 5**: el panel que lo dibuja y su conexión
-  a `pulso.rs` para que al elegir se vuelva a analizar.
+  tiene cada carpeta**, que es la intuición). **Y LA CAPA ESTA HECHA**: `motor/ui/selector.slint` la
+  dibuja y `pulso.rs` la conecta, de modo que **al elegir se vuelve a analizar sin reiniciar**. **Medido**:
+  la capa existe con «eligiendo» puesto y **su botón llega a 48 dp**; sin la capa, no existe.
   **Y el selector YA SE PUEDE VER SIN VENTANA**: `cargo run -q --bin pulso -- --elegir <carpeta>`
   imprime **la misma vista** que dibujara el panel (`carpeta::abrir`), con cuantos FIT tiene cada
   carpeta; medido sobre su carpeta de datos: «FIT aqui ... 102». **Donde va el panel, decidido y escrito**

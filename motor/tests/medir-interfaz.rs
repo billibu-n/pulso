@@ -228,6 +228,56 @@ fn se_puede_buscar_por_accessible_id_sin_depender_del_nombre_interno() {
 //   1. que el boton de serie **SI trae la accesibilidad** (rol y etiqueta) -- es lo que se gana;
 //   2. que el marco **no recorta** al boton -- es lo que hay que vigilar al envolverlo.
 
+// ==================================================================================================
+// EL SELECTOR DE CARPETA: la capa superpuesta, MEDIDA (no mirada)
+// ==================================================================================================
+
+#[test]
+fn el_selector_de_carpeta_existe_y_llega_al_minimo_tactil() {
+    // Se mide la capa CON LA CAPA PUESTA (eligiendo = true), que es cuando existe. Y se comprueba lo
+    // que la norma exige de todo boton: que llegue a 48 dp, porque el minimo de serie son 32 y hay que
+    // pedirlo. Un boton que no se puede pulsar con el dedo no es un boton.
+    i_slint_backend_testing::init_no_event_loop();
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+    v.set_carpeta_ruta("/home/tu/carpeta".into());
+    v.set_carpeta_fit(102);
+    v.set_carpeta_puede_subir(true);
+    v.set_carpeta_aviso("".into());
+    let modelo = slint::VecModel::from_slice(&[
+        EntradaCarpeta { nombre: "storage".into(), cuantos: 102 },
+        EntradaCarpeta { nombre: "otros".into(), cuantos: 0 },
+    ]);
+    v.set_carpetas(slint::ModelRc::new(modelo));
+    v.set_eligiendo(true);
+
+    let todos = ElementQuery::from_root(&v).find_all();
+    let buscar = |nombre: &str| {
+        todos
+            .iter()
+            .find(|e| e.accessible_id().map(|s| s.to_string()) == Some(nombre.to_string()))
+    };
+    let con_id: Vec<String> = todos
+        .iter()
+        .filter_map(|e| e.accessible_id().map(|s| s.to_string()))
+        .collect();
+    for id in ["selector-ruta", "selector-usar", "selector-cerrar", "selector-entrada"] {
+        assert!(con_id.contains(&id.to_string()), "falta el selector {id}: {con_id:?}");
+    }
+
+    let usar = buscar("selector-usar").expect("tiene que existir el boton de usar");
+    let t = usar.size();
+    println!("  selector-usar mide {:.0}x{:.0}", t.width, t.height);
+    assert!(t.height >= 48.0, "el boton de usar tiene que llegar a 48 dp, y mide {}", t.height);
+
+    // Y SIN LA CAPA PUESTA NO EXISTE: no se dibuja de fondo, ocupando sitio sin decir nada.
+    v.set_eligiendo(false);
+    let sin = ElementQuery::from_root(&v).find_all();
+    assert!(
+        !sin.iter().any(|e| e.accessible_id().map(|s| s.to_string()) == Some("selector-usar".into())),
+        "cerrada la capa, el selector no puede seguir ahi"
+    );
+}
+
 #[test]
 fn el_boton_de_serie_trae_la_accesibilidad_puesta() {
     use i_slint_backend_testing::AccessibleRole;

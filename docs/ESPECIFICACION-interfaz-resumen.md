@@ -177,7 +177,7 @@ secciones, el divisor es 3 (AU-08: instalar o quitar no reajusta la geometría a
 
 | qué | valor | fuente |
 |---|---|---|
-| margen del contenido | **16** por los cuatro lados, **puesto por CADA BLOQUE** (enmienda del 2026-10-14) | `armazon.slint:58` (`Medidas.margen`) · `estado:469-491` |
+| margen del contenido | **16** por los cuatro lados: los **laterales**, cada bloque; **arriba y abajo**, el contenedor (enmienda y cierre del 2026-10-14) | `armazon.slint:58` (`Medidas.margen`) · `estado:469-491` |
 | hueco entre bloques | **14** | `armazon.slint:243` |
 | alto del contenido | **`alto − cabecera − barra = 880 − 64 − 80 = 736`**, declarado como **altura MÍNIMA** | AU-93 · `armazon.slint:217` |
 | papel | `main`, `accessible-id: "contenido"` | `armazon.slint:211-212` |
@@ -197,6 +197,29 @@ que **exige** el margen en el primer bloque (`motor/tests/medir-interfaz.rs`,
 del contenido lo aplica CADA bloque…»— hasta que los bloques del contenido apliquen `Medidas.margen`; la
 que vigila que el armazón **no** lo ponga (`el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza`)
 sigue activa y en verde. **Fuente del cambio**: `armazon.slint` (la nota del margen y del `ScrollView`).
+
+**CERRADO EL 2026-10-14 (misma fecha) · ya se aplica, y la prueba está en VERDE.** Los bloques del
+contenido aplican `Medidas.margen` (componente `Bloque`, `ventana.slint`: **dos huecos**, no `padding`,
+uno por lado — así la caja del bloque mide **411 − 2·16 = 379**), y la prueba **sale de `#[ignore]`**:
+medido, **izq 16.0 · arriba 16.0 · der 16.0**. Tres precisiones, cada una medida:
+
+1. **El aire de ARRIBA y de ABAJO lo pone el contenedor, no cada bloque.** Si lo llevara cada bloque, el
+   `spacing` de 14 se sumaría en cada junta y el hueco entre bloques pasaría de **14** (doc:181) a 46.
+   Son dos `Rectangle` de `Medidas.margen` en los extremos, en un layout **sin `spacing`**, con los
+   bloques en un layout de dentro (el que tiene `spacing: Medidas.hueco_bloques`). Medido: con los huecos
+   en el layout que tiene `spacing`, el aire de arriba salía **30** (16 + 14) en vez de 16.
+2. **Sigue sin haber `padding` dentro del `ScrollView`**, y la barra horizontal no vuelve: la franja
+   `411x14+0+786` de `datos/capturas/fase1.png` sale **#FAF9F7** entera (5754 px = 411×14), y
+   **`#898887` no aparece en ninguna parte** de la captura.
+3. **La prueba se corrigió en un punto, y no era el contrato**: buscaba un elemento de **411** de ancho
+   —la geometría VIEJA, la del `padding`, donde el contenido medía 443—; con el margen dentro de cada
+   bloque, la caja que lo respeta mide **379**. Mide esa, y exige que las candidatas sean concéntricas
+   (la tarjeta y sus dos envoltorios de layout son la misma caja).
+
+**Lo que queda ABIERTO de este bloque** (medido; es de la fase 2): en la tarjeta del periodo el recuento
+parte en dos líneas y **la tercera se sale** por debajo del alto **52** fijo (§3.8). **No lo causa el
+margen** (está igual en la captura anterior a él) y no se toca aquí: la corrección a **12 px** que ya
+manda la tabla de §3.8 es de la fase 2.
 
 **Por qué la altura mínima está declarada, y no se confía en el layout**: al dejar de dibujar los vacíos
 (AU-91), el armazón **encogió y la barra de abajo subió al centro de la pantalla**; se cazó **midiendo**,

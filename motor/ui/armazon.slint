@@ -140,7 +140,12 @@ export component ArmazonEscritorio inherits Rectangle {
             horizontal-stretch: 1;
             background: transparent;
             VerticalLayout {
-                padding: Medidas.margen;
+                // AQUI SOLO EL AIRE DE ARRIBA Y DE ABAJO (2026-10-14): el de los LADOS lo pone cada
+                // bloque (componente `Bloque`), y aqui NO hay `ScrollView` -- esta es la diferencia
+                // con el armazon de movil, donde el relleno esta prohibido porque el `ScrollView`
+                // pinta su barra horizontal. Con los dos puestos, el margen lateral saldria **32**.
+                padding-top: Medidas.margen;
+                padding-bottom: Medidas.margen;
                 spacing: Medidas.hueco_bloques;
                 @children
             }
@@ -238,12 +243,35 @@ export component ArmazonMovil inherits Rectangle {
             vertical-stretch: 1;
             mouse-drag-pan-enabled: true;
                 VerticalLayout {
-                    // SIN `padding` AQUI: el margen de 16 lo lleva cada bloque (ver la nota de arriba,
-                    // y la prueba `el_primer_bloque_del_contenido_empieza_con_el_margen_de_16`, que
-                    // hoy esta IGNORADA: mide algo de la fase 2, y se des-ignora cuando los bloques
-                    // apliquen Medidas.margen).
-                    spacing: Medidas.hueco_bloques;       // doc:181  14 entre bloques
-                    @children
+                    // ---- EL AIRE DE ARRIBA Y DE ABAJO DEL CONTENIDO (doc:180, «por los CUATRO
+                    // lados»), Y SON DOS HUECOS, NO UN RELLENO. ----
+                    //
+                    // POR QUE AQUI Y NO EN CADA BLOQUE, que es donde va el de los lados: el aire de
+                    // los lados es de cada bloque (su caja mide 379, no 411, y asi el `ScrollView`
+                    // no ve 443 donde caben 411); el de ARRIBA y ABAJO **no puede ser de cada
+                    // bloque**, porque el `spacing` de 14 los sumaria en cada junta y el hueco entre
+                    // bloques pasaria de los **14 del contrato (doc:181)** a 46. Es una distancia de
+                    // los EXTREMOS, como el 14 lo es de las juntas: la pone el contenedor, UNA vez.
+                    // Y el valor sigue siendo UNO: `Medidas.margen`.
+                    //
+                    // POR QUE ESTE LAYOUT DE FUERA NO ES EL QUE LLEVA EL `spacing`: medido el
+                    // 2026-10-14, con los huecos DENTRO del layout que tiene `spacing`, el aire de
+                    // arriba salia **30** (16 del hueco + 14 del `spacing`) en vez de 16. Los huecos
+                    // van en un layout SIN `spacing`, y los bloques en el de dentro, que es el que
+                    // los separa por 14. Asi el primer bloque empieza a 16 y los demas siguen a 14.
+                    //
+                    // POR QUE UN HUECO Y NO `padding-top`/`padding-bottom`: un relleno en el layout
+                    // de dentro del `ScrollView` esta PROHIBIDO aqui, y hay una prueba que lo vigila
+                    // (`el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza`): medido, el
+                    // `ScrollView` pinta su barra. Un `Rectangle` sin relleno OCUPA sitio y **no
+                    // cambia lo que mide su contenedor**; eso es lo que hacen estos dos.
+                    Rectangle { height: Medidas.margen; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: Medidas.hueco_bloques;   // doc:181  14 entre bloques
+                        @children
+                    }
+                    Rectangle { height: Medidas.margen; }
                 }
             }
         }

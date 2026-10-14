@@ -148,6 +148,42 @@ component Aviso inherits Rectangle {
     }
 }
 
+// ---- EL AIRE LATERAL DE LA PANTALLA, Y LO LLEVA CADA BLOQUE (doc:180, enmienda §3.3) ----
+//
+// POR QUE NO LO PONE EL ARMAZON, y esta MEDIDO (2026-10-14): con un `padding` en el layout que esta
+// DENTRO del `ScrollView`, el contenido se mide a 411 + 2·16 = **443** donde **caben 411**, el
+// `ScrollView` concluye que hay algo que desplazar **a lo ancho** y **pinta su barra**: una linea gris
+// de 370 px pegada al borde de abajo del contenido (y ≈ 794, `#898887`). Esta escrito en
+// `armazon.slint:219-234` y en `SLINT-lo-que-hay-que-saber.md` (§11.3, trampa «c»), y la prueba
+// `el_armazon_no_pone_el_margen_dentro_de_lo_que_se_desplaza` vigila que no vuelva.
+//
+// ASI QUE EL 16 LO PONE CADA BLOQUE, y el patron se escribe UNA vez, con nombre (AU-41: una accion,
+// una forma). El VALOR sigue viviendo en UN sitio, `Medidas.margen` (AU-67).
+//
+// Y NO ES UN `padding`, SON DOS HUECOS. **Medido el 2026-10-14, y es la trampa otra vez, un piso mas
+// abajo**: un `padding` en CUALQUIER layout de dentro del `ScrollView` -- no solo en el del armazon,
+// TAMBIEN en el envoltorio de cada bloque -- hace que el contenido se mida a **443** donde caben
+// **411** y el `ScrollView` pinte su barra horizontal: **740 px de `#898887` en y = 794..795** (370 de
+// ancho, dos filas), medidos en `datos/capturas/fase1.png`. Con ese `padding` quitado, la misma franja
+// sale `#FAF9F7` limpia. Por eso el aire son dos `Rectangle` de ancho FIJO (`Medidas.margen`) que NO
+// declaran relleno: un hueco OCUPA sitio; un relleno cambia lo que mide su contenedor.
+//
+// EL `VerticalLayout` DE DENTRO ES LO QUE HACE QUE EL BLOQUE SEA UN BLOQUE: ahi dentro el hijo se
+// estira al ancho que QUEDA (411 − 2·16 = **379**), que es exactamente lo que hacia el contenido antes
+// de esto. Y tiene que ser un LAYOUT: `padding` en un `Rectangle` no hace nada -- Slint avisa
+// «padding only has effect on layout elements» --, y por eso el aire no puede ir en la tarjeta misma.
+//
+// LO QUE ESTE BLOQUE NO HACE: no pone margen ARRIBA ni ABAJO. El hueco entre bloques es del armazon
+// (`Medidas.hueco_bloques`, 14) y anadir 16 a cada lado lo dejaria en 46.
+component Bloque inherits HorizontalLayout {
+    Rectangle { width: Medidas.margen; }      // el aire de la izquierda: un HUECO, no un relleno
+    VerticalLayout {
+        horizontal-stretch: 1;                // el bloque se queda con lo que sobra del ancho
+        @children
+    }
+    Rectangle { width: Medidas.margen; }      // y el de la derecha
+}
+
 // EL COMPONENTE RAIZ elige el armazon segun el espacio. NO pregunta por el dispositivo:
 // pregunta por el ANCHO, que es lo unico que importa -- **una ventana de escritorio estrecha es un
 // movil a efectos de reparto.**
@@ -167,80 +203,97 @@ component Contenido inherits VerticalLayout {
     in property <bool> puede: false;
 
     spacing: 12px;
-    if root.puede : HorizontalLayout {
-        spacing: 12px;
-        Cifra { horizontal-stretch: 1; numero: root.cifras[0]; etiqueta: root.etiquetas[0]; oscuro: root.oscuro; destacada: true; }
-        Cifra { horizontal-stretch: 1; numero: root.cifras[1]; etiqueta: root.etiquetas[1]; oscuro: root.oscuro; destacada: true; }
+    // CADA BLOQUE CON SU `Bloque`: la fila de cifras, la tarjeta del grafico, el aviso, el periodo.
+    if root.puede : Bloque {
+        HorizontalLayout {
+            spacing: 12px;
+            Cifra { horizontal-stretch: 1; numero: root.cifras[0]; etiqueta: root.etiquetas[0]; oscuro: root.oscuro; destacada: true; }
+            Cifra { horizontal-stretch: 1; numero: root.cifras[1]; etiqueta: root.etiquetas[1]; oscuro: root.oscuro; destacada: true; }
+        }
     }
-    if root.puede : HorizontalLayout {
-        spacing: 12px;
-        Cifra { horizontal-stretch: 1; numero: root.cifras[2]; etiqueta: root.etiquetas[2]; oscuro: root.oscuro; }
-        Cifra { horizontal-stretch: 1; numero: root.cifras[3]; etiqueta: root.etiquetas[3]; oscuro: root.oscuro; }
+    if root.puede : Bloque {
+        HorizontalLayout {
+            spacing: 12px;
+            Cifra { horizontal-stretch: 1; numero: root.cifras[2]; etiqueta: root.etiquetas[2]; oscuro: root.oscuro; }
+            Cifra { horizontal-stretch: 1; numero: root.cifras[3]; etiqueta: root.etiquetas[3]; oscuro: root.oscuro; }
+        }
     }
-    if root.puede : Rectangle {
-        height: 268px;
-        border-radius: Medidas.radio;
-        background: root.oscuro ? Oscuro.sup : Claro.sup;
-        border-width: 1px;
-        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-        VerticalLayout {
-            padding: 14px;
-            spacing: 4px;
-            Text {
-                text: "Zonas de entrenamiento";
-                font-size: 14px; font-weight: 700;
-                color: root.oscuro ? Oscuro.fg : Claro.fg;
-            }
-            for i in 5 : Zona {
-                nombre: root.zonas_nombres[i];
-                tramo: root.zonas_tramos[i];
-                nivel: root.zonas_niveles[i];
-                oscuro: root.oscuro;
-                tono: i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
-                    : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
-                    : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
-                    : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
-                             : (root.oscuro ? Oscuro.z5 : Claro.z5);
-                // La pista, del mismo color pero muy suave: se VE que la barra es de esa zona.
-                pista_zona: (i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
-                    : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
-                    : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
-                    : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
-                             : (root.oscuro ? Oscuro.z5 : Claro.z5)).with-alpha(0.18);
+    if root.puede : Bloque {
+        Rectangle {
+            height: 268px;
+            border-radius: Medidas.radio;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
+            border-width: 1px;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 4px;
+                Text {
+                    text: "Zonas de entrenamiento";
+                    font-size: 14px; font-weight: 700;
+                    color: root.oscuro ? Oscuro.fg : Claro.fg;
+                }
+                for i in 5 : Zona {
+                    nombre: root.zonas_nombres[i];
+                    tramo: root.zonas_tramos[i];
+                    nivel: root.zonas_niveles[i];
+                    oscuro: root.oscuro;
+                    tono: i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
+                        : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
+                        : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
+                        : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
+                                 : (root.oscuro ? Oscuro.z5 : Claro.z5);
+                    // La pista, del mismo color pero muy suave: se VE que la barra es de esa zona.
+                    pista_zona: (i == 0 ? (root.oscuro ? Oscuro.z1 : Claro.z1)
+                        : i == 1 ? (root.oscuro ? Oscuro.z2 : Claro.z2)
+                        : i == 2 ? (root.oscuro ? Oscuro.z3 : Claro.z3)
+                        : i == 3 ? (root.oscuro ? Oscuro.z4 : Claro.z4)
+                                 : (root.oscuro ? Oscuro.z5 : Claro.z5)).with-alpha(0.18);
+                }
             }
         }
     }
-    if root.precision != "" : Aviso { texto: root.precision; oscuro: root.oscuro; }
+    if root.precision != "" : Bloque { Aviso { texto: root.precision; oscuro: root.oscuro; } }
     // EL PERIODO Y EL RECUENTO, en la misma tarjeta de alto FIJO: son las dos cosas que dicen «que
     // datos hay», y asi la linea del periodo no absorbe el hueco sobrante del reparto (medido: 116 px
     // de celda cuando iba suelta, con un vacio de 98 px debajo). El periodo lo escribe Rust (`cara`),
     // en UNA linea; aqui NO se calcula. Y va CONDICIONAL: sin fechas no se dibuja el hueco (AU-07).
-    Rectangle {
-        height: 52px;
-        border-radius: Medidas.radio;
-        background: root.oscuro ? Oscuro.sup : Claro.sup;
-        border-width: 1px;
-        border-color: root.oscuro ? Oscuro.linea : Claro.linea;
-        VerticalLayout {
-            padding-left: 14px;
-            padding-right: 14px;
-            alignment: center;
-            spacing: 2px;
-            if root.periodo != "" : Text {
-                // El nombre de accesibilidad es lo unico que permite MEDIRLO desde una prueba (AU-63).
-                accessible-role: text;
-                accessible-id: "periodo";
-                text: root.periodo; font-size: 12px;
-                color: root.oscuro ? Oscuro.muted : Claro.muted;
-                wrap: word-wrap;
-            }
-            Text {
-                text: root.vacio; font-size: 13px;
-                color: root.oscuro ? Oscuro.muted : Claro.muted;
+    Bloque {
+        Rectangle {
+            height: 52px;
+            border-radius: Medidas.radio;
+            background: root.oscuro ? Oscuro.sup : Claro.sup;
+            border-width: 1px;
+            border-color: root.oscuro ? Oscuro.linea : Claro.linea;
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                alignment: center;
+                spacing: 2px;
+                if root.periodo != "" : Text {
+                    // El nombre de accesibilidad es lo unico que permite MEDIRLO desde una prueba (AU-63).
+                    accessible-role: text;
+                    accessible-id: "periodo";
+                    text: root.periodo; font-size: 12px;
+                    color: root.oscuro ? Oscuro.muted : Claro.muted;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.vacio; font-size: 13px;
+                    color: root.oscuro ? Oscuro.muted : Claro.muted;
+                    // Y ESTA LINEA TIENE QUE PODER PARTIRSE, y no es un adorno: es lo que hace que el
+                    // margen de 16 sea POSIBLE. Medido el 2026-10-14: sin `wrap`, este texto (que es el
+                    // mas largo de la pantalla, «102 sesiones · 549842 lecturas · …») mide el ancho
+                    // ENTERO de la ventana, asi que el bloque no puede encoger NI UN PIXEL: en cuanto el
+                    // contenido se mete 16 hacia dentro, el bloque se sale, el contenido se mide a 443
+                    // donde caben 411 y el `ScrollView` **pinta su barra horizontal** (740 px de
+                    // `#898887` en y = 794..795). El margen no se veia porque el texto no dejaba.
+                    wrap: word-wrap;
+                }
             }
         }
     }
-    if root.aviso != "" : Aviso { texto: root.aviso; oscuro: root.oscuro; }
+    if root.aviso != "" : Bloque { Aviso { texto: root.aviso; oscuro: root.oscuro; } }
 }
 
 // ================================================================================================

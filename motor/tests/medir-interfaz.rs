@@ -641,31 +641,30 @@ fn el_contenido_declara_su_altura_minima_y_la_barra_no_se_mueve() {
     );
 }
 
-#[ignore = "Fase 2: el margen del contenido lo aplica CADA bloque (especificacion §3.3 enmendada 2026-10-14); se des-ignora cuando los bloques del contenido apliquen Medidas.margen"]
 #[test]
 fn el_primer_bloque_del_contenido_empieza_con_el_margen_de_16() {
-    // ############################################################################################
-    // ## ESTA PRUEBA ESTA IGNORADA, Y A PROPOSITO: ES LA PUERTA DE LA FASE 2.                  ##
-    // ##                                                                                       ##
-    // ## ESTA IGNORADA PORQUE EL MARGEN DE 16 NO LO ENTREGA TODAVIA NADIE, y decir que si      ##
-    // ## seria mentir: en la fase 1 el armazon DEJO de ponerlo (con `padding` dentro del       ##
-    // ## `ScrollView` el `ScrollView` pinta una barra horizontal: medido, una linea gris de    ##
-    // ## 370 px en y = 794), y los bloques que hay hoy dentro son los de la fase 2, que se     ##
-    // ## reescriben y pondran el suyo.                                                         ##
-    // ##                                                                                       ##
-    // ## O SEA: la prueba NO esta mal, esta MIDIENDO ALGO QUE FALTA. Se deja IGNORADA y no     ##
-    // ## borrada: mide algo que falta, y se des-ignora con el primer bloque de la fase 2.      ##
-    // ############################################################################################
-    // doc:180: el contenido tiene **margen 16** por los lados. Se mide sobre la TARJETA DEL PERIODO,
-    // que es la que se sabe encontrar por su nombre (`periodo`), y no sobre «los bloques que
-    // encuentre»: contar elementos sueltos fue lo que hizo que esta prueba pasara **midiendo 0**
-    // cuando el armazon dejo de poner el margen (medido, y se vio porque la prueba imprime el numero).
+    // ESTA PRUEBA YA NO ESTA IGNORADA (2026-10-14): el margen lo entrega CADA BLOQUE, y se mide.
     //
-    // DE DONDE SALE EL MARGEN, y en la fase 1 cambio de sitio: lo pone **cada bloque**, no el layout
-    // del `ScrollView`. El por que esta medido en `armazon.slint` (con cualquier `padding` ahi dentro
-    // el `ScrollView` pinta una barra horizontal: una linea gris de 370 px en y = 794). La prueba de
-    // al lado vigila que el armazon no lo ponga; si alguien lo pone en los dos sitios, salen 32 y
-    // aqui se ve.
+    // POR QUE ESTUVO IGNORADA, y no era un capricho: en la fase 1 el armazon dejo de poner el margen
+    // (con `padding` dentro del `ScrollView` el `ScrollView` pinta su barra horizontal: medido, una
+    // linea gris de 370 px en y = 794), y los bloques de dentro eran los de la fase 2, que se
+    // reescriben. Se dejo ignorada porque MEDIA ALGO QUE FALTABA, y se des-ignora cuando ese algo
+    // existe. Existe: `Bloque` (`ventana.slint`) le pone a cada bloque sus dos huecos de
+    // `Medidas.margen`, y el armazon le pone el aire de arriba y de abajo del contenido.
+    //
+    // doc:180: el contenido tiene **margen 16** por los cuatro lados. **QUE ELEMENTO SE MIDE, y aqui
+    // hubo que corregir la prueba (2026-10-14)**: se mide LA TARJETA (la caja visible del bloque),
+    // que es la que respeta el margen, y NO el envoltorio `Bloque`. El envoltorio mide **411**, el
+    // ancho ENTERO del contenido -- los dos huecos de 16 son HIJOS suyos, para que el `ScrollView` no
+    // vea un contenido de 443 donde caben 411 (que es lo que le hace pintar la barra) --, asi que
+    // exigirle 16 al envoltorio seria exigir que el contenido midiera 443: la cuenta que no cabe.
+    // El elemento que se mide mide, por tanto, **411 − 2·16 = 379**, y esa es la cuenta que se
+    // escribe aqui. (Antes esta prueba buscaba un elemento de 411 de ancho: eso era la geometria
+    // VIEJA, la del `padding` en el layout del `ScrollView`, y con ella el margen volvia a 0.)
+    //
+    // Y no se cuentan «elementos sueltos»: se exige que haya **uno solo** que cumpla la geometria del
+    // contrato. Contar candidatos sueltos fue lo que hizo que esta prueba pasara **midiendo 0** cuando
+    // el armazon dejo de poner el margen (medido, y se vio porque la prueba imprime el numero).
     // UNA VENTANA CON UN SOLO BLOQUE: asi «el primer bloque» es, sin dudas, la tarjeta del periodo,
     // y no lo que resulte estar primero. (Con el estado con datos, el primero es la rejilla de
     // cifras, que es de la fase 2 y trae sus propios margenes.)
@@ -677,21 +676,42 @@ fn el_primer_bloque_del_contenido_empieza_con_el_margen_de_16() {
     let cont = buscar(&todos, "contenido").expect("el contenido tiene que existir");
     let c_pos = cont.absolute_position();
     let c_tam = cont.size();
-    // La tarjeta del periodo: el elemento de 52 de alto que la contiene (su caja, no su texto).
-    let tarjeta = todos
+    // La tarjeta del periodo: la caja de 52 de alto, y de 411 − 2·16 = 379 de ancho (el ancho del
+    // contenido MENOS sus dos margenes), que es la que tiene que estar a 16 de cada lado.
+    let ancho_de_la_tarjeta = doc::ANCHO - 2.0 * doc::MARGEN;
+    let candidatas: Vec<&i_slint_backend_testing::ElementHandle> = todos
         .iter()
         .filter(|e| {
             let t = e.size();
             (f64::from(t.height) - 52.0).abs() < 0.5
-                && (f64::from(t.width) - 411.0).abs() < 1.0
+                && (f64::from(t.width) - ancho_de_la_tarjeta).abs() < 1.0
                 && f64::from(e.absolute_position().y) >= f64::from(c_pos.y) - 0.5
         })
-        .min_by(|a, b| {
-            f64::from(a.absolute_position().y)
-                .partial_cmp(&f64::from(b.absolute_position().y))
-                .unwrap()
-        })
-        .expect("la tarjeta del periodo tiene que estar");
+        .collect();
+    assert!(
+        !candidatas.is_empty(),
+        "tiene que haber una caja de {ancho_de_la_tarjeta} x 52 en el contenido: es la tarjeta del \
+         periodo con sus dos margenes"
+    );
+    // Y TODAS LAS QUE HAYA TIENEN QUE ESTAR EN EL MISMO SITIO, que es lo que hace que la medida no
+    // dependa de cual se elija: la tarjeta y sus dos envoltorios de layout son cajas CONCENTRICAS (la
+    // misma caja, tres elementos). Si alguna se despegara, aqui se ve, en vez de elegir «la primera».
+    let primera = candidatas[0].absolute_position();
+    for (cual, e) in candidatas.iter().enumerate() {
+        let p = e.absolute_position();
+        assert!(
+            (f64::from(p.x) - f64::from(primera.x)).abs() < 0.5
+                && (f64::from(p.y) - f64::from(primera.y)).abs() < 0.5,
+            "las {} cajas de la tarjeta del periodo tienen que estar concentricas, y la {cual} esta \
+             en ({:.1},{:.1}) y la primera en ({:.1},{:.1})",
+            candidatas.len(),
+            f64::from(p.x),
+            f64::from(p.y),
+            f64::from(primera.x),
+            f64::from(primera.y)
+        );
+    }
+    let tarjeta = candidatas[0];
     let t_pos = tarjeta.absolute_position();
     let t_tam = tarjeta.size();
     let izq = f64::from(t_pos.x) - f64::from(c_pos.x);

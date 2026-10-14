@@ -16,7 +16,7 @@
 //! datos. Un dato guardado en un sitio que el usuario no conoce es un dato que no encuentra.
 
 use crate::adaptador;
-use crate::datos::{Dato, Persona, Sexo};
+use crate::datos::{Dato, Fecha, Persona, Sexo};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -173,7 +173,9 @@ pub fn sexo(texto: &str) -> Result<Dato<Sexo>, String> {
 /// **Los nombres de los campos, y en un solo sitio.** Los usan la línea de órdenes
 /// (`--guardar-perfil edad=60`) y la pantalla, y por eso están aquí: si cada uno tuviera su lista,
 /// un día dirían cosas distintas.
-pub const CAMPOS: [&str; 10] = [
+pub const CAMPOS: [&str; 11] = [
+    // La fecha va PRIMERO porque es la que manda: si esta, la edad escrita es solo un respaldo.
+    "fecha_nacimiento",
     "edad",
     "pulso_reposo",
     "pulso_maximo_medido",
@@ -193,6 +195,10 @@ pub const CAMPOS: [&str; 10] = [
 pub fn aplicar(p: &mut Persona, campos: &[(&str, &str)]) -> Result<(), String> {
     for (nombre, texto) in campos {
         match *nombre {
+            // La fecha no la traduce `numero` porque NO es un numero. Y este es el caso especial que
+            // se justifica solo: una fecha como texto libre es justo lo que un `parse::<f32>` se
+            // tragaria convirtiendolo en un cero.
+            "fecha_nacimiento" => p.fecha_nacimiento = fecha_nacimiento(texto)?,
             "edad" => p.edad = numero("edad", texto)?,
             "pulso_reposo" => p.pulso_reposo = numero("pulso_reposo", texto)?,
             "pulso_maximo_medido" => {
@@ -222,4 +228,33 @@ pub fn de_campos(campos: &[(&str, &str)]) -> Result<Persona, String> {
     let mut p = Persona::desconocida();
     aplicar(&mut p, campos)?;
     Ok(p)
+}
+
+// ==================================================================================================
+// LA FECHA DE NACIMIENTO EN EL PERFIL (2026-10-14)
+// ==================================================================================================
+//
+// POR QUE SE AÑADE AQUI Y NO SE DEJA SOLO EN EL MODELO: el perfil es **el único camino por el que los
+// datos de una persona entran y salen**, y si la fecha no viaja por él, **el usuario no la puede
+// rellenar** -- y entonces la edad vuelve a ser un número escrito que caduca.
+
+/// **La fecha de nacimiento, tal como se guarda y se lee**: `AAAA-MM-DD`.
+///
+/// Va en su propia función, y no dentro de `aplicar`, por un motivo concreto: la fecha **no es un
+/// número**, así que no la puede traducir `numero`. Mezclarla con los demás campos habría obligado a
+/// meter un caso especial dentro del bucle, y **un caso especial dentro de un bucle es donde se
+/// esconden los fallos**.
+pub fn fecha_nacimiento(texto: &str) -> Result<Dato<Fecha>, String> {
+    let t = texto.trim();
+    // **Vacío es `Falta`, y NO es un error.** Es la misma regla que con los números: «no lo sé» es una
+    // respuesta legítima, y el usuario tiene que poder borrar un dato sin que le salte un aviso.
+    if t.is_empty() {
+        return Ok(Dato::Falta);
+    }
+    match crate::adaptador::fecha_desde_texto(t) {
+        Dato::Hay(f) => Ok(Dato::Hay(f)),
+        Dato::Falta => Err(format!(
+            "«{t}» no es una fecha válida. Se escribe así: 1964-01-25, con guiones y el año primero."
+        )),
+    }
 }

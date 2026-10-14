@@ -20,15 +20,40 @@ hubo que delegar el arreglo. **Eso no es mala suerte: es haber empezado a ejecut
 **conoce** el motor. Quien tiene que cambiar cuando cambia el mundo exterior es **el borde**, nunca el
 centro.
 
-**Es la arquitectura de puertos y adaptadores**, y **no la invento yo**: la formuló **Alistair Cockburn**
-(«Hexagonal Architecture», 2005) y su regla central es exactamente esa — *la aplicación se comunica con
-el exterior por puertos, y cada puerto tiene uno o varios adaptadores intercambiables*. La formulación
-de **Robert C. Martin** («The Clean Architecture», 2012) la generaliza con **la Regla de la Dependencia**:
-*las dependencias del código fuente solo pueden apuntar hacia dentro*.
+**Es la arquitectura de puertos y adaptadores**, y **no la invento yo**. La formuló **Alistair Cockburn**
+en **«Hexagonal Architecture (Ports & Adapters)»**, *HaT Technical Report 2005.02*, del **4 de septiembre
+de 2005** — <https://alistair.cockburn.us/hexagonal-architecture/>. **Consultado y verificado el
+2026-10-14.** Y dice, literal:
 
-> **Y esta cita está pendiente de verificar.** El documento del estado del arte lo está comprobando
-> (§6, arquitectura). **Si la cita no se sostiene, esta sección se corrige**: en este proyecto una
-> regla sin fuente es una opinión con buena letra.
+> *«The asymmetry to exploit is not that between left and right sides of the application but between
+> **inside** and **outside**. **The rule to obey is that code pertaining to the inside part should not
+> leak into the outside part.**»*
+
+**Traducido**: la regla no es «izquierda contra derecha», es **dentro contra fuera**. **El código de
+dentro no se filtra hacia fuera.**
+
+**Y el artículo dice TRES cosas más que dan razón a este proyecto, y las tres estaban ya aquí sin
+saberlo:**
+
+1. **Describe el problema exacto que este proyecto vivió**: *«one of the great bugaboos… has been
+   infiltration of business logic into the user interface code»* — **lógica de negocio metida en la
+   interfaz**. Y explica la consecuencia: *«the system can't neatly be tested with automated test suites
+   because part of the logic needing to be tested is dependent on oft-changing visual details»*.
+   **Eso es literalmente lo que pasaba: el recorrido del usuario no se podía probar sin abrir la
+   ventana.**
+2. **Y avisa de por qué no basta con prometerlo**: *«having no mechanism to detect when a violation of
+   that promise occurs, the organization finds a few years later that the new layer is cluttered with
+   business logic and the old problem has reappeared»*. **Una promesa sin mecanismo que la detecte se
+   rompe sola** — y por eso aquí cada contrato lleva **su portero** (ver §3).
+3. **Y da el criterio de terminado de una arquitectura de estas**: *«the ultimate benefit of a ports and
+   adapters implementation is the ability to run the application in a **fully isolated mode**»*.
+   **Eso es exactamente `cara.rs`**: el recorrido del usuario **se comprueba aislado, sin ventana.**
+
+> **Y su orden de desarrollo recomendado es el que NO seguimos**, y merece quedar escrito: el artículo
+> describe empezar **con las pruebas**, luego la interfaz, luego el almacén de verdad — y en su ejemplo
+> el primer paso es *«FIT + App + constant-as-mock-database»*. **Nosotros empezamos por el motor (bien) y
+> dejamos el acoplamiento para el final (mal).** La arquitectura no es un dibujo: es **un orden de
+> trabajo**.
 
 **Lo que esto significa en la práctica, y es lo que da la garantía que pide el dueño**: se puede
 **tirar y rehacer una pieza del borde sin tocar el motor**, y el motor **no se entera**. Ese es el
@@ -145,5 +170,9 @@ estará bien hecha. **Eso es lo que se puede comprobar, y por eso es lo que se e
 - **La fecha de nacimiento** no está en `Persona`. La edad está escrita a mano y **caduca el 25 de
   enero**.
 - **Ninguna pieza del borde sabe elegir una carpeta.** Hoy la ruta entra por línea de órdenes.
-- **Y la cita de Cockburn está sin verificar.** Si no se sostiene, se corrige: en este proyecto una
-  regla sin fuente es una opinión con buena letra.
+- **El estado del arte de la nutrición, la hidratación y la mecánica de pedaleo está escrito pero sin
+  terminar de verificar**: `docs/ESTADO-DEL-ARTE.md` tiene **41 direcciones** y **19 filas marcadas como
+  «sin fuente localizada»** (honestamente marcadas, no rellenadas con invenciones). Hay que revisarlo
+  fila a fila antes de construir sobre él.
+- **La exportación de Huawei sigue sin investigar**: su subagente falló. Es la pieza que desbloquea la
+  regla del agua corporal.

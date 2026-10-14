@@ -19,6 +19,9 @@ use motor::juicio::{Confianza, Juicio};
 /// Una persona con todo lo que hace falta. La referencia para comparar.
 fn ana() -> Persona {
     Persona {
+        // Sin fecha de nacimiento a proposito: `ana` es la persona de las pruebas del CALCULO, y
+        // sirve para comprobar que el motor trabaja igual con la edad escrita que con la fecha.
+        fecha_nacimiento: Dato::Falta,
         edad: Dato::Hay(40),
         pulso_reposo: Dato::Hay(55),
         pulso_maximo_medido: Dato::Falta,
@@ -3283,4 +3286,193 @@ fn el_ruido_de_la_escala_NO_cambia_la_cuenta_de_las_sesiones_que_avisan() {
 fn avsios_corte(base: f64) -> f64 {
     let paso = 360.0 / 256.0;
     ((base * 2.0) / paso).round() * paso
+}
+
+// ==================================================================================================
+// LA FECHA DE NACIMIENTO: LA EDAD QUE NO CADUCA (2026-10-14)
+// ==================================================================================================
+//
+// EL FALLO QUE ESTAS PRUEBAS ARREGLAN, y es de los que no se notan: la aplicación tenía **`edad = 60`
+// escrito a mano** y el cliente tiene **62** (su perfil de Garmin dice 1964-01-25). De la edad sale la
+// **frecuencia máxima**, así que **las zonas de entrenamiento salían corridas** -- y una zona corrida
+// no da error: da un entrenamiento equivocado.
+//
+// **Y NO SE ARREGLA ESCRIBIENDO 62**: eso caduca el 25 de enero. Un dato que caduca y nadie lo nota es
+// peor que un dato que falta, porque el que falta se ve.
+
+/// El cumpleaños del cliente, que es el caso real que originó esta pieza.
+fn el_cliente_nacio_el() -> motor::datos::Fecha {
+    motor::datos::Fecha::nueva(1964, 1, 25)
+}
+
+#[test]
+fn la_edad_se_calcula_desde_la_fecha_y_no_caduca() {
+    use motor::datos::{Dato, Fecha, Persona};
+
+    let mut p = Persona::desconocida();
+    p.fecha_nacimiento = Dato::Hay(el_cliente_nacio_el());
+
+    // EL CASO REAL, con la fecha de hoy: nació el 25-01-1964.
+    assert_eq!(
+        p.edad_en(Fecha::nueva(2026, 10, 14)),
+        Dato::Hay(62),
+        "el 14 de octubre de 2026 tiene 62 años"
+    );
+    // Y EL MISMO PERFIL, TRES AÑOS DESPUÉS, da 65 -- **sin tocar el fichero**. Eso es lo que significa
+    // que no caduque: el dato es la fecha, y la edad es una consecuencia.
+    assert_eq!(
+        p.edad_en(Fecha::nueva(2029, 10, 14)),
+        Dato::Hay(65),
+        "el mismo perfil, tres años despues: 65. NO hay que actualizar nada."
+    );
+}
+
+#[test]
+fn el_DIA_DEL_CUMPLEANOS_es_el_caso_que_falla_y_por_eso_se_prueba() {
+    use motor::datos::{Dato, Fecha, Persona};
+
+    // ESTE ES EL CASO POR EL QUE LA FECHA DE HOY SE PASA COMO ARGUMENTO, y no se lee del reloj: si la
+    // funcion leyera el reloj por dentro, **el dia del cumpleaños no se podria probar nunca** sin
+    // esperar un año entero. Y es justo el dia en que una resta ingenua se equivoca.
+    let mut p = Persona::desconocida();
+    p.fecha_nacimiento = Dato::Hay(el_cliente_nacio_el());
+
+    assert_eq!(p.edad_en(Fecha::nueva(2026, 1, 24)), Dato::Hay(61), "un dia antes: 61");
+    assert_eq!(p.edad_en(Fecha::nueva(2026, 1, 25)), Dato::Hay(62), "el mismo dia: 62");
+    assert_eq!(p.edad_en(Fecha::nueva(2026, 1, 26)), Dato::Hay(62), "un dia despues: 62");
+}
+
+#[test]
+fn una_fecha_que_NO_EXISTE_no_da_una_edad_inventada() {
+    use motor::datos::{Dato, Fecha, Persona};
+
+    // El 31 de febrero se puede escribir y no existe. Y una fecha imposible daria una edad calculada
+    // con una fecha que no es, **sin que nada avisara**.
+    assert!(!Fecha::nueva(2026, 2, 31).es_valida(), "el 31 de febrero no existe");
+    assert!(!Fecha::nueva(2026, 13, 1).es_valida(), "no hay mes 13");
+    assert!(!Fecha::nueva(2026, 0, 10).es_valida(), "no hay mes 0");
+    assert!(!Fecha::nueva(2026, 4, 31).es_valida(), "abril tiene 30 dias");
+    assert!(Fecha::nueva(2026, 2, 28).es_valida(), "2026 no es bisiesto: el 28 si");
+    assert!(Fecha::nueva(2024, 2, 29).es_valida(), "2024 si es bisiesto: el 29 si");
+    assert!(!Fecha::nueva(2100, 2, 29).es_valida(), "2100 NO es bisiesto (regla del siglo)");
+    assert!(Fecha::nueva(2000, 2, 29).es_valida(), "2000 SI es bisiesto (regla del 400)");
+
+    // Y con una fecha imposible, la edad NO se inventa: se usa la que hubiera escrita, o falta.
+    let mut p = Persona::desconocida();
+    p.fecha_nacimiento = Dato::Hay(Fecha::nueva(1964, 2, 31));
+    assert_eq!(
+        p.edad_en(Fecha::nueva(2026, 10, 14)),
+        Dato::Falta,
+        "con una fecha imposible y sin edad escrita, FALTA -- no un cero ni una media"
+    );
+}
+
+#[test]
+fn la_FECHA_manda_sobre_la_edad_escrita() {
+    use motor::datos::{Dato, Fecha, Persona};
+
+    // Es la misma regla que con el perfil y el aparato: **cuando los dos hablan del mismo dato, gana el
+    // que no caduca**. Aqui, la fecha.
+    let mut p = Persona::desconocida();
+    p.edad = Dato::Hay(60); // el valor viejo, el que estaba escrito a mano
+    p.fecha_nacimiento = Dato::Hay(el_cliente_nacio_el());
+
+    assert_eq!(
+        p.edad_en(Fecha::nueva(2026, 10, 14)),
+        Dato::Hay(62),
+        "hay fecha Y edad escrita: manda la FECHA, que es la que no caduca"
+    );
+
+    // Y sin fecha, se sigue usando la edad escrita: un perfil viejo no se queda sin nada.
+    let mut sin_fecha = Persona::desconocida();
+    sin_fecha.edad = Dato::Hay(60);
+    assert_eq!(
+        sin_fecha.edad_en(Fecha::nueva(2026, 10, 14)),
+        Dato::Hay(60),
+        "sin fecha, se respeta la edad que hubiera"
+    );
+}
+
+#[test]
+fn la_fecha_va_y_vuelve_por_el_perfil_sin_cambiar() {
+    use motor::datos::{Dato, Fecha, Persona};
+
+    // El ciclo leer -> guardar -> leer no puede cambiar el dato por el camino. Es el mismo defecto que
+    // ya se corrigio con el sexo: un dato que se transforma al pasar por el fichero.
+    let mut p = Persona::desconocida();
+    p.fecha_nacimiento = Dato::Hay(el_cliente_nacio_el());
+    p.peso_kg = Dato::Hay(69.45);
+
+    let texto = motor::adaptador::a_json(&p);
+    let vuelta = motor::adaptador::leer_perfil(&texto).expect("tiene que poder leerse");
+
+    assert_eq!(vuelta.fecha_nacimiento, Dato::Hay(el_cliente_nacio_el()), "la fecha va y vuelve igual");
+    // Y en el fichero se escribe como la escribe una persona, para que se pueda mirar y editar a mano.
+    assert!(texto.contains("1964-01-25"), "la fecha se guarda legible: {texto}");
+    let _ = Fecha::nueva(1, 1, 1);
+}
+
+#[test]
+fn una_fecha_escrita_mal_se_dice_y_no_se_traga() {
+    use motor::datos::Dato;
+
+    // Un numero mal escrito NO se traga en silencio, y una fecha tampoco: se dice como se escribe.
+    let malas = ["1964/01/25", "25-01-1964", "ayer", "1964-1", "1964-01-25-extra"];
+    for m in malas {
+        assert!(
+            motor::profile::fecha_nacimiento(m).is_err(),
+            "«{m}» esta mal escrita y tiene que decirlo, no tragarse"
+        );
+    }
+    // Y VACIO NO ES UN ERROR: es «no lo sé», y el usuario tiene que poder borrar el dato.
+    assert_eq!(
+        motor::profile::fecha_nacimiento(""),
+        Ok(Dato::Falta),
+        "vacio significa «no lo se», y eso se puede guardar"
+    );
+    assert_eq!(
+        motor::profile::fecha_nacimiento("1964-01-25"),
+        Ok(Dato::Hay(motor::datos::Fecha::nueva(1964, 1, 25))),
+        "y bien escrita, entra"
+    );
+}
+
+#[test]
+fn el_CICLO_COMPLETO_del_perfil_conserva_la_fecha() {
+    // Leer -> guardar -> volver a leer, con fichero de verdad y en un directorio propio.
+    //
+    // LA FECHA ES LA QUE MAS SE PUEDE PERDER en ese viaje, porque no es un numero: si alguien la
+    // tratara como los demas campos, `parse::<f32>("1964-01-25")` daria un error o un cero, y la edad
+    // saldria mal SIN QUE NADA AVISARA. Esta prueba es la que impide que eso pase.
+    use motor::datos::{Dato, Persona};
+
+    let caja = std::env::temp_dir().join(format!("pulso-prueba-fecha-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&caja);
+    std::fs::create_dir_all(&caja).unwrap();
+    let ruta = caja.join("perfil.json");
+
+    // 1) Un perfil con la fecha y el peso.
+    let mut p = Persona::desconocida();
+    p.fecha_nacimiento = Dato::Hay(el_cliente_nacio_el());
+    p.peso_kg = Dato::Hay(69.45);
+    motor::profile::guardar(&p, &ruta).expect("tiene que guardarse");
+
+    // 2) Se lee, y la fecha esta.
+    let leido = motor::profile::leer(&ruta).expect("tiene que leerse");
+    assert_eq!(leido.fecha_nacimiento, Dato::Hay(el_cliente_nacio_el()));
+    assert_eq!(leido.peso_kg, Dato::Hay(69.45));
+
+    // 3) Y por el camino de los CAMPOS, que es el que usa la pantalla.
+    let campos = [("fecha_nacimiento", "1964-01-25"), ("peso_kg", "69,45")];
+    let mut otro = Persona::desconocida();
+    motor::profile::aplicar(&mut otro, &campos).expect("los campos tienen que aplicarse");
+    assert_eq!(otro.fecha_nacimiento, Dato::Hay(el_cliente_nacio_el()));
+    assert_eq!(otro.peso_kg, Dato::Hay(69.45), "y con coma decimal, como se escribe en español");
+
+    // 4) Y BORRARLA tambien tiene que poder hacerse: vacio es «no lo se», no un error.
+    let borrar = [("fecha_nacimiento", "")];
+    motor::profile::aplicar(&mut otro, &borrar).expect("borrar no puede ser un error");
+    assert_eq!(otro.fecha_nacimiento, Dato::Falta, "y vuelve a faltar, como debe");
+
+    let _ = std::fs::remove_dir_all(&caja);
 }

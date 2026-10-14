@@ -11,7 +11,7 @@
 //! El primer formato que se implementa es el **sintético** (`datos-sinteticos/`), que existe porque el
 //! cliente aún no ha dado los suyos. **Sirve para probar el motor entero sin depender de nadie.**
 
-use crate::datos::{Dato, Muestra, Persona, Sesion, Sexo};
+use crate::datos::{Dato, Fecha, Muestra, Persona, Sesion, Sexo};
 use serde::{Deserialize, Serialize};
 
 /// Un dato que **puede venir o no venir** en el fichero.
@@ -27,6 +27,12 @@ pub struct PerfilJson {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PersonaJson {
+    /// **La fecha de nacimiento, como texto `AAAA-MM-DD`.** Es lo que MANDA sobre la edad.
+    ///
+    /// POR QUE TEXTO Y NO TRES NUMEROS: así el fichero se puede **leer y editar a mano** —que es lo que
+    /// el dueño va a hacer— y una fecha escrita mal se ve de un vistazo. Con tres números sueltos, un
+    /// mes 13 pasaria desapercibido hasta que alguien mirara la edad calculada.
+    pub fecha_nacimiento: Quizas<String>,
     pub edad: Quizas<u8>,
     pub peso_kg: Quizas<f32>,
     pub pulso_reposo: Quizas<u16>,
@@ -50,6 +56,11 @@ impl PersonaJson {
     /// cero, y no se supone. Esa es la regla de todo el proyecto.
     pub fn a_persona(&self) -> Persona {
         Persona {
+            fecha_nacimiento: self
+                .fecha_nacimiento
+                .as_deref()
+                .map(fecha_desde_texto)
+                .unwrap_or(Dato::Falta),
             edad: segun(self.edad),
             peso_kg: segun(self.peso_kg),
             pulso_reposo: segun(self.pulso_reposo),
@@ -76,6 +87,9 @@ impl PersonaJson {
     /// por todas las fórmulas sin que nadie lo notara.
     pub fn de(p: &Persona) -> Self {
         Self {
+            // La fecha vuelve al fichero como el MISMO texto que entiende `a_persona`, para que el
+            // ciclo leer -> guardar -> leer no cambie el dato por el camino.
+            fecha_nacimiento: fecha_a_texto(&p.fecha_nacimiento),
             edad: quizas(p.edad),
             peso_kg: quizas(p.peso_kg),
             pulso_reposo: quizas(p.pulso_reposo),
@@ -192,4 +206,40 @@ pub fn leer_semanas(texto: &str) -> Result<Vec<SemanaJson>, String> {
     }
     let r: Raiz = serde_json::from_str(texto).map_err(|e| format!("el JSON no se entiende: {e}"))?;
     Ok(r.semanas)
+}
+
+/// **Traduce `AAAA-MM-DD` a una fecha.** Y si no se puede, dice `Falta`.
+///
+/// POR QUE DEVUELVE `Dato` Y NO UN `Result`: quien llama está traduciendo un fichero, y **un fichero
+/// con una fecha rara no puede impedir leer el resto**. El perfil entero se perdería por un guion de
+/// más. Se pierde **ese dato**, que es lo honesto, y el motor ya sabe trabajar sin él.
+///
+/// Y SE COMPRUEBA QUE LA FECHA EXISTA: el 31 de febrero se puede escribir y no existe. Una fecha
+/// imposible daría una edad calculada con una fecha que no es, **sin que nada avisara**.
+pub fn fecha_desde_texto(texto: &str) -> Dato<Fecha> {
+    let partes: Vec<&str> = texto.trim().split('-').collect();
+    if partes.len() != 3 {
+        return Dato::Falta;
+    }
+    let (Ok(anio), Ok(mes), Ok(dia)) = (
+        partes[0].parse::<u16>(),
+        partes[1].parse::<u8>(),
+        partes[2].parse::<u8>(),
+    ) else {
+        return Dato::Falta;
+    };
+    let f = Fecha::nueva(anio, mes, dia);
+    if f.es_valida() {
+        Dato::Hay(f)
+    } else {
+        Dato::Falta
+    }
+}
+
+/// Y el camino de vuelta: la fecha, como texto `AAAA-MM-DD`.
+pub fn fecha_a_texto(f: &Dato<Fecha>) -> Option<String> {
+    match f.valor() {
+        Some(f) => Some(format!("{:04}-{:02}-{:02}", f.anio, f.mes, f.dia)),
+        None => None,
+    }
 }

@@ -82,7 +82,14 @@ impl<T: fmt::Display> fmt::Display for Dato<T> {
 /// **tiene error**, y el motor tiene que decirlo. Por eso el tipo lo distingue.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Persona {
-    /// Años. Hace falta para estimar la frecuencia máxima.
+    /// **Cuándo nació.** Es lo que MANDA, y sustituye a la edad escrita.
+    ///
+    /// POR QUE ESTA Y NO SOLO LA EDAD: una edad escrita **caduca**, y nadie se entera. La aplicación
+    /// tenía `edad = 60` con el cliente teniendo 62, y de la edad sale la frecuencia máxima: **las zonas
+    /// salían corridas**. Guardando la fecha, la edad se calcula cada vez y **nunca caduca**.
+    pub fecha_nacimiento: Dato<Fecha>,
+    /// Años. **Se conserva para los perfiles que ya la tenían escrita**, pero si hay fecha de
+    /// nacimiento, la fecha manda (ver `edad_en`).
     pub edad: Dato<u8>,
     /// Pulsaciones por minuto en reposo. Base del método de Karvonen.
     pub pulso_reposo: Dato<u16>,
@@ -116,6 +123,7 @@ impl Persona {
     /// Una persona de la que **no sabemos nada**. Es como empieza todo, y es honesto.
     pub fn desconocida() -> Self {
         Self {
+            fecha_nacimiento: Dato::Falta,
             edad: Dato::Falta,
             pulso_reposo: Dato::Falta,
             pulso_maximo_medido: Dato::Falta,
@@ -455,5 +463,136 @@ impl Sesion {
             return None;
         }
         Some(t.iter().sum::<f32>() / t.len() as f32)
+    }
+}
+
+// ==================================================================================================
+// LA FECHA DE NACIMIENTO, Y POR QUE NO SE GUARDA LA EDAD
+// ==================================================================================================
+//
+// CONTRATO DE ESTA PIEZA, escrito ANTES del codigo (docs/ARQUITECTURA-piezas-y-contrato.md):
+//
+//   QUE RECIBE:  un año, un mes y un día. Y, para calcular, la fecha de HOY.
+//   QUE DEVUELVE: la edad en años cumplidos.
+//   QUE **NO** HACE: no lee el reloj del sistema (la fecha de hoy se le PASA, para poder probarla),
+//                   no valida rangos de edad, y no formatea nada.
+//
+// Y EL FALLO QUE ESTA PIEZA ARREGLA, que es de los que no se notan:
+//
+// La aplicación tenía **`edad = 60` escrito a mano**, y el cliente tiene **62** (su perfil de Garmin
+// dice 1964-01-25). Y **no se arregla escribiendo 62**: eso **caduca el 25 de enero de 2027**, y
+// entonces vuelve el mismo error, esta vez con un año de retraso. De la edad sale la **frecuencia
+// máxima estimada**, así que **las zonas de entrenamiento salen corridas** — y una zona corrida no da
+// error: da un entrenamiento equivocado.
+//
+// **Un dato que caduca y nadie lo nota es peor que un dato que falta**, porque el que falta se ve.
+
+/// Una fecha del calendario, **sin hora y sin zona horaria**.
+///
+/// POR QUE NO SE USA UNA FECHA DEL SISTEMA: la biblioteca estándar de Rust **no trae** un tipo de
+/// fecha, y añadir una dependencia entera para guardar tres números no se justifica. Además, una fecha
+/// de nacimiento **no tiene hora ni zona**: nacer un día es nacer ese día en cualquier parte del mundo.
+/// Guardarla como marca de tiempo obligaría a elegir una zona horaria, y esa elección sería inventada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fecha {
+    pub anio: u16,
+    pub mes: u8,
+    pub dia: u8,
+}
+
+impl Fecha {
+    /// Crea una fecha. **No comprueba que exista**, y es a propósito: quien la crea es el lector de un
+    /// fichero o un campo de la pantalla, y ahí la comprobación tiene que dar un mensaje al usuario,
+    /// no un pánico. Se comprueba en `es_valida`, que sí puede contestar que no.
+    pub fn nueva(anio: u16, mes: u8, dia: u8) -> Self {
+        Self { anio, mes, dia }
+    }
+
+    /// ¿Es una fecha que existe en el calendario?
+    ///
+    /// Hace falta porque el 31 de febrero **se puede escribir** y no existe. Y un 31 de febrero guardado
+    /// en el perfil daría una edad calculada con una fecha imposible, **sin que nada avisara**.
+    pub fn es_valida(&self) -> bool {
+        if self.mes < 1 || self.mes > 12 || self.dia < 1 {
+            return false;
+        }
+        let bisiesto = (self.anio % 4 == 0 && self.anio % 100 != 0) || self.anio % 400 == 0;
+        let dias = match self.mes {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if bisiesto {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => return false,
+        };
+        self.dia <= dias
+    }
+
+    /// **La edad en años cumplidos**, el día `hoy`.
+    ///
+    /// LA FECHA DE HOY SE PASA COMO ARGUMENTO, y esto no es un capricho de diseño: es lo que hace que
+    /// la función **se pueda probar**. Si leyera el reloj por dentro, una prueba solo podría comprobar
+    /// la edad de hoy, y **el día del cumpleaños —que es justo el caso que falla— no se podría probar
+    /// nunca** sin esperar un año.
+    pub fn edad_en(&self, hoy: Fecha) -> u16 {
+        let mut edad = hoy.anio.saturating_sub(self.anio);
+        // Si todavía no ha llegado su cumpleaños este año, cumple uno menos.
+        if (hoy.mes, hoy.dia) < (self.mes, self.dia) {
+            edad = edad.saturating_sub(1);
+        }
+        edad
+    }
+}
+
+impl Persona {
+    /// **La edad, calculada desde la fecha de nacimiento.**
+    ///
+    /// Devuelve `Dato::Falta` si no se sabe cuándo nació — y **no un cero ni una edad media**. Un cero
+    /// aquí sería un dato falso, igual que en todo el proyecto.
+    ///
+    /// Y **MANDA LA FECHA SOBRE LA EDAD ESCRITA**: si están las dos, se calcula. Es la misma regla que
+    /// con el perfil y el aparato — cuando los dos hablan del mismo dato, gana el que no caduca.
+    pub fn edad_en(&self, hoy: Fecha) -> Dato<u16> {
+        if let Dato::Hay(f) = self.fecha_nacimiento {
+            if f.es_valida() {
+                return Dato::Hay(f.edad_en(hoy));
+            }
+        }
+        // Sin fecha, se usa la edad escrita **si la hay**. Es el caso de un perfil viejo, y se acepta
+        // para no perder el dato -- pero se prefiere la fecha, porque la fecha no caduca.
+        match self.edad.valor() {
+            Some(e) => Dato::Hay(u16::from(e)),
+            None => Dato::Falta,
+        }
+    }
+
+    /// **La fecha de hoy**, del reloj del sistema. Es el ÚNICO sitio del proyecto que mira el reloj.
+    ///
+    /// Está aislado aquí por el mismo motivo que la fecha se pasa como argumento: **que el cálculo sea
+    /// comprobable**. Todo lo demás recibe la fecha; solo esto la pide prestada al sistema.
+    pub fn hoy() -> Fecha {
+        // Los segundos desde 1970 a días, con el algoritmo civil (Howard Hinnant, dominio público).
+        // Se implementa en vez de añadir una dependencia: son diez líneas y no hay que mantenerlas.
+        let segundos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let dias = segundos.div_euclid(86_400);
+        // 1970-01-01 + dias
+        let z = dias + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let anio = if m <= 2 { y + 1 } else { y };
+        Fecha::nueva(anio as u16, m as u8, d as u8)
     }
 }

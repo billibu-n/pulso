@@ -43,6 +43,9 @@ fn main() {
 
     // ---- CASO 1: todo lo que hace falta ----
     let completa = Persona {
+        // Esta persona de ejemplo NO tiene fecha de nacimiento: es una prueba con la edad escrita,
+        // y sirve justo para comprobar que el motor sigue sabiendo trabajar sin la fecha.
+        fecha_nacimiento: motor::Dato::Falta,
         edad: hay(40u8),
         pulso_reposo: hay(55u16),
         pulso_maximo_medido: hay(186u16), // medido: manda sobre la estimacion

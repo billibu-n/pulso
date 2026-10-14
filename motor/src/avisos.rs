@@ -30,8 +30,10 @@
 //! Y por eso **no se llama «peligro» a nada de esto**: un umbral que él eligió no es un hallazgo
 //! clínico, y presentarlo como tal sería darle a su propia pauta una autoridad que no tiene.
 //!
-//! **El agua corporal la mete él a mano** —viene de su báscula de Huawei, no de los ficheros FIT— así
-//! que si no la ha metido, **no hay aviso y se dice que falta**. El TSS sí está en los ficheros.
+//! **El agua corporal viene de su báscula de Huawei**, y la lee la aplicación de la exportación que él
+//! descarga (ver `huawei.rs`); **no sale de los ficheros FIT**. El `Hoy` que la lleva guarda **de qué
+//! día es** la medición, porque la regla es del día. Si no hay exportación, **no hay aviso y se dice
+//! que falta**. El TSS sí está en los ficheros.
 //!
 //! **Y EL CONSOMÉ Y LOS ELECTROLITOS NO SE AFIRMAN.** La aplicación los **recuerda como lo que son
 //! —su propia pauta—** y **no dice que sirvan**. No hay ni una fuente que sostenga que un consomé
@@ -93,7 +95,7 @@
 //! - **Nada de «recalcular la cena de la noche anterior».** La aplicación **no sabe qué comió**: no hay
 //!   diario de comidas en sus ficheros. Es imposible, y por eso la pauta se **recuerda** y no se comprueba.
 
-use crate::datos::{Dato, Persona, Sesion};
+use crate::datos::{Composicion, Dato, Fecha, Persona, Sesion};
 use crate::juicio::{Confianza, Fundamento};
 use crate::patron;
 use std::collections::BTreeMap;
@@ -530,12 +532,18 @@ impl Aviso {
 /// nota es justo el error que el proyecto ya corrigió una vez** con la edad escrita a mano.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hoy {
-    /// **Agua corporal, en porcentaje.** Viene de su báscula de Huawei, **la mete él**.
+    /// **Agua corporal, en porcentaje.** Viene de su báscula de Huawei; la lee la aplicación.
     ///
     /// Es `Dato` y **no `f64` con un cero por defecto**, por la regla del modelo: **`Falta` no es `0`**.
     /// Un «0 % de agua corporal» dispararía la regla de una forma absurda, y es exactamente lo que
     /// pasaría si esto fuera un número sin más.
     pub agua_corporal_pct: Dato<f32>,
+    /// **De qué día es esa agua corporal.** `Falta` si la medición no traía fecha.
+    ///
+    /// NO ES ADORNO: la regla del agua es «el parte de hoy», y sin esta fecha un 55,3 % de junio se
+    /// enseñaba igual que uno de esta mañana. Es el mismo defecto que la edad escrita a mano, y se
+    /// corrige igual: guardando la fecha y diciéndola.
+    pub fecha_agua: Dato<Fecha>,
     /// **Su umbral de agua corporal**, para que la aplicación **use el suyo y no uno escrito dentro**.
     ///
     /// Existe por la misma razón por la que existe todo este módulo: **el 54 % es su pauta**, y el día
@@ -548,6 +556,7 @@ impl Default for Hoy {
     fn default() -> Self {
         Self {
             agua_corporal_pct: Dato::Falta,
+            fecha_agua: Dato::Falta,
             umbral_agua_pct: UMBRAL_AGUA_DEL_CLIENTE_PCT,
         }
     }
@@ -559,11 +568,65 @@ impl Hoy {
         Self::default()
     }
 
-    /// Un día con el agua corporal que él acaba de meter, con **su** umbral.
-    pub fn con_agua(pct: f32) -> Self {
+    /// Un día con el agua corporal y **el día en que se midió**, con **su** umbral.
+    ///
+    /// LA FECHA ES UN ARGUMENTO OBLIGATORIO, y no tiene valor por defecto a propósito: la version
+    /// anterior recibia solo el porcentaje, y por eso nadie sabia de que dia era. `Dato::Falta` es una
+    /// respuesta legitima («no consta»), pero hay que **escribirla**, no se hereda del olvido.
+    pub fn con_agua(pct: f32, fecha: Dato<Fecha>) -> Self {
         Self {
             agua_corporal_pct: Dato::Hay(pct),
+            fecha_agua: fecha,
             umbral_agua_pct: UMBRAL_AGUA_DEL_CLIENTE_PCT,
+        }
+    }
+
+    /// **El parte del día que sale de la exportación de Huawei.**
+    ///
+    /// Toma, de las composiciones que **traen agua**, la de **fecha mayor**; las que no traen agua no
+    /// tapan a las que sí. Si ninguna trae fecha pero alguna trae agua, se usa esa (la lista viene
+    /// ordenada de la más antigua a la más reciente) y la fecha queda `Falta`. Sin agua en ninguna,
+    /// devuelve `sin_datos()`.
+    ///
+    /// NO LEE el ZIP (eso es `huawei::leer`), NO estima el agua que falta y NO inventa la fecha. El
+    /// contrato está en `docs/CONTRATO-agua-en-el-recorrido.md`, escrito antes que esta función.
+    pub fn de_composiciones(composiciones: &[Composicion]) -> Self {
+        // Se compara por la terna (año, mes, día): `Fecha` no deriva `Ord`, y la comparación de la
+        // tupla es exactamente la que se quiere (año, y a igualdad, mes, y a igualdad, día).
+        let mut mejor_dia: Option<(u16, u8, u8)> = None;
+        let mut mejor_agua: Option<f32> = None;
+        let mut sin_dia: Option<f32> = None;
+        for c in composiciones {
+            let Some(agua) = c.agua_corporal_pct.valor() else {
+                continue;
+            };
+            match c.fecha.valor() {
+                Some(f) => {
+                    let dia = (f.anio, f.mes, f.dia);
+                    if mejor_dia.is_none_or(|m| dia > m) {
+                        mejor_dia = Some(dia);
+                        mejor_agua = Some(agua);
+                    }
+                }
+                // Sin fecha: se guarda la ULTIMA, porque el contrato de `huawei.rs` ordena de la más
+                // antigua a la más reciente. Solo se usará si ninguna medición con agua trae día.
+                None => sin_dia = Some(agua),
+            }
+        }
+        match (mejor_agua, mejor_dia) {
+            (Some(agua), Some((anio, mes, dia))) => Self {
+                agua_corporal_pct: Dato::Hay(agua),
+                fecha_agua: Dato::Hay(Fecha::nueva(anio, mes, dia)),
+                umbral_agua_pct: UMBRAL_AGUA_DEL_CLIENTE_PCT,
+            },
+            _ => match sin_dia {
+                Some(agua) => Self {
+                    agua_corporal_pct: Dato::Hay(agua),
+                    fecha_agua: Dato::Falta,
+                    umbral_agua_pct: UMBRAL_AGUA_DEL_CLIENTE_PCT,
+                },
+                None => Self::sin_datos(),
+            },
         }
     }
 }
@@ -856,12 +919,18 @@ fn combustible(historico: &Historico, hoy: &Hoy) -> Vec<Aviso> {
     if let Some(agua) = hoy.agua_corporal_pct.valor() {
         let agua = f64::from(agua);
         if supera(hoy.umbral_agua_pct, agua, EN_EL_UMBRAL_DE_AGUA_DISPARA) {
+            // DE QUE DIA ES: sin esto, un agua de junio y la de esta mañana se enseñaban igual. Si la
+            // exportación no traía fecha, se dice; NO se rellena con la del equipo.
+            let cuando = match hoy.fecha_agua.valor() {
+                Some(f) => format!("medida el {}", f.a_texto()),
+                None => "sin fecha conocida".to_string(),
+            };
             v.push(Aviso::nuevo(
                 Modulo::Combustible,
                 Urgencia::Hoy,
                 format!("Su agua corporal está en {} %, por debajo de su {:.0} %", con_coma(format!("{agua:.1}")), hoy.umbral_agua_pct),
                 format!(
-                    "su báscula de Huawei marca {} % de agua corporal, y su regla dice que por debajo de {:.0} % \
+                    "su báscula de Huawei marca {} % de agua corporal ({cuando}), y su regla dice que por debajo de {:.0} % \
 añada un bidón extra con electrolitos y un consomé. Está {} puntos por debajo del umbral que usted fijó.",
                     con_coma(format!("{agua:.1}")),
                     hoy.umbral_agua_pct,
@@ -870,8 +939,8 @@ añada un bidón extra con electrolitos y un consomé. Está {} puntos por debaj
                 "Bidón extra con electrolitos y un consomé, como usted tiene decidido.",
                 format!(
                     "PAUTA DEL CLIENTE, no un hallazgo: el umbral de {:.0} % lo escribió él en su encargo. \
-La medición viene de su báscula de Huawei y la mete a mano. El consomé y los electrolitos se recuerdan \
-como lo que son —su propia pauta— y NO se afirma que sirvan: {}",
+La medición la lee la aplicación de la exportación de Huawei ({cuando}). El consomé y los electrolitos se \
+recuerdan como lo que son —su propia pauta— y NO se afirma que sirvan: {}",
                     hoy.umbral_agua_pct, NoEsLoQueParece::SIN_FUENTE_DE_SUPLEMENTOS
                 ),
                 // LA RESERVA: aquí va lo que este aviso NO puede saber.
@@ -1048,13 +1117,13 @@ el número, y separarlas necesitaría datos que la aplicación no tiene.",
 pub fn lo_que_falta(historico: &Historico, hoy: &Hoy) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = Vec::new();
 
-    // 1 · El agua corporal, que la mete él.
+    // 1 · El agua corporal, que la lee la aplicación de la exportación de Huawei.
     if hoy.agua_corporal_pct.falta() {
         v.push((
             "agua corporal de hoy".to_string(),
             format!(
-                "la mete usted a mano desde su báscula de Huawei. Sin ella no se puede recordarle su regla del \
-{:.0} %. (Medido: su última captura decía 55,3 %.)",
+                "la lee la aplicación de la exportación de Huawei (Centro de Privacidad → Solicitar sus \
+datos → Salud). Sin ella no se puede recordarle su regla del {:.0} %.",
                 hoy.umbral_agua_pct
             ),
         ));

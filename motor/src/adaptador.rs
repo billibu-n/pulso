@@ -238,8 +238,7 @@ pub fn fecha_desde_texto(texto: &str) -> Dato<Fecha> {
 
 /// Y el camino de vuelta: la fecha, como texto `AAAA-MM-DD`.
 pub fn fecha_a_texto(f: &Dato<Fecha>) -> Option<String> {
-    match f.valor() {
-        Some(f) => Some(format!("{:04}-{:02}-{:02}", f.anio, f.mes, f.dia)),
-        None => None,
-    }
+    // El formato vive en `Fecha::a_texto`, en el modelo: aqui solo se decide QUE HACER con un campo
+    // que falta (`None`, nunca una fecha vacia disfrazada).
+    f.valor().map(|f| f.a_texto())
 }

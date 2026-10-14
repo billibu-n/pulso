@@ -205,3 +205,22 @@ fn un_fichero_que_no_es_un_zip_lo_dice_y_no_revienta() {
     ));
     let _ = std::fs::remove_dir_all(&caja);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// EL PUENTE COMPLETO: el agua que entra al recorrido CON SU FECHA
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn el_agua_leida_de_Huawei_entra_al_recorrido_CON_SU_FECHA() {
+    // Es la prueba que sostiene el contrato docs/CONTRATO-agua-en-el-recorrido.md: un JSON minimo
+    // inventado -> huawei::leer_texto -> Hoy::de_composiciones -> el agua con su dia. Sin la aplicacion
+    // y sin un solo dato del cliente.
+    let composiciones = huawei::leer_texto(EJEMPLO_COMPLETO).expect("el JSON se lee");
+    let hoy = motor::avisos::Hoy::de_composiciones(&composiciones);
+    assert_eq!(hoy.agua_corporal_pct, Dato::Hay(57.1));
+    assert_eq!(
+        hoy.fecha_agua,
+        Dato::Hay(Fecha::nueva(2023, 11, 15)),
+        "el dia sale del startTime y su zona, y viaja con el valor"
+    );
+}

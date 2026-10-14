@@ -7,38 +7,66 @@
 //
 // USO:
 //   cargo run -q --release --bin avisos -- ../datos/garmin_files/storage
-//   cargo run -q --release --bin avisos -- ../datos/garmin_files/storage 53.8   <- con el agua de hoy
+//   cargo run -q --release --bin avisos -- ../datos/garmin_files/storage 53.8
+//   cargo run -q --release --bin avisos -- ../datos/garmin_files/storage --huawei <salud.zip>
 //
-// EL AGUA CORPORAL ES UN ARGUMENTO Y NO UN DATO DEL FICHERO, y eso es lo correcto: viene de su bascula
-// de Huawei y **la mete el a mano**. Si no se pasa, el aviso del agua NO SALE y el programa **dice que
-// falta** — que es exactamente lo que tiene que hacer la aplicacion cuando no ha metido el dato.
+// EL AGUA CORPORAL NO SALE DEL FIT: viene de su bascula de Huawei. La via buena es `--huawei`, que la
+// lee de la exportacion **CON SU FECHA**; el numero suelto queda para una comprobacion rapida y deja la
+// medicion como «sin fecha conocida». Si no se pasa nada, el aviso del agua NO SALE y el programa
+// **dice que falta** — que es exactamente lo que tiene que hacer la aplicacion cuando no hay dato.
 use motor::analisis::{self, Real};
 use motor::avisos::{self, Historico, Hoy};
-use motor::datos::Persona;
+use motor::datos::{Dato, Persona};
+
+/// **La ruta de la exportacion de Huawei** (`--huawei <ruta>`), si se pidio. El ZIP tal cual sale del
+/// correo, o una carpeta ya descomprimida: lo decide `huawei::leer`.
+fn ruta_huawei(argumentos: &[String]) -> Option<String> {
+    let i = argumentos.iter().position(|a| a == "--huawei")?;
+    argumentos.get(i + 1).filter(|a| !a.starts_with("--")).cloned()
+}
 
 fn main() {
-    let carpeta = std::env::args()
-        .nth(1)
+    let argumentos: Vec<String> = std::env::args().collect();
+    let carpeta = argumentos
+        .get(1)
+        .cloned()
         .unwrap_or_else(|| "../datos/garmin_files/storage".into());
 
-    // El segundo argumento, si viene, es el agua corporal de hoy. Se admite la coma decimal porque
-    // quien lo va a escribir es una persona en espanol, y "53,8" es como lo escribe.
-    let hoy = match std::env::args().nth(2) {
-        Some(t) => match t.replace(',', ".").parse::<f32>() {
-            Ok(v) => {
-                if (0.0..=100.0).contains(&v) {
-                    Hoy::con_agua(v)
-                } else {
-                    eprintln!("El agua corporal tiene que ir entre 0 y 100 (llegó «{t}»). Se sigue SIN ese dato.");
-                    Hoy::sin_datos()
-                }
+    // EL AGUA, POR ORDEN DE PRIORIDAD: primero la exportacion de Huawei (trae la fecha), y si no, el
+    // porcentaje suelto. La fecha solo la da el ZIP; el numero a mano queda marcado como sin fecha.
+    let hoy = if let Some(ruta) = ruta_huawei(&argumentos) {
+        match motor::huawei::leer(std::path::Path::new(&ruta)) {
+            Ok(composiciones) => {
+                let h = Hoy::de_composiciones(&composiciones);
+                eprintln!("(agua de Huawei: {} composiciones leidas de {})", composiciones.len(), ruta);
+                h
             }
-            Err(_) => {
-                eprintln!("No se entiende «{t}» como un porcentaje de agua corporal. Se sigue SIN ese dato.");
+            Err(e) => {
+                eprintln!("(no se pudo leer la exportacion de Huawei {ruta}: {e}). Se sigue SIN ese dato.");
                 Hoy::sin_datos()
             }
-        },
-        None => Hoy::sin_datos(),
+        }
+    } else {
+        // El segundo argumento, si viene, es el agua corporal. Se admite la coma decimal porque quien
+        // lo va a escribir es una persona en espanol, y "53,8" es como lo escribe. Esta via NO trae
+        // fecha: la medicion queda marcada como «sin fecha conocida», que es la verdad.
+        match argumentos.get(2) {
+            Some(t) => match t.replace(',', ".").parse::<f32>() {
+                Ok(v) => {
+                    if (0.0..=100.0).contains(&v) {
+                        Hoy::con_agua(v, Dato::Falta)
+                    } else {
+                        eprintln!("El agua corporal tiene que ir entre 0 y 100 (llegó «{t}»). Se sigue SIN ese dato.");
+                        Hoy::sin_datos()
+                    }
+                }
+                Err(_) => {
+                    eprintln!("No se entiende «{t}» como un porcentaje de agua corporal. Se sigue SIN ese dato.");
+                    Hoy::sin_datos()
+                }
+            },
+            None => Hoy::sin_datos(),
+        }
     };
 
     // La persona: del perfil si existe, y de la nada si no. **No se inventa un perfil**: si el fichero

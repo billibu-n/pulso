@@ -26,6 +26,7 @@ slint::include_modules!();
 use motor::analisis::{self, Real};
 use motor::cara::{self, Ensenado};
 use motor::datos::{Dato, Persona, Sexo};
+use motor::avisos::Hoy;
 use motor::{carpeta, memoria, profile};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -218,6 +219,7 @@ fn pintar(ventana: &Ventana, e: &Ensenado) {
     ventana.set_zonas_tramos(tramos.as_slice().into());
     ventana.set_zonas_niveles(niveles.as_slice().into());
     ventana.set_precision(e.precision.as_str().into());
+    ventana.set_periodo(e.periodo.as_str().into());
     // El aviso: si no se puede diagnosticar, **lo que falta, y donde se rellena**.
     let aviso = if e.puede_diagnosticar { &e.aviso } else { &e.que_falta };
     ventana.set_aviso(aviso.as_str().into());
@@ -247,6 +249,17 @@ fn carpeta_a_elegir(argumentos: &[String]) -> Option<PathBuf> {
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
     )
+}
+
+/// **La exportacion de Huawei** (`--huawei <ruta>`), si se pidio. El ZIP tal cual sale del correo, o
+/// una carpeta ya descomprimida: lo decide `huawei::leer`. Sin valor no hay ruta, y una opcion no
+/// puede valer otra opcion.
+fn ruta_huawei(argumentos: &[String]) -> Option<PathBuf> {
+    let i = argumentos.iter().position(|a| a == "--huawei")?;
+    argumentos
+        .get(i + 1)
+        .filter(|a| !a.starts_with("--"))
+        .map(PathBuf::from)
 }
 
 /// **El selector, impreso.** Es la misma vista que dibujara el panel, para poder comprobarla hoy.
@@ -279,10 +292,12 @@ fn imprimir_ayuda() {
     println!("{programa}: analiza tu entrenamiento y dice que se puede afirmar, y que no.");
     println!();
     println!("USO:");
-    println!("  {programa} [CARPETA] [--texto] [--elegir [CARPETA]]");
+    println!("  {programa} [CARPETA] [--huawei RUTA] [--texto] [--elegir [CARPETA]]");
     println!();
     println!("  CARPETA    la carpeta con tus ficheros (FIT de Garmin). Si no se indica, se usa la");
     println!("             de por defecto.");
+    println!("  --huawei   tu exportacion de Huawei (el ZIP del correo, o la carpeta ya descomprimida):");
+    println!("             de ahi se lee el agua corporal CON SU FECHA, y no la teclea nadie.");
     println!("  --texto    imprime lo MISMO que va a la pantalla y NO abre ninguna ventana.");
     println!("  --elegir   el SELECTOR de carpeta, impreso y SIN abrir ventana: enseña las");
     println!("             subcarpetas y cuantos FIT tiene cada una. Es la intuicion.");
@@ -342,6 +357,39 @@ fn main() -> Result<(), slint::PlatformError> {
     );
     let carpeta = Rc::new(RefCell::new(carpeta));
 
+    // ---- EL AGUA CORPORAL, DE LA EXPORTACION DE HUAWEI (no la teclea nadie) ----
+    //
+    // El agua NO sale del FIT: sale de su bascula. La lee el adaptador (`huawei::leer`, que abre el ZIP
+    // tal cual) y `Hoy::de_composiciones` se queda con la medicion MAS RECIENTE **y su fecha**.
+    let hoy = match ruta_huawei(&argumentos) {
+        Some(ruta) => match motor::huawei::leer(&ruta) {
+            Ok(composiciones) => {
+                let h = Hoy::de_composiciones(&composiciones);
+                match (h.agua_corporal_pct.valor(), h.fecha_agua.valor()) {
+                    (Some(a), Some(f)) => eprintln!(
+                        "  agua corporal {} % (medida el {})",
+                        texto_decimal(Dato::Hay(a), 1),
+                        f.a_texto()
+                    ),
+                    (Some(a), None) => eprintln!(
+                        "  agua corporal {} % (sin fecha en la exportacion)",
+                        texto_decimal(Dato::Hay(a), 1)
+                    ),
+                    _ => eprintln!("  la exportacion de Huawei no traia agua corporal"),
+                }
+                h
+            }
+            Err(e) => {
+                eprintln!(
+                    "  no se pudo leer la exportacion de Huawei ({}): {e}. Se sigue SIN agua.",
+                    ruta.display()
+                );
+                Hoy::sin_datos()
+            }
+        },
+        None => Hoy::sin_datos(),
+    };
+
     // ---- Y EL ANALISIS, CON MEMORIA ----
     let ruta_memoria = ruta_de_la_memoria(&ruta_perfil);
     let real = el_analisis(carpeta.borrow().as_path(), &ruta_memoria);
@@ -377,16 +425,23 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         println!("  {}", ensenado.vacio);
         println!();
-        // EL PERIODO QUE CUBRE: la coherencia de las fechas, dicha sin abrir ventana. Sin esto, un
-        // total de tres meses y uno de hoy se parecen demasiado.
-        if let Some(r) = real.as_ref() {
-            if let (Some(d), Some(h)) = (r.desde, r.hasta) {
-                println!(
-                    "  periodo ... {} .. {}",
-                    motor::avisos::fecha_de_epoch(d),
-                    motor::avisos::fecha_de_epoch(h)
-                );
-            }
+        // EL PERIODO QUE CUBRE: la coherencia de las fechas, dicha sin abrir ventana. La MISMA cadena
+        // que va a la pantalla (una sola fuente: si se formateara dos veces, un dia divergirian).
+        if !ensenado.periodo.is_empty() {
+            println!("  {}", ensenado.periodo);
+        }
+        // EL AGUA DEL DIA, con su fecha: el dato que antes se tecleaba y ahora sale del ZIP.
+        match (hoy.agua_corporal_pct.valor(), hoy.fecha_agua.valor()) {
+            (Some(a), Some(f)) => println!(
+                "  agua ...... {} % (medida el {})",
+                texto_decimal(Dato::Hay(a), 1),
+                f.a_texto()
+            ),
+            (Some(a), None) => println!(
+                "  agua ...... {} % (sin fecha conocida)",
+                texto_decimal(Dato::Hay(a), 1)
+            ),
+            _ => println!("  agua ...... sin dato (se lee de la exportacion de Huawei)"),
         }
         println!("  perfil .... {}", ruta_perfil.display());
         println!("  memoria ... {}", ruta_memoria.display());
@@ -528,5 +583,21 @@ mod pruebas {
             "../datos".to_string(),
             "--texto".to_string()
         ]));
+    }
+
+    #[test]
+    fn la_ruta_de_huawei_se_lee_y_no_se_confunde_con_la_siguiente_opcion() {
+        use super::ruta_huawei;
+        assert_eq!(ruta_huawei(&[]), None);
+        assert_eq!(
+            ruta_huawei(&["--huawei".to_string(), "/tmp/salud.zip".to_string()]),
+            Some(std::path::PathBuf::from("/tmp/salud.zip"))
+        );
+        // Sin valor no hay ruta, y una opcion no puede valer otra opcion.
+        assert_eq!(ruta_huawei(&["--huawei".to_string()]), None);
+        assert_eq!(
+            ruta_huawei(&["--huawei".to_string(), "--texto".to_string()]),
+            None
+        );
     }
 }

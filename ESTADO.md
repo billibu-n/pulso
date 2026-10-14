@@ -506,15 +506,14 @@ commit por hito. Estado al cerrar el chat (15:25):**
 | `5ed9e78` | escritorio 1280×800 con riel de navegación y contenido desplazable |
 | `851bf2e` | contrato de datos del motor para la Fase 2 (`docs/CONTRATO-cara-datos.md`; tramos ppm, «no existe», eje, frases, pares) |
 | `294a441`…`8bc2d17` | bloque Garmin: instrumento `sincronizacion --probar/--rastrear`, transporte `ureq`, MFA, diagnóstico de páginas nuevas — **el acceso ya llega a Garmin; el POST del acceso se está afinando** |
+| `b0ab08d` | **el disfraz del navegador, portado y MEDIDO** (chat DSH de retome, 2026-10-14): `cabeceras_del_disfraz()` con los 11 valores medidos de `curl_cffi` chrome (eco local; evidencia `datos/trabajo-ui/_evidencia-huella-curl-cffi.txt`) en los 3 pasos del SSO; `connection` fuera de la comparación (artefacto del h2c en claro); deuda `cabeceras_del_login` eliminada; rastreo real de ejemplo: **«ella manda y NOSOTROS NO: nada», coinciden los 15**; 346 pruebas, 0 avisos |
 
 **Qué hay que hacer al retomar** (detalle en `datos/trabajo-ui/TASKS.json`, que MANDA):
-1. Recoger al subagente del POST de acceso (dejaba `datos/trabajo-ui/post-acceso-informe.md` y el
-   `motor/src/bin/sincronizacion.rs` a medio editar si no asentó): correr `cargo test` (339+ verdes,
-   0 avisos) y commitear. El cambio: el POST lleva los `signin_params` como consulta y `Referer` =
-   página de acceso (client.py:795-807), no el widget.
-2. El dueño repite la prueba real (`read -s` + `--probar`; comandos en los informes de `datos/trabajo-ui/`).
-   Con el navegador entra SOLO con credenciales (sin MFA): el 200 con la página repetida era ese desajuste.
-3. Después: hitos B (módulo de sincronización + «qué es nuevo»), C (pantalla en Datos: Conectar,
+1. El dueño repite la prueba real con el CORREO REAL (comandos en `datos/trabajo-ui/disfraz-informe.md`).
+   Con el disfraz ya puesto, el paso 3 no puede achacar el 401 a las cabeceras: un 401 con disfraz
+   completo es credenciales mal escritas (lo dice el propio diagnóstico). Esperado con credenciales
+   buenas: paso 4 con ticket y resumen de actividades/diarios.
+2. Después: hitos B (módulo de sincronización + «qué es nuevo»), C (pantalla en Datos: Conectar,
    Sincronizar), D (Android), y las fases 2-3 de la interfaz. Ventana de 7 días de diarios: pendiente
    de decidir por el dueño.
 
@@ -525,3 +524,13 @@ flash sirve de visor, serializar agentes que tocan `.slint`, cuidado con la cuot
 
 **Lección del chat, escrita**: la meta del cliente PRIMA y las sugerencias se filtran (en
 `docs/ENCARGO-farellones-2026.md` y en el objetivo crudo local `datos/trabajo-ui/objetivo-del-cliente.md`).
+
+**Retome 2026-10-14 (chat DSH, el disfraz del navegador)**: se MIDIÓ la huella de la librería con
+`curl_cffi` chrome contra un eco local (valores en `datos/trabajo-ui/_evidencia-huella-curl-cffi.txt`),
+se portó a `cabeceras_del_disfraz()` y se aplicó a los 3 pasos del SSO; `connection` se excluyó de la
+comparación por artefacto del `h2c` en claro, y el diagnóstico ahora cierra con «el disfraz está
+completo: un 401 es de credenciales». Rastreo real de ejemplo: coincidencia total (los 15 nombres).
+Suite 346 verdes, 0 avisos. **Lecciones del retome, sin escribir aún en la memoria**: nemotron:free
+volvió a fallar sin escribir (4.ª vez) y **la ruta gemini de verificación sigue ROTA** (4.º fallo sin
+mensaje): la puerta de calidad la hace el orquestador leyendo el diff entero. Cierre del hito local:
+informe en `datos/trabajo-ui/disfraz-informe.md`, sin push.

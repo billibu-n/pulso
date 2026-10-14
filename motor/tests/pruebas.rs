@@ -1601,6 +1601,44 @@ fn una_carpeta_que_no_se_puede_leer_no_revienta() {
 }
 
 #[test]
+fn el_selector_enseña_cuantos_fit_tiene_cada_carpeta() {
+    // La INTUICION: el numero junto al nombre es lo que hace que el cliente reconozca su carpeta.
+    let c = carpeta_de_prueba("selector-vista");
+    let datos = c.join("garmin_files").join("storage");
+    std::fs::create_dir_all(&datos).unwrap();
+    std::fs::write(c.join("suelto.fit"), b"x").unwrap();
+    std::fs::write(datos.join("uno.fit"), b"x").unwrap();
+    std::fs::write(datos.join("dos.fit"), b"x").unwrap();
+    std::fs::write(datos.join("notas.txt"), b"x").unwrap();
+
+    let v = motor::carpeta::abrir(&c);
+    assert_eq!(v.fit_aqui, 1, "esta carpeta tiene un FIT suelto");
+    assert_eq!(v.ruta.as_deref(), Some(c.as_path()));
+    assert!(v.aviso.is_none(), "con FIT no hay nada que avisar");
+    let garmin = v.entradas.iter().find(|e| e.nombre == "garmin_files").unwrap();
+    assert_eq!(garmin.cuantos_fit, 0, "el FIT esta en la subcarpeta storage, no aqui");
+    assert_eq!(
+        motor::carpeta::abrir(&datos).fit_aqui, 2,
+        "y dentro estan los dos FIT, contados como los cuenta el lector"
+    );
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
+fn el_selector_avisa_cuando_no_hay_ningun_fit_a_la_vista() {
+    let c = carpeta_de_prueba("selector-vacio");
+    std::fs::create_dir_all(c.join("otra")).unwrap();
+    let v = motor::carpeta::abrir(&c);
+    assert_eq!(v.fit_aqui, 0);
+    assert!(v.aviso.is_some(), "sin FIT a la vista, se dice");
+
+    let no = motor::carpeta::abrir(std::path::Path::new("/no/existe/esta/carpeta"));
+    assert!(no.ruta.is_none());
+    assert!(no.aviso.is_some());
+    let _ = std::fs::remove_dir_all(&c);
+}
+
+#[test]
 fn un_fit_ilegible_se_recuerda_con_su_motivo_y_no_aborta() {
     // Un fichero que no se puede leer NO puede tirar el analisis entero, y su fallo NO se puede
     // reintentar en cada arranque: se guarda la ficha con el motivo y se sigue.

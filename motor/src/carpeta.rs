@@ -50,3 +50,66 @@ pub fn ruta_padre(dir: &Path) -> Option<PathBuf> {
 pub fn es_carpeta(ruta: &Path) -> bool {
     ruta.is_dir()
 }
+
+/// Una subcarpeta, con **cuantos FIT tiene**. El numero es la INTUICION del selector: el cliente
+/// reconoce su carpeta de datos de un vistazo, sin recordar la ruta.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entrada {
+    pub nombre: String,
+    pub cuantos_fit: usize,
+}
+
+/// **Lo que el panel tiene que dibujar**, ya calculado. Es el modelo del selector, y por eso se puede
+/// probar sin abrir ninguna ventana: quien dibuja no tiene que saber leer el disco.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vista {
+    /// La carpeta que se esta mirando. None si la ruta no era una carpeta.
+    pub ruta: Option<PathBuf>,
+    /// La carpeta de arriba, si se puede subir. None en la raiz.
+    pub subir_a: Option<PathBuf>,
+    /// Las subcarpetas, cada una con su numero de FIT.
+    pub entradas: Vec<Entrada>,
+    /// **Cuantos FIT hay EN ESTA carpeta**: si hay alguno, ya se puede usar tal cual.
+    pub fit_aqui: usize,
+    /// Que decir si no hay nada que elegir. None cuando si hay.
+    pub aviso: Option<String>,
+}
+
+/// **Abre una carpeta y devuelve lo que hay que dibujar**, sin dibujar nada.
+///
+/// Cuenta los FIT de las subcarpetas con la MISMA definicion que el lector -- fit::listar -- para que el
+/// numero que enseña el selector sea el que luego se va a analizar. Una pista que no cuadra con el
+/// resultado es peor que no darla.
+pub fn abrir(dir: &Path) -> Vista {
+    if !es_carpeta(dir) {
+        return Vista {
+            ruta: None,
+            subir_a: None,
+            entradas: Vec::new(),
+            fit_aqui: 0,
+            aviso: Some("esa carpeta no existe o no se puede leer".to_string()),
+        };
+    }
+    let entradas: Vec<Entrada> = subcarpetas(dir)
+        .into_iter()
+        .map(|nombre| Entrada {
+            cuantos_fit: crate::fit::listar(&dir.join(&nombre)).len(),
+            nombre,
+        })
+        .collect();
+    let fit_aqui = crate::fit::listar(dir).len();
+    let aviso = if fit_aqui > 0 {
+        None
+    } else if entradas.iter().any(|e| e.cuantos_fit > 0) {
+        None
+    } else {
+        Some("aqui no se ven FIT todavia; entra en la carpeta donde esten".to_string())
+    };
+    Vista {
+        ruta: Some(dir.to_path_buf()),
+        subir_a: ruta_padre(dir),
+        entradas,
+        fit_aqui,
+        aviso,
+    }
+}

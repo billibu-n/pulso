@@ -129,3 +129,79 @@ fn sin_puntos_de_composicion_la_lista_esta_vacia_pero_no_falla() {
 fn un_texto_que_no_es_json_da_error_tipado_y_no_revienta() {
     assert!(huawei::leer_texto("esto no es json").is_err());
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// El ZIP: abrirlo es trabajo de la APLICACION, no del cliente
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Una caja temporal propia. Cada prueba usa un nombre distinto: corren en paralelo.
+fn caja(nombre: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("pulso-huawei-{}-{}", std::process::id(), nombre));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).expect("crear la caja");
+    d
+}
+
+fn escribir_zip(ruta: &std::path::Path, entradas: &[(&str, &str)]) {
+    use std::io::Write;
+    let f = std::fs::File::create(ruta).expect("crear el zip");
+    let mut w = zip::ZipWriter::new(f);
+    let opciones = zip::write::SimpleFileOptions::default();
+    for (nombre, contenido) in entradas {
+        w.start_file(*nombre, opciones).expect("entrada del zip");
+        w.write_all(contenido.as_bytes()).expect("escribir la entrada");
+    }
+    w.finish().expect("cerrar el zip");
+}
+
+#[test]
+fn abre_el_zip_de_huawei_sin_descomprimirlo() {
+    let caja = caja("zip");
+    let ruta = caja.join("HUAWEI_HEALTH_20260101.zip");
+    escribir_zip(
+        &ruta,
+        &[(
+            "HUAWEI_HEALTH_20260101/Health detail data & description/health detail data123.json",
+            EJEMPLO_COMPLETO,
+        )],
+    );
+    let v = huawei::leer(&ruta).expect("el ZIP tiene que leerse tal cual, sin descomprimir");
+    assert_eq!(v.len(), 1);
+    assert_eq!(v[0].agua_corporal_pct, Dato::Hay(57.1), "la clave del ZIP se encontró a cualquier profundidad");
+    let _ = std::fs::remove_dir_all(&caja);
+}
+
+#[test]
+fn una_carpeta_ya_descomprimida_tambien_se_lee() {
+    let caja = caja("carpeta");
+    let sub = caja.join("Health detail data & description");
+    std::fs::create_dir_all(&sub).expect("subcarpeta");
+    std::fs::write(sub.join("health detail data999.json"), EJEMPLO_COMPLETO).expect("json");
+    let v = huawei::leer(&caja).expect("la carpeta tiene que leerse igual");
+    assert_eq!(v.len(), 1);
+    let _ = std::fs::remove_dir_all(&caja);
+}
+
+#[test]
+fn un_zip_sin_datos_de_composicion_lo_dice() {
+    let caja = caja("vacio");
+    let ruta = caja.join("sin-datos.zip");
+    escribir_zip(&ruta, &[("leeme.txt", "aqui no hay salud")]);
+    assert!(matches!(
+        huawei::leer(&ruta),
+        Err(huawei::ErrorHuawei::SinFicheros(_))
+    ));
+    let _ = std::fs::remove_dir_all(&caja);
+}
+
+#[test]
+fn un_fichero_que_no_es_un_zip_lo_dice_y_no_revienta() {
+    let caja = caja("nozip");
+    let ruta = caja.join("no-es-un.zip");
+    std::fs::write(&ruta, b"esto no es un zip").expect("escribir");
+    assert!(matches!(
+        huawei::leer(&ruta),
+        Err(huawei::ErrorHuawei::NoEsUnZip(_))
+    ));
+    let _ = std::fs::remove_dir_all(&caja);
+}

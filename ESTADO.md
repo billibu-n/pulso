@@ -19,7 +19,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **177 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **181 pruebas en verde**, cero avisos | `motor/src/` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -59,7 +59,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 │   ├── src/bin/          18: pulso (abre), y los INSTRUMENTOS de medida
 │   │                     (inventario, biomecanica, potencia, avisos, que-traen,
 │   │                      pulso-reposo, volcar-campos, medir-carga...)
-│   ├── tests/pruebas.rs 148 pruebas · huawei.rs 8 · medir-interfaz.rs 8 · recorrido.rs 11
+│   ├── tests/pruebas.rs 148 pruebas · huawei.rs 12 · medir-interfaz.rs 8 · recorrido.rs 11
 │   └── ui/               temas.slint · armazon.slint · ventana.slint · iconos.slint · raiz.slint
 │                         sonda-borde.slint  <- el experimento de los controles, CONSERVADO
 ├── docs/                10 documentos, y LAS FUENTES en docs/slint-fuentes/ (32 páginas)
@@ -133,7 +133,7 @@ El detalle está en `docs/RECORRIDO-del-usuario.md`. El resumen:
 
 ```bash
 cd ~/projects/pulso/motor
-cargo test                              # 177 pruebas, en verde, 0 avisos
+cargo test                              # 181 pruebas, en verde, 0 avisos
 python3 ../temas/contraste-widgets.py   # el contraste de los controles de serie (y su trampa)
 cargo run -q --release --bin biomecanica -- ../datos/garmin_files/storage   # lo que traen los FIT
 cargo run -q --release --bin pulso-reposo -- ../datos/garmin_files/storage  # los TRES pulsos
@@ -254,7 +254,7 @@ es exactamente lo que el cliente querrá saber. Ojo: esa tendencia **no incluye*
 Y el binario de la aplicación **se llama `pulso`**: `ventana.rs` → `pulso.rs`, y `default-run = "pulso"`
 hace que **`cargo run` a secas sea LA aplicación**. Los otros 17 son **instrumentos de medida**, no la
 aplicación.
-**Medido**: **177 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 8 de `huawei`).
+**Medido**: **181 pruebas en verde**, **0 avisos** (2 de `pide_ayuda` + 12 de `huawei`).
 
 **2 · DECISIÓN DEL DUEÑO (2026-10-14): el aviso de la rodilla NO dice «diagnóstico».** Se le preguntó,
 porque el encargo pedía dos cosas que no caben a la vez («di que no es un diagnóstico» y «que el texto
@@ -267,13 +267,14 @@ valoración médica»), y la palabra «diagnóstico» solo se usa como nombre de
 **3 · La exportación de Huawei: INVESTIGADA, y su lector ESCRITO.** El formato está en
 `docs/HUAWEI-exportacion.md` (claves, unidades y las fuentes: el XLSX del propio export, tres parsers
 independientes y la API de Huawei). El contrato se escribió ANTES (`docs/CONTRATO-huawei.md`) y la pieza
-es `motor/src/huawei.rs`, con **8 pruebas propias** (`tests/huawei.rs`) que no necesitan la aplicación.
+es `motor/src/huawei.rs`, con **12 pruebas propias** (`tests/huawei.rs`) que no necesitan la aplicación.
 Lo que respeta: un campo ausente es `Falta` y NUNCA 0; **no se filtra por `type`** (el mismo dato viene
 como 8 y como 10006), se filtra por `key == WEIGHT_BODYFAT_BROAD`; `value` es un texto con JSON dentro
 (doble codificación); y la fecha sale de `startTime` (ms UTC) **más la zona del propio registro**, no la
 del equipo.
-**Y una limitación que se dice**: **no abre ZIP** (Rust no trae descompresor, y una dependencia no la
-decide esta pieza); si le llega uno, lo dice con un error tipado en vez de fallar en silencio.
+**Y abre el ZIP tal cual sale del correo**: el dueño autorizó la dependencia `zip` (2026-10-14: «la idea
+es minimizar el trabajo del cliente»); se lee **en memoria** y no se escribe nada en disco. Una carpeta ya
+descomprimida también vale, y un fichero que no sea un ZIP se dice con un error tipado.
 
 **4 · EL ESTADO DEL ARTE, REVISADO FILA A FILA Y CORREGIDO.** Las 41 direcciones (30 únicas) se abrieron,
 y cada DOI se comprobó contra Crossref y PubMed. **El resultado no es bonito**: aparecieron **fuentes

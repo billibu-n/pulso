@@ -13,12 +13,14 @@ formato, se cambia **esta pieza** y no se toca una linea del centro.
 
 ## Que recibe
 
-- **La ruta de una CARPETA** ya descomprimida de la exportacion de Huawei. Dentro, los ficheros
-  `health detail data<epoch>.json` de la carpeta *«Health detail data & description»*.
-- **NO recibe un ZIP.** La biblioteca estandar de Rust no trae descompresor de ZIP, y anadir una
-  dependencia es una decision que no toma esta pieza: si le llega un `.zip`,**lo dice** con un error
-  tipado en vez de fallar en silencio. Descomprimir es un paso aparte (y se puede automatizar despues,
-  con autorizacion).
+- **La ruta de un ZIP tal cual sale del correo de Huawei, O la de una CARPETA ya descomprimida.**
+  La pieza decide sola: si es un directorio, lo recorre; si es un fichero, lo abre como ZIP. Dentro, los
+  ficheros `health detail data<epoch>.json` de la carpeta *«Health detail data & description»*, **a
+  cualquier profundidad**.
+- **Abrir el ZIP es trabajo DE LA APLICACION, no del cliente.** Decision del dueño (2026-10-14):
+  *«la idea es minimizar el trabajo del cliente»*. La dependencia `zip` esta **autorizada por el** y
+  fijada en `Cargo.toml`; se lee **en memoria**, sin escribir nada en disco. (Antes de esta decision la
+  pieza devolvia un error tipado si le llegaba un ZIP; ese error ya no existe.)
 
 ## Que devuelve
 
@@ -65,6 +67,9 @@ formato, se cambia **esta pieza** y no se toca una linea del centro.
 - **Valor centinela 0** en agua: queda `Falta`, no 0.
 - **Unidad en gramos**: se convierte a kg y la prueba lo exige.
 - **JSON corrupto o de otro formato**: devuelve error tipado, **sin panico**.
+- **Un ZIP real** (creado en la prueba con el propio crate `zip`, con un JSON sintetico) **se abre sin
+  descomprimirlo a disco**, con el fichero anidado a cualquier profundidad.
+- **Un fichero que no es un ZIP** y **un ZIP sin datos de composicion**: error tipado, no panico.
 
 ## El mapeo, ya CONFIRMADO (2026-10-14)
 

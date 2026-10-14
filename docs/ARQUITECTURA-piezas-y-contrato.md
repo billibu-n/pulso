@@ -8,7 +8,7 @@ crítica del dueño que es correcta y hay que dejar escrita:
 > auto: el motor, la transmisión… Todos son piezas independientes que se acoplan entre sí.»*
 
 **Y LO QUE PASÓ, dicho sin adornos**: se construyeron **el motor, la transmisión y las ruedas**, cada uno
-por separado y bien —el motor con 177 pruebas— y **se descubrió al final que no había bancada**. La pieza
+por separado y bien —el motor con 181 pruebas— y **se descubrió al final que no había bancada**. La pieza
 que acopla todo, `pulso.rs` (entonces `ventana.rs`), fue **la última y la más frágil**: se escribió de una vez, no compilaba, y
 hubo que delegar el arreglo. **Eso no es mala suerte: es haber empezado a ejecutar sin los planos.**
 
@@ -167,8 +167,9 @@ estará bien hecha. **Eso es lo que se puede comprobar, y por eso es lo que se e
 
 - **`huawei.rs` YA EXISTE** (2026-10-14): lee la exportación de Huawei y desbloquea la regla del agua
   corporal. El formato está en `docs/HUAWEI-exportacion.md`, el contrato en `docs/CONTRATO-huawei.md` y
-  sus 8 pruebas en `tests/huawei.rs`. **Falta conectarla**: que `Hoy` lleve el agua **y su fecha**, y
-  **no abre ZIP** (Rust no trae descompresor: una dependencia no la decide esta pieza).
+  sus 12 pruebas en `tests/huawei.rs`. **Falta conectarla**: que `Hoy` lleve el agua **y su fecha**.
+  **Abre el ZIP tal cual sale del correo** (dependencia `zip` autorizada por el dueño: minimizar el trabajo
+  del cliente), así que él no descomprime nada.
 - **La fecha de nacimiento YA ESTÁ en `Persona`** (`datos.rs`), y la edad se calcula al usarla. Lo que
   falta es **exponerla en la pantalla de Datos**: el campo está en el modelo y en el fichero, pero no en
   el formulario.

@@ -17,6 +17,10 @@ serde_json = "1"
 fitparser = "0.11"
 # La interfaz. Version fijada a proposito, no flotante.
 slint = { version = "1", features = ["renderer-software"] }
+# Para ABRIR el ZIP de la exportacion de Huawei sin que el cliente lo descomprima (decision del dueño,
+# 2026-10-14). Se fija la version EXACTA y se apagan las funciones que no se usan -- solo hace falta
+# DEFLATE, que es lo que traen los ZIP normales: cada funcion de mas es una dependencia de mas.
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
 
 [[bin]]
 name = "pulso"

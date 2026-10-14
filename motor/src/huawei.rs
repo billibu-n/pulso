@@ -4,10 +4,10 @@
 //! motor, y **no decide nada**. El motor **no conoce** este fichero: el día que Huawei cambie su
 //! formato, se cambia **esta pieza** y no se toca una línea del centro.
 //!
-//! QUÉ RECIBE: la **ruta de una carpeta** ya descomprimida de la exportación (dentro, los ficheros
-//! «health detail data<epoch>.json»). **NO abre ZIP**: la biblioteca estándar de Rust no trae
-//! descompresor de ZIP, y añadir una dependencia es una decisión que no toma esta pieza. Si le llega un
-//! «.zip», lo **dice** en vez de fallar en silencio.
+//! QUÉ RECIBE: la **ruta de un ZIP tal cual sale del correo de Huawei**, o la de una **carpeta** ya
+//! descomprimida. La pieza decide sola: si es un directorio, lo recorre; si es un fichero, lo abre como
+//! ZIP. **Abrir el ZIP es trabajo de la aplicación, no del cliente** (decisión del dueño, 2026-10-14:
+//! «la idea es minimizar el trabajo del cliente»); se lee en memoria y no se escribe nada en disco.
 //!
 //! QUÉ DEVUELVE: un resultado con una lista de «Composicion», una medición por fecha, en kg y %.
 //!
@@ -33,8 +33,8 @@ pub const CLAVE_COMPOSICION: &str = "WEIGHT_BODYFAT_BROAD";
 pub enum ErrorHuawei {
     /// La carpeta no existe.
     NoExiste(PathBuf),
-    /// Le llegó un ZIP. No es un error del cliente: es una limitación de esta pieza, y se dice.
-    EsUnZip(PathBuf),
+    /// El fichero no es un ZIP legible (o está corrupto).
+    NoEsUnZip(String),
     /// La carpeta existe pero no tiene ningún fichero de datos de Huawei.
     SinFicheros(PathBuf),
     /// El texto no es JSON, o no tiene la forma del export.
@@ -47,11 +47,7 @@ impl fmt::Display for ErrorHuawei {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrorHuawei::NoExiste(p) => write!(f, "no existe la carpeta {}", p.display()),
-            ErrorHuawei::EsUnZip(p) => write!(
-                f,
-                "{} es un ZIP: descomprímelo y señala la carpeta (el lector de ZIP no está en esta pieza)",
-                p.display()
-            ),
+            ErrorHuawei::NoEsUnZip(m) => write!(f, "no se pudo abrir el ZIP: {m}"),
             ErrorHuawei::SinFicheros(p) => write!(
                 f,
                 "en {} no hay ningún fichero health detail data",
@@ -177,26 +173,58 @@ pub fn leer_texto(texto: &str) -> Result<Vec<Composicion>, ErrorHuawei> {
         }
     }
 
-    // Orden determinista: de la medición más antigua a la más reciente.
-    salida.sort_by_key(|c| match c.fecha {
-        Dato::Hay(f) => (f.anio as i64, f.mes as i64, f.dia as i64),
-        Dato::Falta => (i64::MAX, 0, 0),
-    });
+    ordenar(&mut salida);
     Ok(salida)
+}
+
+/// **La puerta única de esta pieza**: acepta un ZIP o una carpeta y saca las mediciones.
+///
+/// Existe para que quien use el adaptador **no tenga que saber** en qué forma llegó la exportación: si
+/// es un directorio, lo recorre; si es un fichero, lo abre como ZIP. **El cliente no descomprime nada.**
+pub fn leer(ruta: &Path) -> Result<Vec<Composicion>, ErrorHuawei> {
+    if !ruta.exists() {
+        return Err(ErrorHuawei::NoExiste(ruta.to_path_buf()));
+    }
+    if ruta.is_dir() {
+        leer_carpeta(ruta)
+    } else {
+        leer_zip(ruta)
+    }
+}
+
+/// **Lee un ZIP de exportación directamente**, sin descomprimirlo a disco.
+pub fn leer_zip(ruta: &Path) -> Result<Vec<Composicion>, ErrorHuawei> {
+    let archivo = std::fs::File::open(ruta).map_err(|e| ErrorHuawei::Io(e.to_string()))?;
+    let mut zip = zip::ZipArchive::new(archivo).map_err(|e| ErrorHuawei::NoEsUnZip(e.to_string()))?;
+
+    let mut todas: Vec<Composicion> = Vec::new();
+    let mut encontrados = 0usize;
+    for i in 0..zip.len() {
+        // Un punto ilegible NO aborta el resto: se ignora y se sigue (misma regla que en la carpeta).
+        let Ok(mut f) = zip.by_index(i) else { continue };
+        if !f.is_file() || !es_fichero_de_datos(Path::new(f.name())) {
+            continue;
+        }
+        encontrados += 1;
+        let mut texto = String::new();
+        if std::io::Read::read_to_string(&mut f, &mut texto).is_err() {
+            continue;
+        }
+        if let Ok(cs) = leer_texto(&texto) {
+            todas.extend(cs);
+        }
+    }
+    if encontrados == 0 {
+        return Err(ErrorHuawei::SinFicheros(ruta.to_path_buf()));
+    }
+    ordenar(&mut todas);
+    Ok(todas)
 }
 
 /// **Lee una carpeta de exportación** (ya descomprimida) y junta todas las mediciones.
 pub fn leer_carpeta(carpeta: &Path) -> Result<Vec<Composicion>, ErrorHuawei> {
-    if !carpeta.exists() {
+    if !carpeta.is_dir() {
         return Err(ErrorHuawei::NoExiste(carpeta.to_path_buf()));
-    }
-    if carpeta
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("zip"))
-        .unwrap_or(false)
-    {
-        return Err(ErrorHuawei::EsUnZip(carpeta.to_path_buf()));
     }
 
     let mut ficheros: Vec<PathBuf> = Vec::new();
@@ -218,11 +246,16 @@ pub fn leer_carpeta(carpeta: &Path) -> Result<Vec<Composicion>, ErrorHuawei> {
         }
     }
 
-    todas.sort_by_key(|c| match c.fecha {
+    ordenar(&mut todas);
+    Ok(todas)
+}
+
+/// Orden determinista: de la medición más antigua a la más reciente.
+fn ordenar(v: &mut [Composicion]) {
+    v.sort_by_key(|c| match c.fecha {
         Dato::Hay(f) => (f.anio as i64, f.mes as i64, f.dia as i64),
         Dato::Falta => (i64::MAX, 0, 0),
     });
-    Ok(todas)
 }
 
 /// Recorre la carpeta **a cualquier profundidad**: el export puede venir anidado bajo

@@ -1324,9 +1324,17 @@ mod flujo {
     }
 
     /// `__init__.py:2170-2176` — el estrés de un día. La forma es la de `DailyStats`
-    /// (`typed.py:92-138`): `calendarDate` y `averageStressLevel`.
+    /// (`typed.py:92-138`): `calendarDate` y el nivel promedio.
     ///
-    /// «Con dato» = `calendarDate` está (si no, es otra respuesta) y `averageStressLevel` es un número
+    /// **OJO CON EL NOMBRE DE ESA CLAVE, que es el fallo que se arregló el 2026-10-15**: la librería
+    /// del MÓVIL la llama `averageStressLevel` (`typed.py:134`) y la WEB (`/gc-api/`, que es la vía de
+    /// este proyecto) la llama **`avgStressLevel`** —medido en el cuerpo real de `dailyStress`—. Con
+    /// la cita del móvil esto devolvía «sin dato» **todos los días**, sin fallar y sin avisar. Y no es
+    /// «la web contra el móvil» a secas: **la web usa los dos nombres**, porque su resumen del día
+    /// (`/userstats-service/wellness/daily`, medido) trae `averageStressLevel`. Por eso se leen **los
+    /// dos**, con el de la web primero.
+    ///
+    /// «Con dato» = `calendarDate` está (si no, es otra respuesta) y el nivel es un número
     /// **positivo**. El cero y el ausente se cuentan como sin dato, y la tabla dice cuántos días caen
     /// en cada lado: si esa regla no le cuadra al dueño, se corrige **con el número delante**.
     pub fn estres_tiene_dato(cuerpo: &str) -> Result<bool, Fallo> {
@@ -1337,10 +1345,17 @@ mod flujo {
                 cuerpo,
             ));
         }
-        Ok(o.get("averageStressLevel")
-            .and_then(|s| s.as_i64())
-            .map(|s| s > 0)
-            .unwrap_or(false))
+        Ok(nivel_de_estres(&o).map(|s| s > 0).unwrap_or(false))
+    }
+
+    /// El nivel promedio de estrés del cuerpo, **por los dos nombres que existen**: el de la web
+    /// (`avgStressLevel`, medido en el cuerpo real) y el del móvil (`averageStressLevel`,
+    /// `typed.py:134`). Manda el de la web, que es la vía de este proyecto; si no es un número (o
+    /// viene `null`), se cae al otro. Un `null` en los dos es «sin dato», no un cero.
+    fn nivel_de_estres(o: &Map<String, Value>) -> Option<i64> {
+        o.get("avgStressLevel")
+            .and_then(Value::as_i64)
+            .or_else(|| o.get("averageStressLevel").and_then(Value::as_i64))
     }
 
     /// `__init__.py:2478-2482` — **sin claves citables**: la librería devuelve el cuerpo tal cual y
@@ -3447,7 +3462,7 @@ fn rutas_de_la_api(t: TransporteFalso) -> TransporteFalso {
             .get(
                 &format!("{}/{}", flujo::RUTA_ESTRES, dia),
                 200,
-                &json_con_salud(r#","calendarDate":"2026-10-14","averageStressLevel":31"#),
+                &json_con_salud(r#","calendarDate":"2026-10-14","avgStressLevel":31"#),
             )
             .get(
                 &format!("{}/{}", flujo::RUTA_TRAINING, dia),
@@ -4619,6 +4634,11 @@ mod pruebas {
 
     #[test]
     fn el_estres_cuenta_los_dias_con_medida_y_dice_cuantos_pidio() {
+        // El nombre de la clave de la WEB (`/gc-api/`, medido en el cuerpo real): es la vía de este
+        // proyecto, y con el nombre del móvil solo, esto daba «sin dato» todos los días.
+        assert!(flujo::estres_tiene_dato(r#"{"calendarDate":"2026-10-14","avgStressLevel":31}"#).unwrap());
+        assert!(!flujo::estres_tiene_dato(r#"{"calendarDate":"2026-10-14","avgStressLevel":null}"#).unwrap());
+        // Y el nombre del MÓVIL sigue leyéndose: un cuerpo que llegue por la otra vía no se rompe.
         assert!(flujo::estres_tiene_dato(r#"{"calendarDate":"2026-10-14","averageStressLevel":31}"#).unwrap());
         // Un día con la clave pero sin medida no es un día con dato.
         assert!(!flujo::estres_tiene_dato(r#"{"calendarDate":"2026-10-14","averageStressLevel":0}"#).unwrap());

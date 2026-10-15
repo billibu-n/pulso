@@ -44,14 +44,27 @@
 //!   La librería **descarta la fila sin valor** (`is not None`, `__init__.py:2222`): una fila así es
 //!   «ese día no tiene dato». Aquí se hace exactamente lo mismo, con la misma cita.
 //! - **Estrés** — `/wellness-service/wellness/dailyStress` (`__init__.py:2173`): un cuerpo por día. La
-//!   forma es la de `DailyStats`: `calendarDate` (`typed.py:100`) y `averageStressLevel`
-//!   (`typed.py:134`, entero).
-//! - **Training status** — `/metrics-service/metrics/trainingstatus/aggregated` (`__init__.py:715`):
-//!   `get_training_status` **devuelve el cuerpo tal cual y `typed.py` no modela esa respuesta**
-//!   (`__init__.py:2478-2483`). **No hay ninguna forma que citar**, así que `training_status` y
-//!   `vo2max` están declarados en `Diario` pero **ninguna función de este módulo los rellena**: se
-//!   rellenarán el día que la primera pasada real diga cuáles son sus claves, y entonces se añade su
-//!   lector **con la cita**. No se inventa una forma para llenar dos campos.
+//!   forma es la de `DailyStats`: `calendarDate` (`typed.py:100`) y el nivel promedio de estrés,
+//!   entero (`typed.py:134`).
+//!
+//!   **AQUÍ ESTUVO EL FALLO, Y NO ERA DE VALORES SINO DE NOMBRES.** La librería del **móvil**
+//!   (`connectapi.garmin.com`) llama a esa clave `averageStressLevel` (`typed.py:134`) y es la que
+//!   citaba este módulo; la **web** (`/gc-api/`, que es la vía que usa este proyecto) la llama
+//!   **`avgStressLevel`** —medido en el cuerpo real de `dailyStress`: `avgStressLevel`,
+//!   `maxStressLevel`, `calendarDate`, `stressValuesArray`, `stressValueDescriptorsDTOList`—. Con la
+//!   cita del móvil, el parser leía **siempre `None`**: no fallaba, no avisaba, simplemente no había
+//!   dato nunca.
+//!
+//!   Y no es «la web contra el móvil» a secas: **dentro de la misma web conviven los dos nombres**,
+//!   porque el resumen del día (`/userstats-service/wellness/daily`, medido en el mismo lote de
+//!   cuerpos reales) trae `averageStressLevel`. Por eso `estres` lee **las dos** claves (§DUDAS 2).
+//! - **Training status y VO2 máx** — `/metrics-service/metrics/trainingstatus/aggregated`
+//!   (`__init__.py:715`): `get_training_status` **devuelve el cuerpo tal cual y `typed.py` no modela
+//!   esa respuesta** (`__init__.py:2478-2483`), así que **de la librería no hay forma que citar**.
+//!   Antes eso dejaba `training_status` y `vo2max` declarados y **vacíos para siempre**; hoy hay
+//!   forma que citar, pero **no en un `typed.py`**: en el **cuerpo real de la web** (medido). La
+//!   clave por la que se lee cada campo está citada en `entrenamiento`, campo por campo, porque aquí
+//!   la fuente de la forma es el cuerpo y no la librería.
 //!
 //! LA IDENTIDAD, que es lo que decide todo: una actividad es **su `id`** (no su nombre ni su fecha: el
 //! mismo entrenamiento se puede renombrar), y un diario es **su `fecha`** (la API los da por día: dos
@@ -76,14 +89,43 @@
 //!    0 se descarta al LEER o se descarta al USAR. Se decide **con el número delante**, y la prueba
 //!    `el_cero_del_sueno_se_queda_como_viene` lo deja escrito.
 //! 2. **`stressValuesArray`.** No se promedia: la librería **no lo modela** (no hay forma que citar) y
-//!    en los cuerpos de ejemplo del proyecto viene vacío. Se lee `averageStressLevel` (`typed.py:134`).
+//!    en los cuerpos reales viene **vacío** (y con `stressValueDescriptorsDTOList` vacío al lado). Se
+//!    lee el nivel promedio, y **se aceptan los dos nombres**: `avgStressLevel` (el de la web, que va
+//!    primero porque es la vía de este proyecto) y `averageStressLevel` (el del móvil, y el que usa
+//!    también la web en el resumen del día). Un cuerpo con los dos nombres lee **el de la web**; el
+//!    motivo de aceptar los dos es que el mismo día puede llegar por cualquiera de las dos vías, y
+//!    tirar el cuerpo entero por cómo se llama una clave es lo que produjo el fallo que esto arregla.
 //! 3. **`fecha_local`** va **tal cual** la manda la API: puede venir con espacio (`2026-10-01
 //!    07:30:00`) o con `T` (`2026-10-01T07:30:00`). Este módulo **no la normaliza**; quien agrupe por
 //!    día, que recorte (el instrumento hermano lo hace).
+//! 4. **FALTA DE CLAVE CONTRA CLAVE NULA, que el tipo NO distingue (y se deja así, medido).** Con
+//!    `Option<u32>` + `#[serde(default)]` no se sabe si el cuerpo **no traía** la clave o si la traía
+//!    con **`null`**: las dos cosas dan `None`. **Decisión: no se distinguen en el tipo.** Motivos,
+//!    por orden de peso: (i) para **todo** consumidor de este repositorio las dos cosas significan lo
+//!    mismo —«este cuerpo no trae la medida de ese día»— y el contrato se cumple igual, porque el
+//!    «diario que viene vacío» ya es representable (`fecha` puesta y los datos en `None`); (ii) la
+//!    distinción que **sí** tiene valor de ingeniería no es un dato del día sino un **aviso de forma**
+//!    («esta clave ya no viene, el endpoint ha cambiado»), y ese aviso no va por día: va en la
+//!    comprobación de forma que hace el instrumento hermano (`bin/sincronizacion.rs`, `objeto`/
+//!    `cambiado`, que ya **falla diciendo la clave** cuando falta una que tiene que estar) — meterlo
+//!    en el tipo sería contestar, en 75 sitios, una pregunta que nadie hace; (iii) coste medido del
+//!    cambio: **75 referencias** a los siete campos de `Diario`, todas dentro de este fichero (0
+//!    fuera) más la forma guardada que se relee en `parsear_diarios`, que hoy acepta `null` y número
+//!    liso y habría que enseñarle a distinguirlos. Si el dueño quiere el aviso, el sitio barato es
+//!    **contar los cuerpos en que la clave no viene** (no cambiar el tipo); queda aquí apuntado.
+//!    Consecuencia asumida: `avgStressLevel: null` y `avgStressLevel` ausente son **el mismo** «sin
+//!    dato», que es además lo que ya hacía el instrumento hermano antes de tocar nada.
+//! 5. **El VO2 máx tiene dos números y este módulo lee uno.** El cuerpo real trae, en
+//!    `mostRecentVO2Max.generic`, `vo2MaxValue` (el redondeado) y `vo2MaxPreciseValue` (el de
+//!    decimales); aquí se llena `vo2max` con **`vo2MaxValue`**, que es el que la API llama «el
+//!    valor». Cuál de los dos quiere el motor de cálculo es decisión del dueño, no del parser. Lo
+//!    mismo con `cycling` (VO2 de bici) y con `mostRecentTrainingLoadBalance` y
+//!    `heatAltitudeAcclimation`: **existen en el cuerpo real y no tienen campo en `Diario`**, así que
+//!    no se leen — añadir campos cambia la forma guardada y eso no lo decide este módulo.
 
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 // ---------------------------------------------------------------------------------------------
@@ -147,9 +189,9 @@ where
 /// contra un cuerpo de Garmin. Los cuerpos VIVOS se leen con `sueno`, `pulso_reposo` y `estres`, y lo
 /// que cada uno trae se junta con `un_diario_por_fecha`.
 ///
-/// `training_status` y `vo2max` están declarados porque los pide el contrato, pero **ninguna función
-/// de este módulo los rellena**: la librería no cita sus claves (§DUDAS y cabecera). Van en `None`
-/// hasta que haya forma que citar.
+/// `training_status` y `vo2max` están declarados porque los pide el contrato, y los llena
+/// **`entrenamiento`**, que es la única lectura de este módulo que los toca (las otras tres —`sueno`,
+/// `pulso_reposo`, `estres`— no los traen y los dejan como estaban; hay prueba).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Diario {
     /// La fecha del día, `YYYY-MM-DD` (`dailySleepDTO.calendarDate`, `typed.py:188`; el estrés la
@@ -168,13 +210,20 @@ pub struct Diario {
     /// minuto. Es un entero (`typed.py:117` lo modela `int`).
     #[serde(default)]
     pub pulso_reposo_ppm: Option<u32>,
-    /// `averageStressLevel` (`typed.py:134`), entero.
+    /// El nivel promedio de estrés del día, entero. **Clave: `avgStressLevel`** en el cuerpo de la
+    /// web (`dailyStress`, medido) y `averageStressLevel` en el del móvil (`typed.py:134`): se leen
+    /// las dos (§DUDAS 2).
     #[serde(default)]
     pub estres_promedio: Option<u32>,
-    /// El training status del día. **Sin fuente citable todavía** (ver cabecera): queda en `None`.
+    /// El estado de entrenamiento del día, **en las palabras que manda la API**:
+    /// `mostRecentTrainingStatus.latestTrainingStatusData.<dispositivo>.trainingStatusFeedbackPhrase`
+    /// (cuerpo real de la web, medido). **No se traduce ni se interpreta**: el `trainingStatus`
+    /// numérico que va al lado es un código cuyo significado **no está citado**, y este módulo no
+    /// inventa tablas de códigos (ver `entrenamiento`).
     #[serde(default)]
     pub training_status: Option<String>,
-    /// El VO2 máx del día. **Sin fuente citable todavía** (ver cabecera): queda en `None`.
+    /// El VO2 máx del día: `mostRecentVO2Max.generic.vo2MaxValue` (cuerpo real de la web, medido), en
+    /// **ml/kg/min** y sin formatear. El `vo2MaxPreciseValue` que va al lado **no se lee** (§DUDAS 5).
     #[serde(default)]
     pub vo2max: Option<f64>,
 }
@@ -245,13 +294,88 @@ struct FilaDePulso {
 }
 
 /// El estrés de un día (`__init__.py:2173`), con la forma de `DailyStats` (`typed.py:92-138`).
+///
+/// **Los dos nombres de la misma clave, en dos campos a propósito.** No se usa `#[serde(alias)]`
+/// porque un cuerpo que trajera **los dos** nombres sería entonces un error de serde («duplicate
+/// field») y este módulo prefiere **leer** antes que reventar por una rareza: con dos campos, un
+/// cuerpo así se lee y manda el de la web (§DUDAS 2).
 #[derive(Deserialize)]
 struct EstresCrudo {
     #[serde(default, rename = "calendarDate")]
     fecha: Option<String>,
-    /// Igual que en el pulso: `Value`, para que un valor raro no tumbe el cuerpo.
+    /// `avgStressLevel`: **el nombre del cuerpo real de la web** (`/gc-api/`, medido en
+    /// `dailyStress`). Es el primero por eso: es la vía que usa este proyecto.
+    ///
+    /// Igual que en el pulso, es un `Value`, para que un valor raro no tumbe el cuerpo.
+    #[serde(default, rename = "avgStressLevel")]
+    promedio_web: Value,
+    /// `averageStressLevel`: **el nombre del móvil** (`typed.py:134`) y también el que usa la web en
+    /// el **resumen del día** (`/userstats-service/wellness/daily`, medido). Se acepta para que un
+    /// cuerpo que llegue por la otra vía siga leyéndose: es la clave que este módulo citaba antes, y
+    /// la que le hacía leer `None` todos los días por la vía de la web.
     #[serde(default, rename = "averageStressLevel")]
-    promedio: Value,
+    promedio_movil: Value,
+}
+
+/// El estado de entrenamiento y el VO2 máx de un cuerpo de
+/// `trainingstatus/aggregated` (`__init__.py:715`).
+///
+/// **Forma medida en el cuerpo real de la web.** Aquí la fuente de la forma es el cuerpo, no
+/// `typed.py` (que no modela esta respuesta, `__init__.py:2478-2483`): las claves están citadas
+/// **una por una** en cada tipo de abajo, que es lo que sí se puede comprobar.
+#[derive(Deserialize)]
+struct EntrenamientoCrudo {
+    #[serde(default, rename = "mostRecentTrainingStatus")]
+    estado: Option<EstadoCrudo>,
+    #[serde(default, rename = "mostRecentVO2Max")]
+    vo2: Option<Vo2Crudo>,
+}
+
+/// `mostRecentTrainingStatus` del cuerpo real. **Ojo con la forma de dentro**: los estados NO vienen
+/// en una lista sino en un **mapa por dispositivo** (`latestTrainingStatusData`), y la clave de ese
+/// mapa es el **id del reloj**, que cambia de un cliente a otro. Por eso aquí se lee como mapa
+/// (`BTreeMap`) y **no** como lista de tamaño fijo: con dos relojes el cuerpo trae dos entradas.
+#[derive(Deserialize)]
+struct EstadoCrudo {
+    #[serde(default, rename = "latestTrainingStatusData")]
+    por_dispositivo: Option<BTreeMap<String, EstadoDeUnDia>>,
+}
+
+/// Una entrada de `latestTrainingStatusData` (una por reloj, forma del cuerpo real).
+#[derive(Deserialize)]
+struct EstadoDeUnDia {
+    #[serde(default, rename = "calendarDate")]
+    fecha: Option<String>,
+    /// `trainingStatusFeedbackPhrase`: el estado **en palabras** (`PRODUCTIVE_1`, `MAINTAINING_2`…).
+    /// Se lee esta y **no** el `trainingStatus` numérico que va al lado: traducir ese código exige
+    /// una tabla de equivalencias que **no está citada en ninguna parte**, y una tabla inventada es
+    /// peor que un hueco.
+    #[serde(default, rename = "trainingStatusFeedbackPhrase")]
+    frase: Option<String>,
+}
+
+/// `mostRecentVO2Max` del cuerpo real, que trae **tres** bloques: `generic` (el de correr),
+/// `cycling` (el de bici) y `heatAltitudeAcclimation` (aclimatación al calor y a la altura).
+///
+/// Se lee **`generic`**, que es «el VO2 máx» a secas. Los otros dos existen en el cuerpo y **no se
+/// leen** (§DUDAS 5): `cycling` porque es otro deporte y no hay campo donde ponerlo sin decidir cuál
+/// manda, y `heatAltitudeAcclimation` porque —al revés de lo que su nombre sugiere— **no trae
+/// `vo2MaxValue` ni `fitnessAge`**: trae fechas y porcentajes de aclimatación, es otro asunto.
+#[derive(Deserialize)]
+struct Vo2Crudo {
+    #[serde(default, rename = "generic")]
+    general: Option<Vo2DeUnDia>,
+}
+
+/// El bloque `generic` del VO2 máx (forma del cuerpo real).
+#[derive(Deserialize)]
+struct Vo2DeUnDia {
+    #[serde(default, rename = "calendarDate")]
+    fecha: Option<String>,
+    /// `vo2MaxValue`, en ml/kg/min. El `vo2MaxPreciseValue` de al lado (el de decimales) **no se
+    /// lee**: cuál de los dos quiere el motor de cálculo lo decide el dueño, no el parser (§DUDAS 5).
+    #[serde(default, rename = "vo2MaxValue")]
+    valor: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -286,6 +410,15 @@ impl FalloDeParseo {
         FalloDeParseo {
             esperaba: esperaba.to_string(),
             detalle: format!("falta {que}"),
+        }
+    }
+
+    /// El fallo de un cuerpo que **no trae ninguna de las claves** por las que se reconoce a ese
+    /// endpoint: no es que falte un campo, es que **no es esta respuesta**.
+    fn no_trae(esperaba: &str, que: &str) -> Self {
+        FalloDeParseo {
+            esperaba: esperaba.to_string(),
+            detalle: format!("no trae {que}"),
         }
     }
 }
@@ -439,9 +572,15 @@ pub fn pulso_reposo(cuerpo: &str) -> Result<Vec<Diario>, FalloDeParseo> {
 
 /// El estrés de **un** día, de un cuerpo de `dailyStress` (`__init__.py:2173`).
 ///
-/// Un cuerpo = un día. `averageStressLevel` (`typed.py:134`) puede faltar: entonces queda en `None`,
-/// **no en 0** (el 0 del estrés es un valor del reloj, no un hueco). Sin `calendarDate` no hay dónde
-/// poner el día, y eso sí es un fallo que se dice.
+/// Un cuerpo = un día. El nivel promedio puede **faltar o venir `null`** —y en la cuenta medida ese
+/// es el caso frecuente—: entonces queda en `None`, **no en 0** (el 0 del estrés es un valor del
+/// reloj, no un hueco), y el diario **se sigue devolviendo con su fecha**, porque el día existe: lo
+/// que no hay es la medida. Sin `calendarDate` no hay dónde poner el día, y eso sí es un fallo que se
+/// dice.
+///
+/// **Las dos claves**: `avgStressLevel` (la web, medido) y `averageStressLevel` (el móvil,
+/// `typed.py:134`). Si vinieran las dos, manda la de la web; si la de la web no es un entero, se usa
+/// la del móvil (§DUDAS 2).
 pub fn estres(cuerpo: &str) -> Result<Diario, FalloDeParseo> {
     let crudo: EstresCrudo =
         serde_json::from_str(cuerpo).map_err(|e| FalloDeParseo::del_json(ESPERABA_ESTRES, &e))?;
@@ -449,8 +588,80 @@ pub fn estres(cuerpo: &str) -> Result<Diario, FalloDeParseo> {
         return Err(FalloDeParseo::falta(ESPERABA_ESTRES, "la clave `calendarDate`"));
     };
     let mut diario = Diario::vacio(fecha);
-    diario.estres_promedio = crudo.promedio.as_u64().and_then(|v| u32::try_from(v).ok());
+    diario.estres_promedio = entero(&crudo.promedio_web).or_else(|| entero(&crudo.promedio_movil));
     Ok(diario)
+}
+
+/// El entero de un valor leído como `Value`, si de verdad es un entero que cabe.
+///
+/// Un `null`, una clave que no viene, un texto o un número que no cabe en `u32` dan `None`: **ninguna
+/// de esas cosas es una medida**, y ninguna debe tumbar el cuerpo entero.
+fn entero(valor: &Value) -> Option<u32> {
+    valor.as_u64().and_then(|v| u32::try_from(v).ok())
+}
+
+/// El **estado de entrenamiento y el VO2 máx** de los últimos días, de un cuerpo de
+/// `trainingstatus/aggregated` (`__init__.py:715`).
+///
+/// **De dónde sale cada clave** (la librería **no cita** esta respuesta: `get_training_status`
+/// devuelve el cuerpo tal cual y `typed.py` no lo modela, `__init__.py:2478-2483`; así que la fuente
+/// de la forma es el **cuerpo real de la web**, medido, y se cita aquí campo por campo):
+///
+/// ```text
+/// mostRecentTrainingStatus.latestTrainingStatusData.<idDelReloj>.calendarDate
+/// mostRecentTrainingStatus.latestTrainingStatusData.<idDelReloj>.trainingStatusFeedbackPhrase
+/// mostRecentVO2Max.generic.calendarDate
+/// mostRecentVO2Max.generic.vo2MaxValue
+/// ```
+///
+/// **Devuelve varios diarios, y esto es una decisión, no un descuido**: este cuerpo **no trae una
+/// fecha arriba**. La fecha vive **dentro** de cada bloque, y el estado y el VO2 máx pueden ser de
+/// días distintos, así que se devuelve **un diario por fecha encontrada**, con lo que esa fecha
+/// tenga. Quien junte (con `un_diario_por_fecha`) los pondrá en su día, y no se inventa un día común
+/// que el cuerpo no dice.
+///
+/// Un bloque **sin fecha, o sin dato que dar, no produce diario**: aquí la fecha no la pone la
+/// petición (a diferencia de `sueno` y `estres`, que son un cuerpo por día), así que una fecha suelta
+/// sin ninguna medida no es un diario, es un resto. Si el cuerpo **no trae ninguno de los dos
+/// bloques**, no es esta respuesta y el parseo **falla diciéndolo**.
+pub fn entrenamiento(cuerpo: &str) -> Result<Vec<Diario>, FalloDeParseo> {
+    let crudo: EntrenamientoCrudo = serde_json::from_str(cuerpo)
+        .map_err(|e| FalloDeParseo::del_json(ESPERABA_ENTRENAMIENTO, &e))?;
+    if crudo.estado.is_none() && crudo.vo2.is_none() {
+        return Err(FalloDeParseo::no_trae(
+            ESPERABA_ENTRENAMIENTO,
+            "`mostRecentTrainingStatus` ni `mostRecentVO2Max`",
+        ));
+    }
+
+    let mut diarios: Vec<Diario> = Vec::new();
+
+    // El estado de entrenamiento: una entrada por reloj (el mapa puede traer varios).
+    let por_dispositivo = crudo
+        .estado
+        .and_then(|e| e.por_dispositivo)
+        .unwrap_or_default();
+    for entrada in por_dispositivo.into_values() {
+        let (Some(fecha), Some(frase)) = (entrada.fecha, entrada.frase) else {
+            continue;
+        };
+        let mut diario = Diario::vacio(fecha);
+        diario.training_status = Some(frase);
+        diarios.push(diario);
+    }
+
+    // El VO2 máx, del bloque `generic` (ver `Vo2Crudo`: los otros dos no se leen).
+    if let Some(Vo2DeUnDia {
+        fecha: Some(fecha),
+        valor: Some(valor),
+    }) = crudo.vo2.and_then(|v| v.general)
+    {
+        let mut diario = Diario::vacio(fecha);
+        diario.vo2max = Some(valor);
+        diarios.push(diario);
+    }
+
+    Ok(diarios)
 }
 
 impl Diario {
@@ -581,6 +792,7 @@ const ESPERABA_DIARIOS: &str = "los diarios guardados, con la forma de este mód
 const ESPERABA_SUENO: &str = "el sueño de un día";
 const ESPERABA_PULSO: &str = "el pulso en reposo";
 const ESPERABA_ESTRES: &str = "el estrés de un día";
+const ESPERABA_ENTRENAMIENTO: &str = "el estado de entrenamiento y el VO2 máx";
 
 // ---------------------------------------------------------------------------------------------
 // Pruebas: sin red, con JSON de EJEMPLO (valores inventados y reconocibles, nunca datos de nadie)
@@ -607,16 +819,64 @@ mod pruebas {
         "sleepTimeSeconds": 25200, "deepSleepSeconds": 5400, "remSleepSeconds": 7200,
         "awakeSleepSeconds": 600}, "remSleepData": true}"#;
 
+    /// **La noche sin medida**, con la forma del cuerpo real: el resumen está, y las fases vienen
+    /// `null`. Es el caso frecuente de la cuenta medida, y tiene que dar «sin dato», no 0.
+    const SUENO_SIN_MEDIDA: &str = r#"{"dailySleepDTO": {"calendarDate": "2026-10-02",
+        "sleepTimeSeconds": null, "napTimeSeconds": null, "deepSleepSeconds": null,
+        "remSleepSeconds": null, "lightSleepSeconds": null, "awakeSleepSeconds": null},
+        "sleepMovement": [], "remSleepData": null, "sleepLevels": []}"#;
+
     /// Un rango de pulso en reposo (`__init__.py:2207-2223`): dos días con valor y uno **sin** dato.
     const PULSO_DE_TRES_DIAS: &str = r#"{"allMetrics": {"metricsMap": {"WELLNESS_RESTING_HEART_RATE": [
         {"calendarDate": "2026-10-01", "value": 48},
         {"calendarDate": "2026-10-02", "value": null},
         {"calendarDate": "2026-10-03", "value": 50}]}}}"#;
 
-    /// El estrés de un día (`typed.py:92-138`), con el nombre REAL de la clave del array que no se
-    /// promedia (§DUDAS 2): que venga vacío no cambia nada de lo que sí se lee.
-    const ESTRES_DEL_DIA: &str =
-        r#"{"calendarDate": "2026-10-01", "averageStressLevel": 31, "stressValuesArray": []}"#;
+    /// **El rango entero sin medida**, con la forma del cuerpo real y **sin** las fechas de nadie: las
+    /// cinco filas vienen con `value: null` (y `groupedMetrics: null` al lado, que no se lee).
+    const PULSO_DE_CINCO_DIAS_SIN_MEDIDA: &str = r#"{"statisticsStartDate": "2026-10-01",
+        "statisticsEndDate": "2026-10-05", "allMetrics": {"metricsMap":
+        {"WELLNESS_RESTING_HEART_RATE": [
+        {"calendarDate": "2026-10-01", "value": null}, {"calendarDate": "2026-10-02", "value": null},
+        {"calendarDate": "2026-10-03", "value": null}, {"calendarDate": "2026-10-04", "value": null},
+        {"calendarDate": "2026-10-05", "value": null}]}}, "groupedMetrics": null}"#;
+
+    /// El estrés de un día **con el nombre de la clave que trae la WEB** (`avgStressLevel`), que es la
+    /// vía que usa este proyecto, más las claves que el cuerpo real trae al lado (§DUDAS 2).
+    const ESTRES_DEL_DIA: &str = r#"{"calendarDate": "2026-10-01", "avgStressLevel": 31,
+        "maxStressLevel": 44, "stressValueDescriptorsDTOList": [], "stressValuesArray": []}"#;
+
+    /// El mismo estrés **con el nombre del MÓVIL** (`averageStressLevel`, `typed.py:134`): un cuerpo
+    /// que llegue por la otra vía tiene que leerse igual, no reventar.
+    const ESTRES_DEL_DIA_DEL_MOVIL: &str =
+        r#"{"calendarDate": "2026-10-01", "averageStressLevel": 31}"#;
+
+    /// **El día de estrés sin medida**, con la forma del cuerpo real: la fecha está y los cuatro
+    /// campos de estrés vienen `null`. Esto NO es un fallo del parser: es «ese día no hay dato», y la
+    /// cuenta medida de este cliente es así todos los días.
+    const ESTRES_SIN_MEDIDA: &str = r#"{"calendarDate": "2026-10-02", "startTimestampGMT": null,
+        "maxStressLevel": null, "avgStressLevel": null, "stressChartValueOffset": null,
+        "stressChartYAxisOrigin": null, "stressValueDescriptorsDTOList": [], "stressValuesArray": []}"#;
+
+    /// El estado de entrenamiento y el VO2 máx, **con la forma del cuerpo real**: el estado va en un
+    /// mapa por dispositivo (la clave es el id del reloj) y el VO2 máx en su bloque `generic`. Los
+    /// valores son inventados; las **claves** son las del cuerpo.
+    const ENTRENAMIENTO: &str = r#"{"userId": 0,
+        "mostRecentTrainingStatus": {"userId": 0, "lastPrimarySyncDate": null, "showSelector": true,
+          "latestTrainingStatusData": {"1111111": {"calendarDate": "2026-10-01", "sinceDate": "2026-09-24",
+            "weeklyTrainingLoad": 300, "trainingStatus": 4, "timestamp": 1, "deviceId": 1111111,
+            "loadTunnelMin": 200, "loadTunnelMax": 500, "loadLevelTrend": 1, "sport": "RUNNING",
+            "subSport": "GENERIC", "fitnessTrendSport": "RUNNING", "fitnessTrend": 2,
+            "trainingStatusFeedbackPhrase": "PRODUCTIVE_1", "trainingPaused": false,
+            "acuteTrainingLoadDTO": null, "primaryTrainingDevice": true}}},
+        "mostRecentVO2Max": {"userId": 0,
+          "generic": {"calendarDate": "2026-10-01", "vo2MaxPreciseValue": 50.8, "vo2MaxValue": 51.0,
+            "fitnessAge": 40, "fitnessAgeDescription": null, "maxMetCategory": 0},
+          "cycling": {"calendarDate": "2026-09-20", "vo2MaxPreciseValue": 44.1, "vo2MaxValue": 44.0,
+            "fitnessAge": null, "maxMetCategory": 0},
+          "heatAltitudeAcclimation": {"calendarDate": "2026-10-01", "altitudeAcclimation": 1,
+            "heatAcclimationPercentage": 2, "heatTrend": null, "currentAltitude": null}},
+        "heatAltitudeAcclimationDTO": null}"#;
 
     /// Una actividad guardada, para las pruebas de «qué es nuevo».
     fn guardada(id: u64) -> Actividad {
@@ -924,20 +1184,72 @@ mod pruebas {
         );
     }
 
+    /// **La prueba del fallo que se está arreglando.** El cuerpo real de la web trae
+    /// `avgStressLevel`; el parser leía `averageStressLevel` y devolvía `None` **todos** los días sin
+    /// avisar de nada. Si esta prueba se cae, se ha vuelto a romper la vía de la web.
     #[test]
-    fn el_estres_de_un_dia_se_lee_por_calendar_date() {
-        let diario = estres(ESTRES_DEL_DIA).expect("un cuerpo de estrés");
+    fn el_estres_de_la_web_se_lee_con_avg_stress_level() {
+        let diario = estres(ESTRES_DEL_DIA).expect("el cuerpo real del estrés de la web");
         assert_eq!(diario.fecha, "2026-10-01");
-        assert_eq!(diario.estres_promedio, Some(31));
+        assert_eq!(
+            diario.estres_promedio,
+            Some(31),
+            "`avgStressLevel` es el nombre de la clave en la web: si no se lee, el estrés no sale nunca"
+        );
+    }
+
+    /// **La otra vía no se rompe.** El móvil (`connectapi.garmin.com`) llama a esa misma clave
+    /// `averageStressLevel` (`typed.py:134`), y **la web también** en el resumen del día
+    /// (`/userstats-service/wellness/daily`, medido): se aceptan **las dos**, porque tirar el cuerpo
+    /// entero por cómo se llama una clave es justo lo que produjo el fallo de arriba.
+    #[test]
+    fn el_estres_de_la_otra_via_se_lee_con_average_stress_level() {
+        let diario = estres(ESTRES_DEL_DIA_DEL_MOVIL).expect("el cuerpo de la otra vía");
+        assert_eq!(diario.fecha, "2026-10-01");
+        assert_eq!(
+            diario.estres_promedio,
+            Some(31),
+            "aceptar las dos claves es a propósito: un día puede llegar por cualquiera de las vías"
+        );
+    }
+
+    /// Si un cuerpo raro trajera **las dos** claves, manda la de la web y **no revienta**: por eso
+    /// son dos campos y no un `#[serde(alias)]` (que daría «duplicate field»).
+    #[test]
+    fn con_las_dos_claves_manda_la_de_la_web_y_no_hay_error() {
+        let diario = estres(
+            r#"{"calendarDate": "2026-10-01", "avgStressLevel": 31, "averageStressLevel": 99}"#,
+        )
+        .expect("un cuerpo con las dos claves se lee, no revienta");
+        assert_eq!(diario.estres_promedio, Some(31), "manda la de la web");
+        // Y si la de la web está pero no es un número, se cae a la del móvil.
+        let otro = estres(
+            r#"{"calendarDate": "2026-10-01", "avgStressLevel": null, "averageStressLevel": 99}"#,
+        )
+        .expect("un `null` en la primera no tapa un valor en la segunda");
+        assert_eq!(otro.estres_promedio, Some(99));
+    }
+
+    /// **El caso que hoy es el normal en esta cuenta**: la clave viene, con `null`. Eso es «sin
+    /// dato», **no 0 y no un error**, y el diario sale igual con su fecha (lo que falta es la
+    /// medida, no el día).
+    #[test]
+    fn el_estres_nulo_es_sin_dato_y_no_cero() {
+        let diario = estres(ESTRES_SIN_MEDIDA).expect("el día sin medida se lee igual");
+        assert_eq!(diario.fecha, "2026-10-02", "el día está: lo que no hay es la medida");
+        assert_eq!(
+            diario.estres_promedio, None,
+            "`null` es sin dato: ni 0 (que sería un valor del reloj) ni un fallo de parseo"
+        );
     }
 
     #[test]
-    fn el_estres_sin_average_stress_level_queda_en_none_y_no_en_cero() {
+    fn el_estres_sin_ninguna_de_las_dos_claves_queda_en_none_y_no_en_cero() {
         let diario = estres(r#"{"calendarDate": "2026-10-04"}"#)
             .expect("el día sin estrés medido se lee igual");
         assert_eq!(
             diario.estres_promedio, None,
-            "un estrés que no viene es None: el 0 sería un dato del reloj, no un hueco"
+            "un estrés que no viene es None: el 0 sería un dato del reloj, no un hueco (§DUDAS 4)"
         );
     }
 
@@ -946,6 +1258,124 @@ mod pruebas {
         let fallo = estres(r#"{"averageStressLevel": 31}"#)
             .expect_err("sin `calendarDate` no hay día");
         assert!(fallo.detalle.contains("calendarDate"), "{}", fallo.detalle);
+    }
+
+    // ---- Sueño: la noche sin medida ----
+
+    /// Una noche **sin fases medidas** (todas `null` en el cuerpo real) es «sin dato» en las tres
+    /// fases, y el diario sigue existiendo con su fecha.
+    #[test]
+    fn la_noche_con_las_fases_nulas_es_sin_dato_y_no_cero() {
+        let diario = sueno(SUENO_SIN_MEDIDA).expect("el cuerpo real de una noche sin medir");
+        assert_eq!(diario.fecha, "2026-10-02");
+        assert_eq!(diario.sueno_total_s, None);
+        assert_eq!(diario.sueno_profundo_s, None);
+        assert_eq!(diario.sueno_rem_s, None);
+    }
+
+    /// Las fases del sueño que el cuerpo real trae al lado (`napTimeSeconds`,
+    /// `lightSleepSeconds`, `awakeSleepSeconds`) **no se leen** —no hay campo en `Diario`— y su
+    /// presencia **no estorba**: las tres que sí se leen salen enteras.
+    #[test]
+    fn las_fases_del_sueno_que_no_tienen_campo_no_estorban() {
+        let diario = sueno(
+            r#"{"dailySleepDTO": {"calendarDate": "2026-10-03", "sleepTimeSeconds": 25200,
+                "napTimeSeconds": 600, "deepSleepSeconds": 5400, "remSleepSeconds": 7200,
+                "lightSleepSeconds": 12000, "awakeSleepSeconds": 600},
+                "sleepLevels": [{"x": 1}]}"#,
+        )
+        .expect("un cuerpo con más claves de las que se leen");
+        assert_eq!(diario.sueno_total_s, Some(25200.0));
+        assert_eq!(diario.sueno_profundo_s, Some(5400.0));
+        assert_eq!(diario.sueno_rem_s, Some(7200.0));
+    }
+
+    // ---- Pulso en reposo: el rango entero sin medida ----
+
+    /// **El caso real de esta cuenta**: las cinco filas del rango vienen con `value: null`. La
+    /// librería descarta la fila sin valor y aquí se hace igual, así que salen **cero días** —y eso
+    /// es la verdad—, **sin fallo** y sin un diario vacío por cada día.
+    #[test]
+    fn un_rango_de_pulso_entero_sin_medida_da_cero_dias_y_ningun_fallo() {
+        let diarios = pulso_reposo(PULSO_DE_CINCO_DIAS_SIN_MEDIDA)
+            .expect("que no haya medida no es que el endpoint haya cambiado");
+        assert!(
+            diarios.is_empty(),
+            "ningún día tiene medida: no se inventa un diario por fila, y no se rellena con 0"
+        );
+    }
+
+    // ---- Training status y VO2 máx: la forma real ----
+
+    /// **El lector nuevo, con la forma real**: el estado sale del mapa por dispositivo y el VO2 máx
+    /// del bloque `generic`, cada uno con **su** fecha (aquí la misma).
+    #[test]
+    fn el_estado_de_entrenamiento_y_el_vo2max_se_leen_del_cuerpo_real() {
+        let diarios = entrenamiento(ENTRENAMIENTO).expect("el cuerpo real del training status");
+        let juntos = un_diario_por_fecha(&diarios);
+        assert_eq!(juntos.len(), 1, "los dos bloques son del 2026-10-01: un solo diario");
+        assert_eq!(juntos[0].fecha, "2026-10-01");
+        assert_eq!(
+            juntos[0].training_status.as_deref(),
+            Some("PRODUCTIVE_1"),
+            "se guarda la frase de la API (`trainingStatusFeedbackPhrase`), no el código numérico"
+        );
+        assert_eq!(
+            juntos[0].vo2max,
+            Some(51.0),
+            "se lee `vo2MaxValue`, no `vo2MaxPreciseValue` (§DUDAS 5)"
+        );
+    }
+
+    /// El estado y el VO2 máx **de días distintos** dan **dos** diarios, no uno con una fecha
+    /// inventada: este cuerpo no trae fecha arriba, la trae cada bloque.
+    #[test]
+    fn el_estado_y_el_vo2max_de_dias_distintos_dan_dos_diarios() {
+        let cuerpo = r#"{"mostRecentTrainingStatus": {"latestTrainingStatusData": {"7": {
+            "calendarDate": "2026-10-01", "trainingStatusFeedbackPhrase": "MAINTAINING_1"}}},
+            "mostRecentVO2Max": {"generic": {"calendarDate": "2026-09-20", "vo2MaxValue": 49.0}}}"#;
+        let diarios = entrenamiento(cuerpo).expect("dos bloques de dos días");
+        assert_eq!(diarios.len(), 2, "cada bloque con su fecha: no se inventa un día común");
+        let juntos = un_diario_por_fecha(&diarios);
+        assert_eq!(juntos.len(), 2);
+        assert_eq!(juntos[1].vo2max, Some(49.0), "el VO2 máx es del 20, no del 01");
+        assert_eq!(juntos[1].training_status, None, "ese día no traía estado");
+    }
+
+    /// Un bloque **sin fecha o sin dato** no produce diario (aquí la fecha no la pone la petición),
+    /// y un estado sin frase tampoco: no se inventa una fecha ni un texto de relleno.
+    #[test]
+    fn un_bloque_sin_fecha_o_sin_dato_no_produce_diario() {
+        let sin_fecha = r#"{"mostRecentTrainingStatus": {"latestTrainingStatusData": {"7": {
+            "trainingStatusFeedbackPhrase": "PRODUCTIVE_1"}}}}"#;
+        assert!(
+            entrenamiento(sin_fecha).expect("el cuerpo es legible").is_empty(),
+            "sin `calendarDate` no hay día donde ponerlo"
+        );
+        let sin_frase = r#"{"mostRecentTrainingStatus": {"latestTrainingStatusData": {"7": {
+            "calendarDate": "2026-10-01"}}}}"#;
+        assert!(
+            entrenamiento(sin_frase).expect("el cuerpo es legible").is_empty(),
+            "una fecha suelta sin ninguna medida no es un diario, es un resto"
+        );
+        let vo2_nulo = r#"{"mostRecentVO2Max": {"generic": {"calendarDate": "2026-10-01",
+            "vo2MaxValue": null, "vo2MaxPreciseValue": null}}}"#;
+        assert!(entrenamiento(vo2_nulo)
+            .expect("un `null` es sin dato")
+            .is_empty());
+    }
+
+    /// Un cuerpo que **no es** el del training status se dice, en vez de devolver una lista vacía que
+    /// parecería «no hay nada nuevo».
+    #[test]
+    fn un_cuerpo_sin_ninguno_de_los_dos_bloques_no_es_el_del_training_status() {
+        let fallo = entrenamiento(r#"{"loQueSea": 1}"#)
+            .expect_err("sin los dos bloques esa respuesta no es la del training status");
+        assert!(
+            fallo.detalle.contains("mostRecentTrainingStatus"),
+            "{}",
+            fallo.detalle
+        );
     }
 
     // ---- La fusión por fecha ----
@@ -1020,9 +1450,9 @@ mod pruebas {
     }
 
     #[test]
-    fn ninguna_lectura_de_la_api_rellena_training_status_ni_vo2max() {
-        // La librería no cita la forma de ese endpoint (`__init__.py:2478-2483`): hasta que la cite,
-        // estos dos campos NO se llenan desde ningún cuerpo, y esta prueba lo deja escrito.
+    fn solo_la_lectura_del_entrenamiento_rellena_training_status_y_vo2max() {
+        // Las otras tres lecturas NO traen esos dos campos: los dejan como estaban. Y el único
+        // cuerpo que sí los trae es `entrenamiento` (forma del cuerpo real de la web, §DUDAS 5).
         let del_sueno = sueno(SUENO_DEL_DIA).expect("el sueño");
         let del_estres = estres(ESTRES_DEL_DIA).expect("el estrés");
         for diario in [&del_sueno, &del_estres] {
@@ -1033,6 +1463,13 @@ mod pruebas {
         assert!(del_pulso
             .iter()
             .all(|d| d.training_status.is_none() && d.vo2max.is_none()));
+        let del_entrenamiento = entrenamiento(ENTRENAMIENTO).expect("el training status");
+        assert!(
+            del_entrenamiento
+                .iter()
+                .any(|d| d.training_status.is_some() || d.vo2max.is_some()),
+            "el entrenamiento SÍ los llena: es el lector que trae su forma"
+        );
     }
 
     #[test]

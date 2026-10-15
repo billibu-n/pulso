@@ -189,7 +189,29 @@ export component ArmazonEscritorio inherits Rectangle {
                         accessible-role: button;
                         accessible-id: "riel-hueco-" + i;
                         background: transparent;
-                        TouchArea { clicked => { root.elegir(i); } }
+                        // EL CURSOR Y EL HOVER, que faltaban (medido 2026-10-15: cero declaraciones
+                        // de `mouse-cursor` en TODA la interfaz y el hover daba **0 px distintos**:
+                        // el programa no daba ninguna senal de que se pudiera pulsar). Medido tambien:
+                        // `TouchArea` NO devuelve `pointer` por su cuenta (su `mouse-cursor` no tiene
+                        // valor por defecto), asi que hay que declararlo.
+                        // El `TouchArea` lleva NOMBRE porque el segundo valor de su -> es la senal que
+                        // la prueba consulta (`has-hover`), en vez de adivinar por el color.
+                        toque := TouchArea {
+                            clicked => { root.elegir(i); }
+                            accessible-role: button;
+                            accessible-id: "riel-toque-" + i;
+                            mouse-cursor: pointer;
+                        }
+                        // LA SENAL VISUAL DEL HOVER, que no existia. Va como HERMANA y antes del
+                        // resaltado del activo: en la seccion activa manda el acento opaco y esto no la
+                        // ensucia. El color es el acento del tema (AU-62: no se inventa un tono).
+                        Rectangle {
+                            visible: toque.has-hover && !s.activa;
+                            width: parent.width;
+                            height: parent.height;
+                            border-radius: 7px;
+                            background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.14);
+                        }
                         // EL RESALTADO: el mismo de siempre, ahora medible. Y EL ESTADO VA EN EL
                         // NOMBRE (`-si` / `-no`) porque **el fondo de una capa transparente NO se
                         // puede consultar** desde una prueba de geometria, y el tamano tampoco
@@ -468,7 +490,27 @@ export component ArmazonMovil inherits Rectangle {
                     // AREA TOCABLE de 48 dp como minimo: **el dedo no es un raton.** El hueco mide
                     // 80 de alto y 97,75 de ancho, asi que los 48 se cumplen de sobra: el area
                     // tactil es el hueco ENTERO (doc:166, `estudio:27`).
-                    TouchArea { clicked => { root.elegir(i); } }
+                    // EL CURSOR Y EL HOVER DE LA BARRA, que faltaban (medido 2026-10-15: `hover` sobre
+                    // la navegacion = **0 px distintos**, y cero `mouse-cursor` en toda la interfaz).
+                    // El `TouchArea` lleva NOMBRE porque el segundo valor de su `->` es la senal que
+                    // consulta la prueba (`has-hover`), en vez de deducirla del color, que es justo lo
+                    // que la norma prohibe (el fondo de una capa transparente NO se puede consultar).
+                    // ESTA es la barra que vera el cliente en el telefono: lo primero que toca el dedo.
+                    nav_toque := TouchArea {
+                        clicked => { root.elegir(i); }
+                        accessible-role: button;
+                        accessible-id: "nav-toque-" + i;
+                        mouse-cursor: pointer;
+                    }
+                    // La senal visual: halo de acento del tema al 14 %, y NO se enciende en la seccion
+                    // activa, que ya lleva su pildora opaca al 18 % (no se ensucia lo que ya dice algo).
+                    Rectangle {
+                        visible: nav_toque.has-hover && !s.activa;
+                        width: parent.width;
+                        height: parent.height;
+                        border-radius: 12px;
+                        background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.14);
+                    }
                     VerticalLayout {
                         // El grupo (pildora+icono arriba, etiqueta debajo) va CENTRADO en su hueco.
                         // El CENTRADO se hace con `padding` en horizontal, y no con `alignment`:

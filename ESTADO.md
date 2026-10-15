@@ -9,6 +9,38 @@ está hecho, qué está medido, **qué falta**, y **dónde está cada cosa**.
 
 ---
 
+## 0. ARRANQUE EN UN COMANDO — y las MEDIDAS VERIFICADAS de hoy (2026-10-15, 16:35)
+
+**Antes de leer este fichero entero (44 KB y 626 líneas), corre esto:**
+
+```bash
+python3 sesion/resumen.py                        # el sello de mano: objetivo, tareas, decisiones, tope 70 lineas
+python3 herramientas/verificar-afirmacion.py todo  # las TRES capas de datos, medidas ahora mismo
+```
+
+Y esta es la verdad medida **hoy**, con el comando que la comprueba. **Donde este bloque y una
+sección vieja se contradigan, MANDA este bloque** (y hay que corregir la sección vieja):
+
+| lo medido | valor crudo | comando |
+|---|---|---|
+| **el objetivo del cliente** | optimización de la eficiencia metabólica y biomecánica para **Farellones 2026-11-29** | `sesion/resumen.py` (lo saca de `datos/trabajo-ui/TASKS.json`) |
+| **lo que la API `/gc-api` CONTESTÓ** (capa 1) | sueño `sleepTimeSeconds: null`, estrés `avgStressLevel: null`, pulso en reposo `value: null`. **Los bytes miden ESTRUCTURA, no dato** | `verificar-afirmacion.py api` |
+| **lo que hay en el volcado** (capa 2) | **1.360 ficheros** en `datos/garmin_files/storage`: 165 de SUEÑO, 165 de ESTRÉS, 165 de PULSO… **de 2026-05 a 2026-10**, y **todos traen `null`** en el dato | `verificar-afirmacion.py volcado` |
+| **lo que el CLI PROCESÓ** (capa 3) | la base del repo (`datos/garmin_data.db`, 986 MB) tiene **0 filas** de sueño/estrés/pulso y **102 actividades**. Vacía de salud, **no por olvido: se pidió y no vino** | `verificar-afirmacion.py base` |
+| **lo que SÍ trajo histórico** | con **`garmin auth --manual`** (ticket del navegador) + `garmin extract`: **272 registros de sueño de 2024 CON VALOR** (media 28.893 s, pulso en reposo 54-60). Tabla `sleep` de la base de `/tmp/act2024/a.db` | `verificar-afirmacion.py base --db /tmp/act2024/a.db` |
+| **las pruebas del árbol** | **234 funciones `#[test]`** (161+13+36+24). El número que MANDA es el que imprime `cargo test` | `verificar-afirmacion.py pruebas` |
+
+**Consecuencia, dicha sin adornos: la cuenta de la prueba NO tiene salud en 2026-05..2026-10, y
+SÍ tiene sueño con valor en 2024.** Las dos frases son verdaderas porque son **capas y periodos
+distintos**. Decir «la app no tiene datos de salud» sin decir **qué capa, qué cuenta y qué
+periodo** es la frase que hizo perder una tarde: es cierta en la capa 3 y falsa en la capa 2.
+
+**Y una confesión del propio fichero, para que no vuelva a pasar**: la §6-undecies decía que «los
+diarios vienen CON DATO» apoyándose en el **tamaño en bytes**. Los 652 B de `sueno.json` son 19
+claves en `null` y 4 con valor informativo. **Eso no era un dato: era la pregunta.** Corregido abajo.
+
+---
+
 ## 1. Qué es este proyecto, en tres frases
 
 **Un motor que lee datos de entrenamiento, calcula, y dice qué se puede afirmar — y qué no.**
@@ -19,7 +51,7 @@ El cliente es **un ciclista de 60 años** que hasta ahora mandaba capturas a un 
 
 | qué | estado | dónde |
 |---|---|---|
-| **el motor** | **189 pruebas en verde**, cero avisos | `motor/src/` |
+| **el motor** | **189 pruebas en verde el 2026-10-13**. **CIFRA HISTÓRICA: el árbol de hoy tiene 234 funciones `#[test]`** (161+13+36+24), y el commit `c02f1fd` declara 398 con las pruebas de integración. **El número que manda es el que imprime `cargo test` hoy**, no esta tabla | `motor/src/` · `verificar-afirmacion.py pruebas` |
 | **la biomecánica** | fase de pedaleo **por pierna** (difieren en 80 de 83), potencia/cadencia **sentado·de pie**, respiración, carga | `motor/src/bin/biomecanica.rs` |
 | **lo que calcula** | **625 resultados** con su margen y su fuente | `motor/src/bin/inventario.rs` |
 | **el informe** | por plantillas, reproducible, con guarda anti-invención | `motor/src/informe.rs` |
@@ -609,10 +641,27 @@ Lo esencial, en cinco líneas:
    interno **con** esas cabeceras da **200 (46.345 B)**; **sin** ellas, 403.
    Traducido: **las cabeceras son necesarias pero NO suficientes: Cloudflare ata la sesión al
    transporte del navegador.**
-5. **Los diarios vienen CON DATO** (respuesta a la duda del contrato §5.1): sueño 652 B con
-   `dailySleepDTO` y sus fases, estrés 316 B con `avgStressLevel`, training status 2.484 B con
-   `mostRecentVO2Max`, pulso en reposo 393 B, resumen del día 2.384 B, dispositivos (3). En la
-   **exportación oficial venían VACÍOS**. Crudos en `datos/garmin-gcapi/` (ignorados por git).
+5. **Qué trae el dato y qué no, MEDIDO EN EL VALOR (corrige la versión anterior de esta línea,
+   que se apoyaba en el TAMAÑO EN BYTES: 652 B no son un dato, son una pregunta).** De los 9
+   cuerpos de `/gc-api` en `datos/garmin-gcapi/`, **tres deciden si la cuenta tiene salud y los
+   tres dicen `null`**: `sueno.json` (`sleepTimeSeconds: null`), `estres.json`
+   (`avgStressLevel: null`) y `pulso-reposo.json` (`value: null`). Los que SÍ traen valor son
+   `training.json` (61 claves: `vo2MaxPreciseValue`, `category`), `resumen-dia.json` (18:
+   `activeKilocalories`, `totalKilocalories`), `perfil.json`, `dispositivos.json` (620) y
+   `grafo-x.json` (239). Y el volcado lo confirma en grande: **165 respuestas de SUEÑO, 165 de
+   ESTRÉS y 165 de PULSO de 2026-05 a 2026-10, todas con el dato en `null`**
+   (`verificar-afirmacion.py volcado`). Traducido: **en este periodo Garmin no entregó salud a
+   esta cuenta**; no es que la app la esté perdiendo.
+   **Lo que SÍ trae histórico con valor es la vía del CLI**: `garmin auth --manual` (ticket del
+   navegador) + `garmin extract` bajó **272 registros de sueño de 2024 CON VALOR** (media
+   28.893 s, pulso en reposo 54-60 ppm) a la tabla `sleep` de `/tmp/act2024/a.db`. Por tanto la
+   frase correcta no es «no hay datos de salud» ni «los diarios vienen con dato», sino: **la
+   cuenta no tiene salud en 2026-05..2026-10 por la API, y sí hay sueño 2024 por el CLI**. La
+   app enseña lo que tenga SU base: `verificar-afirmacion.py base`.
+   **(Aquí decía, antes de corregirlo: «sueño 652 B con `dailySleepDTO` y sus fases, estrés 316 B
+   con `avgStressLevel`, training status 2.484 B con `mostRecentVO2Max`…». Los números de bytes
+   son ciertos y la conclusión era FALSA: el byte cuenta estructura. De ese listado solo
+   `training.json` trae valor.)**
 
 **Fallo concreto que hay que arreglar** (hito aparte, contra los JSON reales): el estrés real es
 **`avgStressLevel`** y el código espera **`averageStressLevel`** (16 referencias en

@@ -170,6 +170,13 @@ fn main() {
     }
 
     // ================= SECCION 3 · DATOS (los unicos controles visibles) =================
+    //
+    // AVISO MEDIDO EL 2026-10-15, y hay que tenerlo presente al leer estas capturas: las
+    // coordenadas de aqui abajo son FIJAS y se quedan obsoletas cuando el layout se mueve. Paso de
+    // verdad: al envolver los botones para darles cursor y hover, el comentario de la coordenada
+    // 637 decia «buscar» mientras caia sobre «Guardar», y una medicion se leyo al reves por eso.
+    // Si una captura sale a 0 px, LO PRIMERO es comprobar que el puntero cae donde se cree (mira la
+    // captura), y despues sospechar del codigo.
     ventana.set_seccion_activa(3);
     capturar(&window, &salida, "03-datos-base", &mut buffer);
 
@@ -181,16 +188,16 @@ fn main() {
     mover(&window, 140.0, 60.0); // «Zonas», tampoco activa
     capturar(&window, &salida, "03-hover-riel-zonas", &mut buffer);
 
-    mover(&window, 205.0, 637.0); // «Guardar mis datos»
+    mover(&window, 205.0, 637.0); // MEDIDO: en y637 esta «Guardar mis datos» (banda y585-637)
     capturar(&window, &salida, "03-hover-guardar", &mut buffer);
 
     window.dispatch_event(WindowEvent::PointerPressed {
-        position: slint::LogicalPosition::new(205.0, 637.0),
+        position: slint::LogicalPosition::new(205.0, 637.0), // «Guardar» (medido)
         button: slint::platform::PointerEventButton::Left,
     });
     capturar(&window, &salida, "03-pressed-guardar", &mut buffer);
     window.dispatch_event(WindowEvent::PointerReleased {
-        position: slint::LogicalPosition::new(205.0, 637.0),
+        position: slint::LogicalPosition::new(205.0, 637.0), // «Guardar» (medido)
         button: slint::platform::PointerEventButton::Left,
     });
     capturar(&window, &salida, "03-soltado-guardar", &mut buffer);

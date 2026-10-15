@@ -686,13 +686,33 @@ component Datos inherits VerticalLayout {
             VerticalLayout {
                 // El hueco entre el borde y el boton lo pone el `padding`, no una cuenta.
                 padding: 2px;
-                Button {
-                    accessible-id: "datos-guardar";
-                    height: max(48px, self.preferred-height);
-                    text: "Guardar mis datos";
-                    primary: true;
-                    clicked => { root.guardar(); }
+                // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
+                // compilador lo rechaza), asi que el envoltorio los pone desde fuera.
+                // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
+                // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
+                // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
+                // SIN `accessible-role` NI `accessible-id` A PROPOSITO (AU-91, y lo caza la prueba
+                // `sin_resumen_...`): un envoltorio con nombre accesible seria una pieza con nombre y
+                // SIN TEXTO, o sea un vacio con marco, que la norma prohibe. El nombre accesible lo da
+                // el `Button` de dentro, que es el control de verdad. El `:=` de aqui es el nombre
+                // INTERNO de Slint -- sirve para consultar `has-hover` -- y no sale en el arbol accesible.
+                toque_datos_guardar := TouchArea {
+                    mouse-cursor: pointer;
                 }
+                Rectangle {
+                    visible: toque_datos_guardar.has-hover;
+                    width: 100%;
+                    height: max(48px, self.preferred-height);
+                    border-radius: 8px;
+                    background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
+                }
+                Button {
+                                    accessible-id: "datos-guardar";
+                                    height: max(48px, self.preferred-height);
+                                    text: "Guardar mis datos";
+                                    primary: true;
+                                    clicked => { root.guardar(); }
+                                }
             }
         }
     }
@@ -735,12 +755,27 @@ component Datos inherits VerticalLayout {
             height: self.preferred-height;
             VerticalLayout {
                 padding: 2px;
-                Button {
-                    accessible-id: "datos-buscar";
-                    height: max(48px, self.preferred-height);
-                    text: "Buscar mis ficheros";
-                    clicked => { root.abrir-selector(); }
+                // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
+                // compilador lo rechaza), asi que el envoltorio los pone desde fuera.
+                // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
+                // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
+                // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
+                toque_datos_buscar := TouchArea {
+                    mouse-cursor: pointer;
                 }
+                Rectangle {
+                    visible: toque_datos_buscar.has-hover;
+                    width: 100%;
+                    height: max(48px, self.preferred-height);
+                    border-radius: 8px;
+                    background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
+                }
+                Button {
+                                    accessible-id: "datos-buscar";
+                                    height: max(48px, self.preferred-height);
+                                    text: "Buscar mis ficheros";
+                                    clicked => { root.abrir-selector(); }
+                                }
             }
         }
     }
@@ -847,13 +882,28 @@ component Datos inherits VerticalLayout {
                     height: self.preferred-height;
                     VerticalLayout {
                         padding: 2px;
-                        Button {
-                            accessible-id: "garmin-sincronizar";
-                            height: max(48px, self.preferred-height);
-                            text: root.garmin_sincronizando ? "Sincronizando..." : "Sincronizar";
-                            enabled: !root.garmin_sincronizando;
-                            clicked => { root.sincronizar-garmin(); }
+                        // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
+                        // compilador lo rechaza), asi que el envoltorio los pone desde fuera.
+                        // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
+                        // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
+                        // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
+                        toque_garmin_sincronizar := TouchArea {
+                            mouse-cursor: pointer;
                         }
+                        Rectangle {
+                            visible: toque_garmin_sincronizar.has-hover;
+                            width: 100%;
+                            height: max(48px, self.preferred-height);
+                            border-radius: 8px;
+                            background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
+                        }
+                        Button {
+                                                    accessible-id: "garmin-sincronizar";
+                                                    height: max(48px, self.preferred-height);
+                                                    text: root.garmin_sincronizando ? "Sincronizando..." : "Sincronizar";
+                                                    enabled: !root.garmin_sincronizando;
+                                                    clicked => { root.sincronizar-garmin(); }
+                                                }
                     }
                 }
 

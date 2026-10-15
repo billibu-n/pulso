@@ -1,6 +1,6 @@
 # ESTADO: dónde estamos y por dónde se sigue
 
-**Escrito el 2026-10-13**, y **actualizado el mismo día**, porque el contexto se estaba llenando y **una compactación a mitad de tarea
+**Escrito el 2026-10-13**, y **actualizado el mismo día** y **el 2026-10-15**, porque el contexto se estaba llenando y **una compactación a mitad de tarea
 es catastrófica**. Este fichero existe para que **quien retome no tenga que reconstruir nada**: dice qué
 está hecho, qué está medido, **qué falta**, y **dónde está cada cosa**.
 
@@ -578,3 +578,49 @@ anotadas: el `0` de `sleepTimeSeconds` (`Some(0.0)` aquí vs «sin dato» en el 
 solo sitio) y la deuda de los campos viejos de `cara.rs` (los usa `recorrido.rs`); (3) conectar la
 callback `sincronizar-garmin` cuando el dueño decida la integración del flujo en la app; (4) tras la
 ventana, la corrida real con el instrumento (una sola).
+
+---
+
+## 6-undecies. La vía de Garmin, MEDIDA — y `wreq` descartado (2026-10-15, chat con Kali)
+
+**El bloqueo del 429/401 ya no es una hipótesis: está medido, y la conclusión es que hace falta un
+MOTOR DE NAVEGADOR.** Documento completo y reproducible: `docs/SINCRONIZACION-garmin-2026-10-15.md`.
+Instrumentos: `herramientas/garmin-lab/` (LEEME incluido).
+
+Lo esencial, en cinco líneas:
+
+1. **La página de acceso de hoy es el flujo `portal`**: una **aplicación JavaScript** en
+   `sso.garmin.com/portal/sso/en-US/sign-in?clientId=GarminConnect…`, **sin `<form action>`, sin
+   `type=hidden` y sin `_csrf`**, con **reCAPTCHA Enterprise**. El `/sso/signin` (widget/embed) que
+   implementa `motor/src/bin/sincronizacion.rs` **ya no sirve ese HTML**: sin JavaScript no hay
+   formulario que rellenar. El acceso lo hizo el dueño **a mano** y salió un reto de imágenes.
+2. **La pista del `_cfuvid` no era la causa**: un navegador real también la recibe. Lo que el
+   instrumento nunca tendrá es **`cf_clearance`**, que se gana **ejecutando el reto**.
+3. **Descartado por medida** (no por opinión): `connectapi.garmin.com` con la cookie `JWT_WEB` → 403;
+   `/gc-api/` con el cliente HTTP de Playwright → 403; con `curl_cffi` chrome → 403; con `curl_cffi`
+   sin disfraz → 403; con **`curl` de serie (HTTP/1.1, lo mismo que `ureq`) → 403**, y responde
+   `server: cloudflare`. **Por tanto `wreq`/BoringSSL NO habría resuelto nada**: se ahorra la obra
+   nativa y no hay que romper el compromiso del repo. El dictamen `datos/trabajo-ui/wreq-informe.md`
+   queda **superado**.
+4. **La vía que sí funciona**: la misma que usa la app — `POST /gc-api/graphql-gateway/graphql` y
+   `GET /gc-api/...` sobre `connect.garmin.com` (52 rutas distintas, todas 200, **cero** a
+   `connectapi` y **cero** con `Bearer`), con las cabeceras `connect-csrf-token`, `nk: NT`,
+   `x-app-ver`, `x-lang`, `x-requested-with` — **pedidas desde DENTRO de la página**. Un `fetch`
+   interno **con** esas cabeceras da **200 (46.345 B)**; **sin** ellas, 403.
+   Traducido: **las cabeceras son necesarias pero NO suficientes: Cloudflare ata la sesión al
+   transporte del navegador.**
+5. **Los diarios vienen CON DATO** (respuesta a la duda del contrato §5.1): sueño 652 B con
+   `dailySleepDTO` y sus fases, estrés 316 B con `avgStressLevel`, training status 2.484 B con
+   `mostRecentVO2Max`, pulso en reposo 393 B, resumen del día 2.384 B, dispositivos (3). En la
+   **exportación oficial venían VACÍOS**. Crudos en `datos/garmin-gcapi/` (ignorados por git).
+
+**Fallo concreto que hay que arreglar** (hito aparte, contra los JSON reales): el estrés real es
+**`avgStressLevel`** y el código espera **`averageStressLevel`** (16 referencias en
+`motor/src/sincronizar.rs`, 7 en el instrumento) — porque se portó de la API del **móvil**. Con el
+parser de hoy, **el estrés no se leería del dato real**. Y el pulso en reposo llega con
+**`value: null`**, así que el camino «sin dato» se va a usar de verdad.
+
+**DECISIÓN DEL DUEÑO, PENDIENTE**: llevar esta vía a la aplicación con un **WebView** (el acceso *y*
+las llamadas a los datos). `CONTRATO-garmin-sync.md` **no cambia** — esta vía ES su «vía 1 · API
+interna»; solo se precisa por dónde pasa. **Antes de aprobarlo hay que medir si un WebView cabe en
+la aplicación (Rust + Slint, Android)**: es lo primero del chat siguiente.

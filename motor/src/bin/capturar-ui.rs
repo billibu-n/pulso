@@ -41,8 +41,9 @@ impl Platform for Plataforma {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--ayuda" || a == "-h" || a == "--help") {
-        println!("capturar-ui <salida.ppm> [--carpeta CARPETA]");
+        println!("capturar-ui <salida.ppm> [--carpeta CARPETA] [--ejemplo] [--seccion N]");
         println!("  Renderiza la aplicacion fuera de pantalla. No abre ninguna ventana.");
+        println!("  --seccion: 0 Resumen (defecto), 1 Zonas, 2 Sesiones, 3 Datos.");
         return;
     }
     let Some(salida) = args.get(1).filter(|a| !a.starts_with("--")) else {
@@ -59,6 +60,20 @@ fn main() {
     // --ejemplo: pinta el CASO SINTETICO (inventado) y sin sesiones, para VER el diseno con datos
     // personales sin mezclar los suyos. Lo que salga lleva el aviso de que es sintetico.
     let ejemplo = args.iter().any(|a| a == "--ejemplo");
+    // --seccion N: pinta ESA seccion (0 Resumen, 1 Zonas, 2 Sesiones, 3 Datos) en vez de la primera.
+    // Existe porque el dueno pidio VER la aplicacion entera, y sin esto solo se veia el Resumen:
+    // el resto de la ventana quedaba sin poder mirarse, que es justo lo que hay que juzgar.
+    let seccion: i32 = args
+        .iter()
+        .position(|a| a == "--seccion")
+        .and_then(|i| args.get(i + 1))
+        .map(|v| {
+            v.parse().unwrap_or_else(|_| {
+                eprintln!("--seccion quiere un numero: 0 Resumen, 1 Zonas, 2 Sesiones, 3 Datos");
+                std::process::exit(2);
+            })
+        })
+        .unwrap_or(0);
 
     let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
     if slint::platform::set_platform(Box::new(Plataforma(window.clone()))).is_err() {
@@ -68,6 +83,7 @@ fn main() {
     window.set_size(slint::PhysicalSize::new(ANCHO, ALTO));
 
     let ventana = Ventana::new().expect("la ventana tiene que construirse");
+    ventana.set_seccion_activa(seccion);
 
     // LOS MISMOS DATOS QUE LA APLICACION: su perfil y su carpeta, por el mismo camino.
     let (persona, real) = if ejemplo {

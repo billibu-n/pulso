@@ -72,6 +72,10 @@ Nueve conjuntos traídos de verdad por esa vía (crudos, en `datos/garmin-gcapi/
 |---|---|---|
 | **sueño** | 652 B | `dailySleepDTO` (`calendarDate`, `deepSleepSeconds`, `remSleepSeconds`, `lightSleepSeconds`, `napTimeSeconds`) · `sleepLevels` · `sleepMovement` |
 | **estrés** | 316 B | **`avgStressLevel`** · `maxStressLevel` · `stressValuesArray` · `calendarDate` |
+
+> **OJO, CORREGIDO EL MISMO 2026-10-15 (ver §4 bis).** Esta tabla dice qué **claves** trae cada
+> cuerpo; **NO** dice que traigan valor. Se leyeron como si trajeran dato y **no lo traen**: en esta
+> cuenta **todos esos campos vienen `null`**. La distinción está en §4 bis y manda sobre lo que sigue.
 | **training status** | 2.484 B | `mostRecentTrainingStatus` · **`mostRecentVO2Max`** · `mostRecentTrainingLoadBalance` · `heatAltitudeAcclimationDTO` |
 | pulso en reposo | 393 B | `allMetrics.metricsMap` → `WELLNESS_RESTING_HEART_RATE` (**con `value: null`** en los días mirados) |
 | resumen del día | 2.384 B | `activeKilocalories` · `activeSeconds` · `averageMonitoringEnvironmentAltitude`… |
@@ -79,15 +83,38 @@ Nueve conjuntos traídos de verdad por esa vía (crudos, en `datos/garmin-gcapi/
 | perfil | 3.006 B | visibilidad de actividades y ajustes de cuenta |
 | GraphQL (la consulta de la app) | 25.388 B | reenviada tal cual, 200 |
 
-**`CONTRATO-garmin-sync.md` §5.1, RESPONDIDA**: la pregunta era si los diarios vienen **llenos** por
-la API interna, porque en la **exportación oficial venían VACÍOS**. Medido: **sí vienen con dato**
-(el sueño trae sus fases y el estrés trae `avgStressLevel`). La «vía 1» del contrato queda
-justificada con medida.
+### 4 bis. La corrección del 2026-10-15 (esto anula el párrafo que venía aquí)
+
+Este documento afirmaba: *«Medido: **sí vienen con dato** (el sueño trae sus fases y el estrés trae
+`avgStressLevel`)»*. **Es falso tal como se leyó, y se corrige aquí.** Lo que se midió es que los
+cuerpos traen **las claves**; los **valores** son `null`:
+
+| cuerpo | lo que trae de verdad |
+|---|---|
+| `estres.json` | `avgStressLevel: null`, `maxStressLevel: null`, `stressValuesArray: []` — **íntegramente nulo** |
+| `sueno.json` | de `dailySleepDTO`, lo único **no** nulo es `userProfilePK`, `calendarDate`, `deviceRemCapable`, `retro`; **las fases (`sleepTimeSeconds`, `deepSleepSeconds`, `remSleepSeconds`, `lightSleepSeconds`) todas `null`** |
+| `resumen-dia.json` | `includesWellnessData: **false**`, `includesActivityData: true`, `totalSteps: null` |
+
+Se confundió **«la clave existe»** con **«el dato existe»**. El error costó un chat entero de
+diagnóstico, y la lección está escrita en `CONTRATO-datos-que-faltan-2026-10-15.md` §3.
+
+**`CONTRATO-garmin-sync.md` §5.1 queda SIN RESPONDER en su forma original.** Medido con 21 días de
+sondeo (2026-10-15, instrumentos `smoke*.py` en `~/garmin-lab/` de Kali): **sueño 0 de 21 días con
+dato, estrés 0 de 28, pulso en reposo 0 valores en los últimos 30 días**. En cambio las
+**actividades sí llegan** (10 en dos semanas, con detalle rico: potencia, ppm, cadencia) y el pulso
+en reposo tiene **44 días con valor** en una ventana de 400. La lectura que sostiene el número: lo
+que produce el **Edge 1030 Plus** llega; lo que necesita el reloj de muñeca puesto **dejó de llegar
+hace ~3 semanas**.
+
+Y un límite que no estaba documentado: **hay límite de tasa** (~40 peticiones seguidas dan **403** de
+Cloudflare; las mismas espaciadas **18-20 s** dan **200**). La sincronización **no puede ser una
+ráfaga**, y el 403 **no** significa «la sesión se cayó».
 
 ## 5. Fallos concretos encontrados al comparar el dato real con el código
 
-1. **El estrés real es `avgStressLevel`; el código espera `averageStressLevel`** (16 referencias en
-   `motor/src/sincronizar.rs`, 7 en `motor/src/bin/sincronizacion.rs`). No es un descuido: se portó de
+1. **El estrés real es `avgStressLevel`; el código espera `averageStressLevel`** (8 referencias en
+   `motor/src/sincronizar.rs`, 7 en `motor/src/bin/sincronizacion.rs`; medido con `grep -c` el
+   2026-10-15 — este documento decía «16», que estaba mal). No es un descuido: se portó de
    la librería del **móvil** (`connectapi.garmin.com`), donde el campo se llama así; la **web**
    (`/gc-api/`) lo llama distinto. **Con el parser de hoy, el estrés no se leería del dato real.**
 2. `dailySleepDTO` y `allMetrics.metricsMap` **sí** coinciden con lo que el código espera.

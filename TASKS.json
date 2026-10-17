@@ -1,9 +1,9 @@
 {
   "encargo": "Monitor de bienestar y rendimiento con datos Garmin/Huawei. Entrega para Farellones en 43 días. Camino crítico: actividades, potencia, zonas, tendencia, informe.",
-  "que": "App de escritorio Rust+Slint. Motor hexagonal. 409 tests verdes. 21 instrumentos CLI. 4 pantallas. Integraciones Garmin FIT + Huawei ZIP. Android 0%, WebView no existe.",
+  "que": "App de escritorio Rust+Slint. Motor hexagonal. 431 tests verdes. 21 instrumentos CLI. 4 pantallas. Integraciones Garmin FIT + Huawei ZIP. Entrega de Farellones CERRADA: 10/10 tareas, tag v0.9-farellones (informe HTML + 3 CSV + smoke test). Android 0%, WebView no existe (ADR-003/002).",
   "meta_del_proyecto": "Monitor de bienestar y rendimiento con datos Garmin/Huawei. Entrega para Farellones en 43 días. Camino crítico: actividades, potencia, zonas, tendencia, informe.",
   "rama": "main",
-  "actualizado": "2026-10-17T12:30:00-03:00",
+  "actualizado": "2026-10-17T12:21:06-03:00",
   "tareas": [],
-  "cierre_del_chat": "Ronda 2 cerrada (2026-10-17): T004 sello y T005 docs, 414 pruebas, 2 gates VERDES. Siguiente: T002 (4 defectos graves de UI) y T003 (63 px + aviso)."
+  "cierre_del_chat": "Ronda 3 cerrada (2026-10-17): T002-T010, 10/10 done, 431 pruebas, 0 avisos, SMOKE TEST: VERDE, tag v0.9-farellones, push a origin/main. Siguiente: sesion de pruebas con el cliente; despues APK, WebView y recuperar bienestar."
 }

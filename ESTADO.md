@@ -714,3 +714,46 @@ la aplicación (Rust + Slint, Android)**: es lo primero del chat siguiente.
   **21 instrumentos**, las dos integraciones y el alcance de Farellones (ADR-001/002/003).
 - **Siguiente**: T002 (4 defectos graves de UI) y T003 (63 px + aviso); T006/T007 despues.
 - **Nota**: los 9,7 GB de `motor/target/` siguen ahi; `cargo clean` no se ejecuto (sin confirmacion).
+
+---
+
+## 10. RONDA 3 (2026-10-17): cierre de semana 1 y 2 — 10/10
+
+**Manda esta seccion sobre las anteriores.** El `PLAN.json` queda en **10/10 done** y el tag
+`v0.9-farellones` marca el cierre.
+
+| tarea | estado | gate | evidencia |
+|---|---|---|---|
+| T001 Sincronizar | **done** | `cargo test` + grep del handler | commit `9c0c87a` |
+| T002 4 defectos de UI | **done** | `medir-estados` + `medir-interfaz` | 40 pruebas de interfaz; hover de boton **1.708 px** |
+| T003 63 px + aviso | **done** | `cargo build` sin `warning:` | 0 avisos; hueco **18 px** (eran 63) |
+| T004 sello | **done** | `sesion/resumen.py` | commit `6815caf` |
+| T005 README/ESTADO | **done** | `grep 414` | commit `6815caf` |
+| T006 informe HTML | **done** | `test -f informe/informe.html` | 4.096 B, con tabla, sin JS |
+| T007 CSV x3 | **done** | `test -f datos/export.csv` | 102 / 6.313 / 5 filas |
+| T008 smoke test | **done** | `bash smoke-test.sh` | **VERDE**, 99,5 s, 431 pruebas |
+| T009 autorevision | **firmado** | manual (cliente no disponible) | `AUTOREVISION-2026-10-18.md`, 7.227 B |
+| T010 informe + tag | **done** | `git tag --list v0.9-farellones` | `INFORME-FINAL-2026-10-18.md` |
+
+**Medidas de la ronda** (todas con su comando en `AUTOREVISION-2026-10-18.md`):
+
+- Grid de «Datos»: desfase **≤ 1 px** entre columnas (era 20).
+- Combo y switch: **48 px** de alto (eran 32 y 20).
+- 7 botones con cursor declarado y halo; el de «Guardar» medido en píxeles.
+- Aire muerto entre «Guardar» y «Buscar»: **18 px** (eran 63).
+- Entrega: `informe/informe.html` + `export-actividades.csv` + `export-potencia.csv` +
+  `export-zonas.csv`, regenerables con el binario `informe` (`--formato html`, `export --tipo=…`).
+- `smoke-test.sh` recorre los 7 pasos y sale `SMOKE TEST: VERDE`.
+
+**Un defecto nuevo, encontrado al revisar**: el halo de hover metido en el layout reservaba 48 px
+(marco de 100, hueco de 66). Se sacó del layout y el toque va encima con la misma acción. **Una
+corrección sin prueba de geometría deja el mismo defecto con otro disfraz.**
+
+**Deudas que quedan** (documentadas en la autorevisión): pulsado de los botones sin medir, hover del
+selector, foco de teclado más allá del TAB 12, tipografías de «Datos» (15/11/11 vs 14/12/12), hover de
+los campos de texto, y las coordenadas de `auditar-estados`, que quedaron obsoletas al cambiar el
+layout (por eso sus capturas de hover de botones dan 0 px: el puntero cae en otro sitio).
+
+**Siguiente**: nada del plan de Farellones — está cerrado. Después: APK, WebView y recuperar el
+bienestar (ADR-001/002/003), y la sesión de pruebas con el cliente.
+

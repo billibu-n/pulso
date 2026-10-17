@@ -1,6 +1,6 @@
 {
   "project": "pulso",
-  "updated": "2026-10-17T12:12:29-03:00",
+  "updated": "2026-10-17T12:19:41-03:00",
   "dimension": {
     "size": "mediano",
     "type": "modernizacion",
@@ -100,7 +100,7 @@
     {
       "id": "T008",
       "title": "Smoke test del flujo completo",
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "T006",
         "T007"
@@ -115,7 +115,7 @@
     {
       "id": "T009",
       "title": "Pruebas con el cliente o autorevision",
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "T008"
       ],

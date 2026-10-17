@@ -6,3 +6,4 @@
 {"ts": "2026-10-17T12:07:03-03:00", "task": "T003", "cmd": "bash -c 'cd motor && ! cargo build 2>&1 | grep -q \"warning:\"'", "rc": 0, "segundos": 0.33, "motivo": ""}
 {"ts": "2026-10-17T12:12:20-03:00", "task": "T006", "cmd": "test -f informe/informe.html", "rc": 0, "segundos": 0.29, "motivo": ""}
 {"ts": "2026-10-17T12:12:20-03:00", "task": "T007", "cmd": "test -f datos/export.csv", "rc": 0, "segundos": 0.12, "motivo": ""}
+{"ts": "2026-10-17T12:19:36-03:00", "task": "T008", "cmd": "bash smoke-test.sh", "rc": 0, "segundos": 99.54, "motivo": ""}

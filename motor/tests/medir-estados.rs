@@ -170,3 +170,69 @@ fn la_barra_de_navegacion_da_senal_al_pasar_el_puntero_encima() {
     );
     println!("  barra de navegacion · al apartar el puntero · {vuelta} px (tiene que ser 0)");
 }
+
+// ==================================================================================================
+// LOS BOTONES, QUE ES LO QUE EL DUENO TOCA (T002, defecto 2: «no dan ninguna senal»)
+// ==================================================================================================
+//
+// POR QUE ESTA PRUEBA MIRA UN BOTON Y NO LA BARRA: la barra ya tiene su portero (arriba), y los 7
+// botones —3 de Datos y 4 del selector— no tenian ninguno. Medido el 2026-10-15: hover 0 px, cursor
+// sin declarar. Aqui se provoca el hover de verdad sobre «Guardar mis datos», con la ventana ALTA
+// para que el boton este dentro del lienzo (en 880 queda por debajo y un puntero fuera de la ventana
+// no es un hover: seria medir el vacio y llamarlo verde).
+#[test]
+fn los_botones_de_datos_dan_senal_al_pasar_el_puntero_encima() {
+    const ALTO_DATOS: u32 = 2600;
+
+    let w = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Plataforma(w.clone())))
+        .expect("la plataforma se instala una sola vez por prueba");
+    w.set_size(slint::PhysicalSize::new(ANCHO, ALTO_DATOS));
+
+    let v = Ventana::new().expect("la ventana tiene que construirse");
+    let mut p = Persona::desconocida();
+    profile::aplicar(&mut p, &[("edad", "52"), ("umbral_lactato", "169")])
+        .expect("los datos de la persona de la prueba tienen que aplicarse");
+    let ensenado = cara::lo_que_ensena(&p, None);
+    pintar::pintar(&v, &ensenado);
+    v.set_seccion_activa(3); // Datos: los campos, el combo y los dos botones.
+    let _ = v.show();
+
+    let mut antes = vec![PremultipliedRgbaColor::default(); (ANCHO * ALTO_DATOS) as usize];
+    let mut despues = vec![PremultipliedRgbaColor::default(); (ANCHO * ALTO_DATOS) as usize];
+
+    let pintar = |w: &Rc<MinimalSoftwareWindow>, buffer: &mut Vec<PremultipliedRgbaColor>| -> bool {
+        let mut pinto = false;
+        w.draw_if_needed(|r| {
+            r.render(buffer, ANCHO as usize);
+            pinto = true;
+        });
+        pinto
+    };
+
+    mover(&w, 5.0, 5.0);
+    assert!(pintar(&w, &mut antes), "el render de partida no ocurrio: sin el, esto no mide nada");
+
+    // El centro del boton SE PREGUNTA por su nombre accesible, no se escribe a mano (AU-63).
+    use i_slint_backend_testing::ElementQuery;
+    let todos = ElementQuery::from_root(&v).find_all();
+    let boton = todos
+        .iter()
+        .find(|e| e.accessible_id().map(|s| s.to_string()) == Some("datos-guardar".into()))
+        .expect("no se encontro el boton `datos-guardar`");
+    let pos = boton.absolute_position();
+    let tam = boton.size();
+    let (x, y) = (pos.x + tam.width / 2.0, pos.y + tam.height / 2.0);
+    println!("  datos-guardar en ({x:.0}, {y:.0}) · {:.0}x{:.0}", tam.width, tam.height);
+
+    mover(&w, x, y);
+    assert!(pintar(&w, &mut despues), "con el puntero encima la ventana TIENE que repintarse (AU-101)");
+
+    let cambiados = pixeles_distintos(&antes, &despues);
+    assert!(
+        cambiados > 200,
+        "pasar el puntero por encima de «Guardar mis datos» cambia {cambiados} px. El 2026-10-15 eran \
+         0, que es la queja textual del dueno. Si vuelve a 0, el boton ha dejado de dar senal (AU-101)"
+    );
+    println!("  datos-guardar · hover · {cambiados} px distintos");
+}

@@ -1,6 +1,6 @@
 {
   "project": "pulso",
-  "updated": "2026-10-17T12:19:41-03:00",
+  "updated": "2026-10-17T12:20:27-03:00",
   "dimension": {
     "size": "mediano",
     "type": "modernizacion",
@@ -129,7 +129,7 @@
     {
       "id": "T010",
       "title": "Informe final y commit de cierre",
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "T009"
       ],

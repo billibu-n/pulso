@@ -7,3 +7,4 @@
 {"ts": "2026-10-17T12:12:20-03:00", "task": "T006", "cmd": "test -f informe/informe.html", "rc": 0, "segundos": 0.29, "motivo": ""}
 {"ts": "2026-10-17T12:12:20-03:00", "task": "T007", "cmd": "test -f datos/export.csv", "rc": 0, "segundos": 0.12, "motivo": ""}
 {"ts": "2026-10-17T12:19:36-03:00", "task": "T008", "cmd": "bash smoke-test.sh", "rc": 0, "segundos": 99.54, "motivo": ""}
+{"ts": "2026-10-17T12:20:27-03:00", "task": "T010", "cmd": "git tag --list v0.9-farellones | grep -q .", "rc": 0, "segundos": 0.12, "motivo": ""}

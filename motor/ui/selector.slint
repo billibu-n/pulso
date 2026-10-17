@@ -81,8 +81,20 @@ export component SelectorCarpeta inherits Rectangle {
                 border-color: oscuro ? Oscuro.linea : Claro.linea;
                 border-radius: 8px;
                 height: self.preferred-height;
+                // La senal, absoluta y DEBAJO del boton: fuera del layout, que si no reserva alto.
+                Rectangle {
+                    visible: toque_selector_subir.has-hover;
+                    x: 0; y: 0;
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 8px;
+                    background: (oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+                }
                 VerticalLayout {
                     padding: 2px;
+                    // CURSOR Y HOVER (defecto 2, medido el 2026-10-15: estos botones no daban NINGUNA
+                    // senal). El `Button` de serie no admite `mouse-cursor`, asi que el envoltorio lo
+                    // pone desde fuera y el halo va DEBAJO del boton: el clic sigue siendo suyo.
                     Button {
                         accessible-id: "selector-subir";
                         height: max(48px, self.preferred-height);
@@ -90,12 +102,25 @@ export component SelectorCarpeta inherits Rectangle {
                         clicked => { root.subir(); }
                     }
                 }
+                toque_selector_subir := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.subir(); }
+                }
             }
             Rectangle {
                 border-width: 2px;
                 border-color: oscuro ? Oscuro.linea : Claro.linea;
                 border-radius: 8px;
                 height: self.preferred-height;
+                // La senal, absoluta y DEBAJO del boton: fuera del layout, que si no reserva alto.
+                Rectangle {
+                    visible: toque_selector_usar.has-hover;
+                    x: 0; y: 0;
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 8px;
+                    background: (oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+                }
                 VerticalLayout {
                     padding: 2px;
                     Button {
@@ -107,12 +132,25 @@ export component SelectorCarpeta inherits Rectangle {
                         clicked => { root.usar(); }
                     }
                 }
+                toque_selector_usar := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.usar(); }
+                }
             }
             Rectangle {
                 border-width: 2px;
                 border-color: oscuro ? Oscuro.linea : Claro.linea;
                 border-radius: 8px;
                 height: self.preferred-height;
+                // La senal, absoluta y DEBAJO del boton: fuera del layout, que si no reserva alto.
+                Rectangle {
+                    visible: toque_selector_cerrar.has-hover;
+                    x: 0; y: 0;
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 8px;
+                    background: (oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+                }
                 VerticalLayout {
                     padding: 2px;
                     Button {
@@ -122,14 +160,42 @@ export component SelectorCarpeta inherits Rectangle {
                         clicked => { root.cerrar(); }
                     }
                 }
+                toque_selector_cerrar := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.cerrar(); }
+                }
             }
         }
 
-        // LAS SUBCARPETAS, cada una con su numero de FIT.
-        for e[i] in root.carpetas : Button {
-            accessible-id: "selector-entrada";
-            text: e.nombre + "   (" + e.cuantos + " FIT)";
-            clicked => { root.elegir(i); }
+        // LAS SUBCARPETAS, cada una con su numero de FIT. Con el mismo marco, el mismo minimo tactil
+        // y la misma senal de hover que los tres botones de arriba: es una lista de botones, no texto.
+        for e[i] in root.carpetas : Rectangle {
+            border-width: 2px;
+            border-color: oscuro ? Oscuro.linea : Claro.linea;
+            border-radius: 8px;
+            height: self.preferred-height;
+            // La senal, absoluta y DEBAJO del boton: fuera del layout, que si no reserva alto.
+            Rectangle {
+                visible: toque_selector_entrada.has-hover;
+                x: 0; y: 0;
+                width: 100%;
+                height: 100%;
+                border-radius: 8px;
+                background: (oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+            }
+            VerticalLayout {
+                padding: 2px;
+                Button {
+                    accessible-id: "selector-entrada";
+                    height: max(48px, self.preferred-height);
+                    text: e.nombre + "   (" + e.cuantos + " FIT)";
+                    clicked => { root.elegir(i); }
+                }
+            }
+            toque_selector_entrada := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.elegir(i); }
+            }
         }
     }
 }

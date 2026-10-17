@@ -595,7 +595,10 @@ component Datos inherits VerticalLayout {
     // Abre la capa del selector. La capa se dibuja en la VENTANA, no aqui: este panel solo pide.
     callback abrir-selector;
 
-    spacing: 10px;
+    // EL MISMO HUECO QUE EL RESTO (defecto 6, medido el 2026-10-15): esta seccion separaba sus
+    // bloques a 10 px mientras el contrato manda 14 (`docs/ESPECIFICACION-interfaz-resumen.md:53`).
+    // Dos numeros para lo mismo es como empieza una pantalla que no se parece a si misma.
+    spacing: 14px;
 
     // CADA FILA CON SU `Bloque`, COMO EN EL RESUMEN, Y AQUI HUBO UN DEFECTO DE VERDAD (2026-10-14):
     // esta seccion se colocaba entera como hija del armazon, **sin envoltorio**, y como el margen
@@ -632,6 +635,11 @@ component Datos inherits VerticalLayout {
             VerticalLayout {
                 horizontal-stretch: 1;
                 spacing: 8px;
+                // ALINEADAS ARRIBA LAS DOS COLUMNAS (defecto 4, medido el 2026-10-15): sin esto el
+                // layout reparte el sobrante de la columna corta (4 campos) ENTRE sus hijos, y la
+                // primera caja de la derecha cae 20 px por debajo de la de la izquierda. Con `start`
+                // las dos columnas empiezan a la misma altura y el sobrante se queda abajo.
+                alignment: start;
                 Campo { etiqueta: "Edad"; identificador: "datos-edad"; pista: "años"; texto <=> root.campos.edad; oscuro: root.oscuro; }
                 Campo { etiqueta: "Pulso en reposo"; identificador: "datos-pulso_reposo"; pista: "ppm, durmiendo"; texto <=> root.campos.pulso_reposo; oscuro: root.oscuro; }
                 Campo { etiqueta: "Pulso máximo"; identificador: "datos-pulso_maximo_medido"; pista: "ppm, medido"; texto <=> root.campos.pulso_maximo_medido; oscuro: root.oscuro; }
@@ -641,6 +649,8 @@ component Datos inherits VerticalLayout {
             VerticalLayout {
                 horizontal-stretch: 1;
                 spacing: 8px;
+                // La misma razon que en la columna izquierda (defecto 4): las dos empiezan arriba.
+                alignment: start;
                 Campo { etiqueta: "Peso"; identificador: "datos-peso_kg"; pista: "kg"; texto <=> root.campos.peso_kg; oscuro: root.oscuro; }
                 Campo { etiqueta: "Altura"; identificador: "datos-altura_cm"; pista: "cm"; texto <=> root.campos.altura_cm; oscuro: root.oscuro; }
                 Campo { etiqueta: "Grasa corporal"; identificador: "datos-grasa_corporal_pct"; pista: "%"; texto <=> root.campos.grasa_corporal_pct; oscuro: root.oscuro; }
@@ -664,6 +674,10 @@ component Datos inherits VerticalLayout {
     Bloque {
         ComboBox {
             accessible-id: "datos-sexo";
+            // MINIMO TACTIL DE LA CASA (defecto 3, medido el 2026-10-15: 32 px de alto). §3.11 lo
+            // pide para CADA control: `height: max(48px, self.preferred-height)`, igual que el
+            // LineEdit y el Button. Con `max()` y no un 48 fijo, para no recortar si el texto crece.
+            height: max(48px, self.preferred-height);
             model: ["No lo sé", "Femenino", "Masculino"];
             current-index: root.campos.sexo;
             // El callback entrega el TEXTO, y nuestro campo es un indice: se traduce aqui, que es donde
@@ -683,29 +697,31 @@ component Datos inherits VerticalLayout {
             border-color: root.oscuro ? Oscuro.linea : Claro.linea;
             border-radius: 8px;
             height: self.preferred-height;
+            // LA SENAL, ABSOLUTA Y DEBAJO: NO es hija del layout, porque un hijo del
+            // layout RESERVA SU ALTO. Medido el 2026-10-17: metida ahi, dejaba el marco
+            // en 100 px y el hueco entre botones en 66 -- el defecto con otro disfraz.
+            Rectangle {
+                visible: toque_datos_guardar.has-hover;
+                x: 0; y: 0;
+                width: 100%;
+                height: 100%;
+                border-radius: 8px;
+                background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+            }
             VerticalLayout {
                 // El hueco entre el borde y el boton lo pone el `padding`, no una cuenta.
                 padding: 2px;
                 // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
                 // compilador lo rechaza), asi que el envoltorio los pone desde fuera.
-                // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
-                // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
-                // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
+                // EL TOQUE va ENCIMA y dispara la MISMA accion que el `Button`: el elemento de arriba
+                // es el que recibe el puntero, asi que el `has-hover` se enciende seguro aunque el
+                // raton este sobre el boton. El `Button` sigue siendo el control accesible y el del
+                // teclado. Y va FUERA del layout: un hijo del layout reservaria su alto.
                 // SIN `accessible-role` NI `accessible-id` A PROPOSITO (AU-91, y lo caza la prueba
                 // `sin_resumen_...`): un envoltorio con nombre accesible seria una pieza con nombre y
                 // SIN TEXTO, o sea un vacio con marco, que la norma prohibe. El nombre accesible lo da
                 // el `Button` de dentro, que es el control de verdad. El `:=` de aqui es el nombre
                 // INTERNO de Slint -- sirve para consultar `has-hover` -- y no sale en el arbol accesible.
-                toque_datos_guardar := TouchArea {
-                    mouse-cursor: pointer;
-                }
-                Rectangle {
-                    visible: toque_datos_guardar.has-hover;
-                    width: 100%;
-                    height: max(48px, self.preferred-height);
-                    border-radius: 8px;
-                    background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
-                }
                 Button {
                                     accessible-id: "datos-guardar";
                                     height: max(48px, self.preferred-height);
@@ -714,13 +730,20 @@ component Datos inherits VerticalLayout {
                                     clicked => { root.guardar(); }
                                 }
             }
+            toque_datos_guardar := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.guardar(); }
+            }
         }
     }
 
     // LO QUE PASO AL GUARDAR, en una linea: o se guardo, o se dice que campo esta mal. **Un numero mal
     // escrito no se traga en silencio**: guardar un cero donde el usuario no escribio nada seria un
     // dato falso con buena cara, que es justo lo que este proyecto no hace.
-    Bloque {
+    // EL `if` NO ES DECORATIVO (defecto 5, medido el 2026-10-15): con el `Text` siempre dibujado, su
+    // linea VACIA ocupaba sitio y dejaba 63 px de aire muerto entre «Guardar» y «Buscar». §3.11 dice
+    // que la linea de mensaje NO se dibuja si no hay nada que decir.
+    if root.mensaje != "" : Bloque {
         Text {
             accessible-id: "datos-mensaje";
             text: root.mensaje;
@@ -735,7 +758,8 @@ component Datos inherits VerticalLayout {
     // DONDE VIVEN SUS DATOS, y no es un detalle: el dueño decidio que el fichero viaje JUNTO AL
     // PROGRAMA, y si no se pudo escribir ahi hay que decirlo, porque el usuario tiene derecho a saber
     // donde estan sus datos.
-    Bloque {
+    // Si no hay ruta que decir, tampoco se dibuja (defecto 5: era la segunda linea vacia del hueco).
+    if root.ruta != "" : Bloque {
         Text {
             accessible-id: "datos-ruta";
             text: root.ruta;
@@ -753,29 +777,35 @@ component Datos inherits VerticalLayout {
             border-color: root.oscuro ? Oscuro.linea : Claro.linea;
             border-radius: 8px;
             height: self.preferred-height;
+            // LA SENAL, ABSOLUTA Y DEBAJO: NO es hija del layout, porque un hijo del
+            // layout RESERVA SU ALTO. Medido el 2026-10-17: metida ahi, dejaba el marco
+            // en 100 px y el hueco entre botones en 66 -- el defecto con otro disfraz.
+            Rectangle {
+                visible: toque_datos_buscar.has-hover;
+                x: 0; y: 0;
+                width: 100%;
+                height: 100%;
+                border-radius: 8px;
+                background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+            }
             VerticalLayout {
                 padding: 2px;
                 // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
                 // compilador lo rechaza), asi que el envoltorio los pone desde fuera.
-                // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
-                // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
-                // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
-                toque_datos_buscar := TouchArea {
-                    mouse-cursor: pointer;
-                }
-                Rectangle {
-                    visible: toque_datos_buscar.has-hover;
-                    width: 100%;
-                    height: max(48px, self.preferred-height);
-                    border-radius: 8px;
-                    background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
-                }
+                // EL TOQUE va ENCIMA y dispara la MISMA accion que el `Button`: el elemento de arriba
+                // es el que recibe el puntero, asi que el `has-hover` se enciende seguro aunque el
+                // raton este sobre el boton. El `Button` sigue siendo el control accesible y el del
+                // teclado. Y va FUERA del layout: un hijo del layout reservaria su alto.
                 Button {
                                     accessible-id: "datos-buscar";
                                     height: max(48px, self.preferred-height);
                                     text: "Buscar mis ficheros";
                                     clicked => { root.abrir-selector(); }
                                 }
+            }
+            toque_datos_buscar := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.abrir-selector(); }
             }
         }
     }
@@ -880,6 +910,17 @@ component Datos inherits VerticalLayout {
                     border-color: root.oscuro ? Oscuro.linea : Claro.linea;
                     border-radius: 8px;
                     height: self.preferred-height;
+                    // LA SENAL, ABSOLUTA Y DEBAJO: NO es hija del layout, porque un hijo del
+                    // layout RESERVA SU ALTO. Medido el 2026-10-17: metida ahi, dejaba el marco
+                    // en 100 px y el hueco entre botones en 66 -- el defecto con otro disfraz.
+                    Rectangle {
+                        visible: toque_garmin_sincronizar.has-hover;
+                        x: 0; y: 0;
+                        width: 100%;
+                        height: 100%;
+                        border-radius: 8px;
+                        background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.12);
+                    }
                     VerticalLayout {
                         padding: 2px;
                         // CURSOR Y HOVER: el `Button` del kit NO admite `mouse-cursor` (medido el 2026-10-15: el
@@ -887,16 +928,6 @@ component Datos inherits VerticalLayout {
                         // El halo va DEBAJO y el `Button` ENCIMA, asi que el clic sigue siendo suyo: nada de lo
                         // que ya funcionaba cambia. OJO: nada de `width: parent.width` aqui — medido, eso es un
                         // BUCLE de binding dentro de un layout; se usa `100%`, que es lo que un layout entiende.
-                        toque_garmin_sincronizar := TouchArea {
-                            mouse-cursor: pointer;
-                        }
-                        Rectangle {
-                            visible: toque_garmin_sincronizar.has-hover;
-                            width: 100%;
-                            height: max(48px, self.preferred-height);
-                            border-radius: 8px;
-                            background: (root.oscuro ? Oscuro.ac : Claro.ac).with-alpha(0.10);
-                        }
                         Button {
                                                     accessible-id: "garmin-sincronizar";
                                                     height: max(48px, self.preferred-height);
@@ -904,6 +935,10 @@ component Datos inherits VerticalLayout {
                                                     enabled: !root.garmin_sincronizando;
                                                     clicked => { root.sincronizar-garmin(); }
                                                 }
+                    }
+                    toque_garmin_sincronizar := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.sincronizar-garmin(); }
                     }
                 }
 
@@ -939,6 +974,9 @@ component Datos inherits VerticalLayout {
     Bloque {
         Switch {
             accessible-id: "datos-tema";
+            // MINIMO TACTIL (defecto 3, medido: 20 px de alto). Como el ComboBox: `max()` para no
+            // recortar el texto el dia que crezca.
+            height: max(48px, self.preferred-height);
             checked <=> root.oscuro;
             text: "Tema oscuro";
         }

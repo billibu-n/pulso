@@ -1,6 +1,6 @@
 {
   "project": "pulso",
-  "updated": "2026-10-17T11:53:31-03:00",
+  "updated": "2026-10-17T12:12:29-03:00",
   "dimension": {
     "size": "mediano",
     "type": "modernizacion",
@@ -24,7 +24,7 @@
     {
       "id": "T002",
       "title": "Arreglar 4 defectos graves de interfaz (grid, botones, combo, switch)",
-      "status": "pending",
+      "status": "done",
       "depends_on": [],
       "acceptance": "cd motor && cargo test --test medir-estados --quiet && cargo test --test medir-interfaz --quiet",
       "budget": {
@@ -36,7 +36,7 @@
     {
       "id": "T003",
       "title": "Arreglar 63 px fantasma y 1 aviso de compilacion",
-      "status": "pending",
+      "status": "done",
       "depends_on": [],
       "acceptance": "bash -c 'cd motor && ! cargo build 2>&1 | grep -q \"warning:\"'",
       "budget": {
@@ -72,7 +72,7 @@
     {
       "id": "T006",
       "title": "Exportacion HTML del informe",
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "T001"
       ],
@@ -86,7 +86,7 @@
     {
       "id": "T007",
       "title": "Exportacion CSV de actividades/potencia/zonas",
-      "status": "pending",
+      "status": "done",
       "depends_on": [
         "T001"
       ],

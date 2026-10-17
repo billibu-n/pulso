@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análisis de entrenamiento</title>
+<style>
+:root{--tinta:#14181f;--suave:#4b5563;--linea:#d7dbe2;--fondo:#ffffff;--papel:#f6f7f9;--acento:#1e5eff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:860px;margin:32px auto;padding:32px 40px;background:var(--fondo);border:1px solid var(--linea);border-radius:12px}
+h1{margin:0 0 4px;font-size:28px;line-height:1.2}
+h2{margin:32px 0 12px;font-size:20px;line-height:1.25;border-bottom:2px solid var(--linea);padding-bottom:6px}
+p{margin:12px 0}
+.fecha{margin:0 0 24px;color:var(--suave);font-size:13px}
+.nota{color:var(--suave);font-size:13px}
+table{width:100%;border-collapse:collapse;margin:12px 0 16px;font-size:14px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--linea);text-align:left;vertical-align:top}
+th{background:var(--papel);font-weight:700}
+td:last-child,th:last-child{text-align:left}
+ul{margin:12px 0 12px 22px;padding:0}
+li{margin:6px 0}
+hr{margin:28px 0;border:0;border-top:1px solid var(--linea)}
+footer{margin-top:28px;padding-top:12px;border-top:1px solid var(--linea);color:var(--suave);font-size:12px}
+@media print{body{background:#fff}main{margin:0;border:0;border-radius:0;padding:0;max-width:none}}
+</style>
+</head>
+<body>
+<main>
+<h1>Análisis de entrenamiento</h1>
+<p class="fecha">2026-10-17</p>
+<h1>Análisis de entrenamiento</h1>
+<p>Informe generado a partir de los datos de entrenamiento. Cada número sale de una fórmula con su margen, y el margen está escrito.</p>
+<h2>Lo que se puede afirmar</h2>
+<p>La referencia para las zonas es el <strong>umbral de lactato medido</strong>, con un valor de <strong>169 ± 3 pulsaciones</strong> (precisión alta).</p>
+<p><em>el dato está medido, o el margen es mínimo</em></p>
+<h2>Sus zonas de entrenamiento</h2>
+<table>
+<thead><tr><th>zona</th><th>pulsaciones</th><th>qué es</th></tr></thead>
+<tbody>
+<tr><td><strong>recuperación</strong></td><td>hasta 137</td><td>rodar suave: sirve para recuperar, no para mejorar</td></tr>
+<tr><td><strong>resistencia</strong></td><td>137 – 152</td><td>el fondo: aquí se construye la base aeróbica</td></tr>
+<tr><td><strong>tempo</strong></td><td>152 – 159</td><td>trabajo sostenido: cuesta, pero se aguanta un rato largo</td></tr>
+<tr><td><strong>umbral</strong></td><td>159 – 169</td><td>justo en el umbral: es la zona que más mejora la resistencia</td></tr>
+<tr><td><strong>consumo máximo</strong></td><td>169 – 203</td><td>por encima del umbral: se aguanta poco, y cansa mucho</td></tr>
+</tbody>
+</table>
+<p class="nota">Zonas de ciclismo, fijadas sobre el umbral. El margen del umbral es de ± 3 pulsaciones.</p>
+<h2>Su frecuencia cardíaca máxima</h2>
+<p><strong>183 ± 2 pulsaciones</strong>, medida en una prueba.</p>
+<h2>Lo que se deduce de sus datos</h2>
+<p>Estos números <strong>no vienen en el fichero del aparato</strong>: salen de comparar el pulso con la potencia.</p>
+<p><strong>Deriva del pulso: +13.8 ± 3.0 %</strong> — se le escapa el pulso.</p>
+<p><em>el pulso se le escapa y la potencia cae: ese es el límite de duración a esta intensidad</em></p>
+<p>Medido sobre 6309 muestras.</p>
+<p><strong>Eficiencia: 1.018 ± 0.005 vatios por pulsación.</strong></p>
+<p>Es la medida de la mejora: si sube con el tiempo, hace el mismo trabajo con menos pulso.</p>
+<h2>Para que el análisis sea más preciso</h2>
+<p>No falta ningún dato: el análisis está en su mejor versión posible con lo que hay.</p>
+<p>Datos disponibles: <strong>7 de 9</strong>.</p>
+<hr>
+<p><em>Este informe describe el rendimiento y la carga de entrenamiento a partir de los datos registrados. No es un diagnóstico médico: cualquier decisión sobre intensidad o salud corresponde a un profesional sanitario.</em></p>
+<footer>Generado por Pulso. Cada numero sale de un calculo del motor; este documento no es un diagnostico medico.</footer>
+</main>
+</body>
+</html>

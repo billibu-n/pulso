@@ -63,7 +63,10 @@ fn ventana_de_pantalla_estrecha() -> (Rc<MinimalSoftwareWindow>, Ventana) {
     w.set_size(slint::PhysicalSize::new(ANCHO, ALTO));
     let v = Ventana::new().expect("la ventana tiene que construirse");
     let mut p = Persona::desconocida();
-    profile::aplicar(&mut p, &[("edad", "52"), ("umbral_lactato", "169")]);
+    // El `Result` SE COMPRUEBA, no se ignora (aviso de compilacion cazado el 2026-10-17): si estos
+    // datos no se aplican, la prueba mediria una persona distinta de la que dice medir.
+    profile::aplicar(&mut p, &[("edad", "52"), ("umbral_lactato", "169")])
+        .expect("los datos de la persona de la prueba tienen que aplicarse");
     let ensenado = cara::lo_que_ensena(&p, None);
     pintar::pintar(&v, &ensenado);
     let _ = v.show();

@@ -3076,3 +3076,104 @@ fn el_bloque_garmin_cae_dentro_del_margen_de_16_de_la_pantalla() {
         faltas.join("\n  - ")
     );
 }
+
+// ============================================================================
+// LOS DEFECTOS 3, 4 y 5 DE LA AUDITORIA DEL 2026-10-15 (T002 y T003)
+//
+// POR QUE ESTAS PRUEBAS EXISTEN (2026-10-17): el gate de T002 corria `medir-estados` y
+// `medir-interfaz` y daba VERDE **sin que ninguna prueba mirase el desplegable, el interruptor, el
+// grid ni el aire muerto**. Un gate que no puede fallar no es un gate. Estas tres pruebas son el
+// portero de esos defectos: si alguien vuelve a bajar el control a 32, a desalinear las columnas o
+// a dibujar la linea vacia, la suite se pone ROJA.
+// ============================================================================
+
+/// Defecto 3: el `ComboBox` medía **32 px** y el `Switch` **20 px**, por debajo del minimo tactil de
+/// la casa (48, §3.11). Se mide el CONTROL, no el bloque: es el que recibe el dedo.
+#[test]
+fn el_desplegable_y_el_interruptor_llegan_al_minimo_tactil() {
+    let v = ventana_alta(ALTO_DE_SOBRA);
+    let todos = ElementQuery::from_root(&v).find_all();
+    for id in ["datos-sexo", "datos-tema"] {
+        let e = buscar(&todos, id).unwrap_or_else(|| panic!("no se encontro el control `{id}`"));
+        let (_, _, ancho, alto) = caja(e);
+        assert!(
+            alto >= doc::TACTIL - 0.5,
+            "el control `{id}` tiene que llegar a {} dp de alto (minimo tactil, §3.11) y mide {alto:.1} ({ancho:.1} de ancho). \
+             El 2026-10-15 el ComboBox medía 32 y el Switch 20: los dos por debajo del dedo",
+            doc::TACTIL
+        );
+        println!("  {id} · {ancho:.0}x{alto:.0} (minimo tactil {:.0})", doc::TACTIL);
+    }
+}
+
+/// Defecto 4: la columna de la derecha caia **20 px** por debajo de la izquierda porque el layout
+/// repartia el sobrante de la columna corta entre sus hijos. Se comparan las CAJAS de los campos,
+/// que es lo que el ojo ve: «Edad» contra «Peso», «Pulso en reposo» contra «Altura».
+#[test]
+fn el_grid_de_campos_alinea_las_dos_columnas() {
+    let v = ventana_alta(ALTO_DE_SOBRA);
+    let todos = ElementQuery::from_root(&v).find_all();
+    let pares = [
+        ("datos-edad", "datos-peso_kg"),
+        ("datos-pulso_reposo", "datos-altura_cm"),
+        ("datos-pulso_maximo_medido", "datos-grasa_corporal_pct"),
+        ("datos-umbral_lactato", "datos-masa_muscular_kg"),
+    ];
+    for (izq, der) in pares {
+        let a = buscar(&todos, izq).unwrap_or_else(|| panic!("no se encontro `{izq}`"));
+        let b = buscar(&todos, der).unwrap_or_else(|| panic!("no se encontro `{der}`"));
+        let (_, ya, _, _) = caja(a);
+        let (_, yb, _, _) = caja(b);
+        let desfase = (ya - yb).abs();
+        assert!(
+            desfase <= 1.0,
+            "«{izq}» y «{der}» tienen que empezar a la MISMA altura (defecto 4: estaban a 20 px). \
+             Empiezan en y={ya:.1} y y={yb:.1}, desfase {desfase:.1}"
+        );
+    }
+    println!("  grid de Datos · las 4 filas alineadas (desfase <= 1 px)");
+}
+
+/// Defecto 5: entre «Guardar mis datos» y «Buscar mis ficheros» habia **63 px** de aire muerto: dos
+/// lineas de texto vacias (mensaje y ruta) que se dibujaban siempre. Ahora no se dibujan si no hay
+/// nada que decir, y el hueco es el de dos bloques vecinos (14). Se comprueba en los dos sentidos:
+/// sin mensaje el hueco es de vecinos, y CON mensaje el texto aparece (no se ha roto el aviso).
+#[test]
+fn sin_mensaje_ni_ruta_no_queda_aire_muerto_entre_guardar_y_buscar() {
+    let v = ventana_alta(ALTO_DE_SOBRA);
+
+    let todos = ElementQuery::from_root(&v).find_all();
+    assert!(
+        buscar(&todos, "datos-mensaje").is_none(),
+        "sin nada que decir, la linea del mensaje NO se dibuja (defecto 5: su linea vacia dejaba 63 px de aire)"
+    );
+    assert!(
+        buscar(&todos, "datos-ruta").is_none(),
+        "sin ruta que decir, la linea de la ruta NO se dibuja (defecto 5)"
+    );
+
+    let guardar = buscar(&todos, "datos-guardar").expect("el boton de guardar tiene que existir");
+    let buscar_btn = buscar(&todos, "datos-buscar").expect("el boton de buscar tiene que existir");
+    let (_, y1, _, h1) = caja(guardar);
+    let (_, y2, _, _) = caja(buscar_btn);
+    let hueco = y2 - (y1 + h1);
+    assert!(
+        hueco >= 0.0,
+        "los dos botones estan solapados: guardar acaba en {:.1} y buscar empieza en {y2:.1}",
+        y1 + h1
+    );
+    assert!(
+        hueco <= 26.0,
+        "entre «Guardar» y «Buscar» quedan {hueco:.1} px de aire; el 2026-10-15 eran 63. Lo que queda \
+         es el canto de los dos marcos (4+4) mas el hueco de 14 entre bloques: 22. Si pasa de 26, hay \
+         una linea vacia -- o un halo metido en el layout -- ocupando sitio otra vez"
+    );
+    println!("  hueco Guardar→Buscar · {hueco:.1} px (de 63 medidos el 2026-10-15)");
+
+    // Y el aviso sigue funcionando cuando SI hay algo que decir.
+    v.set_mensaje_guardado("Sus datos se guardaron.".into());
+    let todos = ElementQuery::from_root(&v).find_all();
+    let mensaje = buscar(&todos, "datos-mensaje").expect("con mensaje, la linea TIENE que dibujarse");
+    let (_, _, _, alto) = caja(mensaje);
+    assert!(alto > 0.0, "el mensaje dibujado tiene que tener alto, y mide {alto}");
+}

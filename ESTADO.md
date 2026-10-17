@@ -673,3 +673,31 @@ parser de hoy, **el estrés no se leería del dato real**. Y el pulso en reposo 
 las llamadas a los datos). `CONTRATO-garmin-sync.md` **no cambia** — esta vía ES su «vía 1 · API
 interna»; solo se precisa por dónde pasa. **Antes de aprobarlo hay que medir si un WebView cabe en
 la aplicación (Rust + Slint, Android)**: es lo primero del chat siguiente.
+
+---
+
+## 8. RONDA 1 (2026-10-17): decisiones cerradas, plan y el boton vivo
+
+**Que se cerro** (cada una con su ADR en `DECISIONS.md`):
+
+- **ADR-001**: el bienestar (sueno, estres y pulso en reposo) queda **fuera** del encargo de
+  Farellones; se declara «no vino» y se pospone. El informe no lo incluye, y el cliente debe saberlo.
+- **ADR-002**: la entrega es **escritorio + exportacion HTML/CSV/PDF**; el WebView queda para despues.
+- **ADR-003**: el **APK se pospone**; Farellones no lleva Android.
+
+**Plan**: `PLAN.json` con 10 tareas (T001-T010) y DAG validado (**0 choques, 0 avisos**).
+`TASK-ACCEPTANCE.md` lleva el comando de cada gate. T001 hecha; T002-T005 en paralelo (semana 1).
+
+**T001, conectada y medida**:
+
+- `cara::texto_de_sincronizacion` (frase pura, **5 pruebas nuevas**).
+- `pulso.rs`: `el_analisis` devuelve tambien `Cuantas`; `on_sincronizar_garmin` relee la carpeta
+  con la memoria incremental, repinta y escribe la frase. **Sin red y sin tocar la cuenta.**
+- Evidencia: `cargo test` -> **414 pasan, 0 fallan** (409 + 5); `gate.py T001` -> **VERDE**
+  (6,59 s); commit `9c0c87a`.
+- El boton ya no esta muerto: `garmin_via` pasa a «carpeta local» y `garmin_conectado` sigue en
+  «No conectado» **a proposito**: no hay cuenta conectada.
+
+**Lo que NO entra** (decidido, no olvidado): bienestar, Android/APK, WebView.
+
+**Siguiente**: T002 (4 defectos graves de UI), T003 (63 px + aviso), T004 (sello), T005 (README/ESTADO).

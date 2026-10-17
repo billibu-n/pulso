@@ -1,6 +1,6 @@
 {
   "project": "pulso",
-  "updated": "2026-10-17T11:48:50-03:00",
+  "updated": "2026-10-17T11:53:31-03:00",
   "dimension": {
     "size": "mediano",
     "type": "modernizacion",
@@ -48,7 +48,7 @@
     {
       "id": "T004",
       "title": "Arreglar el sello sesion/resumen.py",
-      "status": "pending",
+      "status": "done",
       "depends_on": [],
       "acceptance": "python3 sesion/resumen.py | grep -q Farellones && ! python3 sesion/resumen.py | grep -q '(sin meta declarada)'",
       "budget": {
@@ -60,9 +60,9 @@
     {
       "id": "T005",
       "title": "Actualizar README/ESTADO con las cifras reales",
-      "status": "pending",
+      "status": "done",
       "depends_on": [],
-      "acceptance": "grep -q 409 README.md && grep -q 409 ESTADO.md",
+      "acceptance": "grep -q 414 README.md && grep -q 414 ESTADO.md",
       "budget": {
         "maxCalls": 20,
         "maxUsd": 0.2

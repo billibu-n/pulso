@@ -43,17 +43,21 @@ def _tareas(tasks: dict):
     es una NOTA de estado, no una tarea: se va a `curso` y no ensucia la lista de pendientes.
     """
     bruto = tasks.get("tareas") or tasks.get("tasks") or []
+    if not bruto:
+        # El PLAN es la fuente de las tareas cuando el TASKS.json solo lleva el encargo.
+        plan = _leer_json(RAIZ / "PLAN.json") or {}
+        bruto = plan.get("tasks") or []
     hechas, curso, pend = [], [], []
     for t in bruto:
         if not isinstance(t, dict):
             continue
         estado = str(t.get("estado") or t.get("status") or "").lower()
-        que = " ".join(str(t.get("descripcion") or t.get("title") or "").split())
+        que = " ".join(str(t.get("descripcion") or t.get("title") or t.get("que") or "").split())
         item = {"id": t.get("id", "?"), "que": que[:300], "estado": estado}
         es_nota = bool(re.match(r"^(F\d|Hito|[A-Z]\d?F\d)", que)) or " hecha" in que[:26].lower()
         if estado.startswith(("hech", "done", "cerrad", "complet")):
             hechas.append(item)
-        elif estado.startswith(("en ", "curso", "wip", "progreso", "abiert")) or es_nota:
+        elif estado.startswith(("en ", "en_", "curso", "wip", "progreso", "abiert", "in-", "in_")) or es_nota:
             curso.append(item)
         else:
             pend.append(item)
@@ -61,16 +65,21 @@ def _tareas(tasks: dict):
 
 
 def sello() -> list[str]:
-    tasks = _leer_json(RAIZ / "datos" / "trabajo-ui" / "TASKS.json") or _leer_json(RAIZ / "TASKS.json")
+    # EL ORDEN IMPORTA: manda el TASKS.json de la RAIZ (el del andamiaje). El de
+    # datos/trabajo-ui/ es el encargo de un chat concreto y puede estar viejo.
+    tasks = _leer_json(RAIZ / "TASKS.json") or _leer_json(RAIZ / "datos" / "trabajo-ui" / "TASKS.json")
     if tasks is None:
-        return ["[SIN SELLO] no encuentro datos/trabajo-ui/TASKS.json: el encargo no esta en disco."]
+        return ["[SIN SELLO] no encuentro TASKS.json ni en la raiz ni en datos/trabajo-ui/: el encargo no esta en disco."]
 
     L: list[str] = []
     L.append("# SELLO DE MANO — pulso (leer esto ANTES de tocar nada)")
     L.append(f"actualizado: {tasks.get('actualizado', '?')}   rama: {tasks.get('rama', '?')}")
     L.append("")
     L.append("## EL OBJETIVO DEL CLIENTE (esto NO se reinterpreta, prima sobre todo lo demas)")
-    for lin in _envolver(str(tasks.get("meta_del_proyecto", "(sin meta declarada)")), 96):
+    meta = tasks.get("meta_del_proyecto") or tasks.get("encargo")
+    if not meta:
+        meta = "(el TASKS.json no declara objetivo: anade `encargo` o `meta_del_proyecto`)"
+    for lin in _envolver(str(meta), 96):
         L.append("  " + lin)
     L.append("")
 

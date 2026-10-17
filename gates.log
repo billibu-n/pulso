@@ -1,1 +1,3 @@
 {"ts": "2026-10-17T11:48:40-03:00", "task": "T001", "cmd": "cd motor && cargo test --quiet >/dev/null 2>&1 && grep -q on_sincronizar_garmin src/bin/pulso.rs", "rc": 0, "segundos": 6.59, "motivo": ""}
+{"ts": "2026-10-17T11:53:16-03:00", "task": "T004", "cmd": "python3 sesion/resumen.py | grep -q Farellones && ! python3 sesion/resumen.py | grep -q '(sin meta declarada)'", "rc": 0, "segundos": 0.21, "motivo": ""}
+{"ts": "2026-10-17T11:53:31-03:00", "task": "T005", "cmd": "grep -q 414 README.md && grep -q 414 ESTADO.md", "rc": 0, "segundos": 0.04, "motivo": ""}

@@ -30,7 +30,7 @@
 - Tiempo máximo: 300
 
 ## T005: Actualizar README/ESTADO con las cifras reales
-- Comando: `grep -q 409 README.md && grep -q 409 ESTADO.md`
+- Comando: `grep -q 414 README.md && grep -q 414 ESTADO.md`
 - Resultado esperado: comando con exit 0
 - Tiempo máximo: 300
 

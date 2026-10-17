@@ -30,7 +30,7 @@ Asi que:
 
 | que | donde |
 |---|---|
-| **el motor** (Rust) | `motor/` -- **189 pruebas, cero avisos** (`pruebas.rs` 155 · `huawei.rs` 12 · `medir-interfaz.rs` 9 · `recorrido.rs` 11 · `pulso.rs` 2) |
+| **el motor** (Rust) | `motor/` -- **414 pruebas, 0 fallos, 1 aviso conocido** (`pruebas.rs` 161 · `recorrido.rs` 24 · `medir-interfaz.rs` 36 · `huawei.rs` 13 · `medir-estados.rs` 1 · 179 inline) |
 | **la documentacion** | `docs/` -- el caso, el flujo real, la investigacion, el plan |
 | **los analisis medidos** | `analisis/` |
 | **el informe generado** | `informe/ejemplo-generado.md` |
@@ -73,7 +73,7 @@ motor/                  el motor, en Rust, con sus pruebas
   src/tendencia.rs      ¿mejora o solo entrena?
   src/juicio.rs         las tres respuestas
   src/adaptador.rs      el formato de fuera, traducido al nuestro
-  tests/pruebas.rs      42 pruebas, en los dos sentidos
+  tests/pruebas.rs      161 pruebas, en los dos sentidos
 docs/                   el contexto, los fundamentos y las decisiones
 analisis/               los análisis, repetibles
 datos-de-ejemplo/       datos SINTÉTICOS, para poder probarlo sin datos de nadie
@@ -85,7 +85,7 @@ herramientas/           comprobaciones del entorno
 
 ```bash
 cd motor
-cargo test          # 42 pruebas
+cargo test          # 414 pruebas
 cargo run --bin demo        # las tres respuestas, con datos inventados
 cargo run --bin caso        # un ciclista de 60 años, sintético
 ```
@@ -125,13 +125,21 @@ Cada regla de este motor está respaldada, y **las fuentes están en `docs/`**:
 - **Y por qué la frecuencia máxima NO se estima**: un trabajo de 2025 que valida **siete ecuaciones**
   contra **634 personas** y encuentra que **ninguna sirve por encima de los 40 años**.
 
+## Alcance de la entrega (Farellones, 2026-11-29)
+
+**Dentro** (camino crítico): actividades, potencia, zonas, tendencia e informe. La app es un motor
+**hexagonal** en Rust + Slint, con **21 instrumentos CLI**, **4 pantallas medidas** y **2 temas**;
+lee **FIT de Garmin** y la **exportación ZIP de Huawei**.
+
+**Fuera** (decidido en `DECISIONS.md`): el **bienestar** (sueño, estrés, pulso en reposo) no entra en
+el informe (ADR-001); **Android/APK** queda para después (ADR-003); **WebView** también (ADR-002).
+Cuando falta un dato, la app dice que no vino; no lo inventa.
+
 ## Estado
 
-**En construcción.** Es la fase del motor: **calcular, decidir y justificar**. Todavía **no hay interfaz
-ni aplicación instalable**.
-
-**Y este repositorio es, a propósito, solo la parte que se puede publicar**: el motor y su fundamento. Los
-datos de la persona para la que se construyó **se quedan donde tienen que quedarse**.
+**En construcción.** El motor **calcula, decide y justifica**, y la interfaz **existe y se mide**:
+**4 pantallas** (Resumen, Zonas, Sesiones, Datos), **2 temas** y **187 iconos**. El APK no entra en
+Farellones (ADR-003); se entrega escritorio + exportación (ADR-002).
 
 ## Licencia
 

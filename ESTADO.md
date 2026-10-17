@@ -701,3 +701,16 @@ la aplicación (Rust + Slint, Android)**: es lo primero del chat siguiente.
 **Lo que NO entra** (decidido, no olvidado): bienestar, Android/APK, WebView.
 
 **Siguiente**: T002 (4 defectos graves de UI), T003 (63 px + aviso), T004 (sello), T005 (README/ESTADO).
+
+---
+
+## 9. RONDA 2 (2026-10-17): el sello vuelve a hablar, y el README dice la verdad
+
+- **T004 cerrada**: `sesion/resumen.py` prioriza el `TASKS.json` de la raiz, acepta `encargo`/`que`,
+  cae al `PLAN.json` cuando no hay tareas y dice el objetivo en vez de `(sin meta declarada)`.
+  Gate **VERDE** (0,21 s). El sello imprime objetivo, 1 hecha / 9 pendientes (8 visibles por tope),
+  cierre del chat y rama.
+- **T005 cerrada**: README con **414 pruebas**, **4 pantallas**, **2 temas**, **187 iconos**,
+  **21 instrumentos**, las dos integraciones y el alcance de Farellones (ADR-001/002/003).
+- **Siguiente**: T002 (4 defectos graves de UI) y T003 (63 px + aviso); T006/T007 despues.
+- **Nota**: los 9,7 GB de `motor/target/` siguen ahi; `cargo clean` no se ejecuto (sin confirmacion).

@@ -146,11 +146,11 @@ fn lista_de_campos(c: &DatosPersona) -> Vec<(&'static str, String)> {
 ///
 /// OJO CON EL TAMANO: al principio se comparo contra «1.003 MB», y era un error mio -- esa cifra es
 /// **todo** `datos/`, con la base de datos de Garmin dentro. Los 102 FIT pesan **34 MB**.
-fn el_analisis(carpeta: &Path, ruta_memoria: &Path) -> Option<Real> {
+fn el_analisis(carpeta: &Path, ruta_memoria: &Path) -> (Option<Real>, analisis::Cuantas) {
     // La carpeta no existe: no se lee nada. No es un error, es «no hay datos», y la pantalla ya sabe
     // decirlo.
     if !carpeta.exists() {
-        return None;
+        return (None, analisis::Cuantas::default());
     }
     // LO RECORDADO, Y SOLO LO NUEVO. Esto es lo que hace que añadir la sesion de hoy no obligue a
     // releer los tres meses de historico: cada fichero ya leido deja su ficha, y aqui solo se leen las
@@ -163,9 +163,9 @@ fn el_analisis(carpeta: &Path, ruta_memoria: &Path) -> Option<Real> {
             "  {} sesiones - {} recordadas - {} leidas",
             real.sesiones, cuantas.recordadas, cuantas.leidas
         );
-        Some(real)
+        (Some(real), cuantas)
     } else {
-        None
+        (None, cuantas)
     }
 }
 
@@ -392,7 +392,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // ---- Y EL ANALISIS, CON MEMORIA ----
     let ruta_memoria = ruta_de_la_memoria(&ruta_perfil);
-    let real = el_analisis(carpeta.borrow().as_path(), &ruta_memoria);
+    let (real, _) = el_analisis(carpeta.borrow().as_path(), &ruta_memoria);
 
     // ---- LO QUE SE ENSEÑA: LO DECIDE `cara`, NO ESTE FICHERO ----
     let ensenado = cara::lo_que_ensena(&persona, real.as_ref());
@@ -500,7 +500,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     w.set_mensaje_guardado("Guardado.".into());
                     w.set_error_al_guardar(false);
                     // Y SE VUELVE A CALCULAR CON SUS DATOS NUEVOS.
-                    let real = el_analisis(carpeta_guardar.borrow().as_path(), &ruta_memoria_guardar);
+                    let (real, _) = el_analisis(carpeta_guardar.borrow().as_path(), &ruta_memoria_guardar);
                     let e = cara::lo_que_ensena(&nueva, real.as_ref());
                     pintar::pintar(&w, &e);
                     w.set_campos(campos_de(&nueva));
@@ -569,11 +569,36 @@ fn main() -> Result<(), slint::PlatformError> {
         move || {
             if let Some(v) = w.upgrade() {
                 v.set_eligiendo(false);
-                let real = el_analisis(d.borrow().as_path(), &mem);
+                let (real, _) = el_analisis(d.borrow().as_path(), &mem);
                 let persona = profile::leer(&perfil).unwrap_or_else(|_| Persona::desconocida());
                 let e = cara::lo_que_ensena(&persona, real.as_ref());
                 pintar::pintar(&v, &e);
             }
+        }
+    });
+
+    // ---- SINCRONIZAR, EN LOCAL (T001) ----
+    //
+    // QUE HACE Y QUE NO: relee la carpeta elegida con la memoria incremental y escribe en la
+    // pantalla cuantos ficheros entraron. **NO hay red y NO se toca la cuenta de Garmin**: eso es
+    // la via del WebView, que esta pospuesta (ADR-002). El boton deja de ser un boton muerto.
+    //
+    // POR QUE AQUI Y NO EN `cara`: la frase es pura y vive en `cara`; este bloque solo une el
+    // boton con el motor, como el resto de `pulso.rs` (que no calcula ni decide).
+    let w_sync = ventana.as_weak();
+    let d_sync = carpeta.clone();
+    let mem_sync = ruta_memoria.clone();
+    let perfil_sync = ruta_perfil.clone();
+    ventana.on_sincronizar_garmin(move || {
+        if let Some(v) = w_sync.upgrade() {
+            let (real, cuantas) = el_analisis(d_sync.borrow().as_path(), &mem_sync);
+            let persona = profile::leer(&perfil_sync).unwrap_or_else(|_| Persona::desconocida());
+            let e = cara::lo_que_ensena(&persona, real.as_ref());
+            pintar::pintar(&v, &e);
+            v.set_garmin_via("carpeta local".into());
+            v.set_garmin_resumen(
+                cara::texto_de_sincronizacion(&cuantas, real.as_ref().map(|r| r.sesiones)).into(),
+            );
         }
     });
 

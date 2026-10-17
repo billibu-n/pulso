@@ -20,7 +20,7 @@
 //! sin su fuente no se enseña.** Enseñar `169` a secas es una promesa; enseñar `169±3` y decir de
 //! donde sale es un dato.
 
-use crate::analisis::Real;
+use crate::analisis::{Cuantas, Real};
 use crate::avisos::fecha_de_epoch;
 use crate::datos::Persona;
 use crate::sincronizar::Resumen;
@@ -533,4 +533,79 @@ pub fn texto_del_resumen(resumen: &Resumen) -> String {
         format!("{} diarios nuevos", resumen.diarios)
     };
     format!("{actividades} y {diarios}")
+}
+
+/// **La frase de una sincronizacion LOCAL, en UNA linea.**
+///
+/// POR QUE EXISTE: el boton «Sincronizar» disparaba una callback que no tenia handler, y pulsarlo
+/// no hacia nada (defecto 1 de la auditoria del 2026-10-15). La sincronizacion de esta fecha es
+/// LOCAL: relee la carpeta elegida con la memoria incremental y dice cuantos ficheros entraron.
+/// **No hay red, y la frase no la inventa la pantalla.**
+///
+/// `sesiones` es `None` cuando no hay ningun dato que enseñar. `leidas` son los ficheros nuevos o
+/// cambiados; `recordadas`, los que ya estaban. Un fichero ilegible se cuenta y se dice: callarlo
+/// convertiria «no se pudo leer» en «no habia nada».
+pub fn texto_de_sincronizacion(cuantas: &Cuantas, sesiones: Option<usize>) -> String {
+    if sesiones.is_none() && cuantas.leidas == 0 && cuantas.no_leidas == 0 {
+        return "no hay sesiones que leer en la carpeta".to_string();
+    }
+    let mut partes = Vec::new();
+    partes.push(match cuantas.leidas {
+        0 => "sin ficheros nuevos".to_string(),
+        1 => "1 fichero nuevo".to_string(),
+        n => format!("{n} ficheros nuevos"),
+    });
+    if let Some(n) = sesiones {
+        partes.push(match n {
+            1 => "1 sesión".to_string(),
+            n => format!("{n} sesiones"),
+        });
+    }
+    if cuantas.no_leidas > 0 {
+        partes.push(match cuantas.no_leidas {
+            1 => "1 sin leer".to_string(),
+            n => format!("{n} sin leer"),
+        });
+    }
+    partes.join(" · ")
+}
+
+#[cfg(test)]
+mod pruebas_sincronizacion {
+    use super::*;
+
+    #[test]
+    fn sin_carpeta_lo_dice_y_no_inventa_una_cuenta() {
+        assert_eq!(
+            texto_de_sincronizacion(&Cuantas::default(), None),
+            "no hay sesiones que leer en la carpeta"
+        );
+    }
+
+    #[test]
+    fn la_primera_vez_dice_cuantos_ficheros_y_cuantas_sesiones() {
+        let c = Cuantas { leidas: 102, ..Cuantas::default() };
+        assert_eq!(texto_de_sincronizacion(&c, Some(102)), "102 ficheros nuevos · 102 sesiones");
+    }
+
+    #[test]
+    fn nada_nuevo_se_dice_sin_ceros_raros() {
+        let c = Cuantas { recordadas: 102, ..Cuantas::default() };
+        assert_eq!(texto_de_sincronizacion(&c, Some(102)), "sin ficheros nuevos · 102 sesiones");
+    }
+
+    #[test]
+    fn un_fichero_nuevo_concuerda_en_singular() {
+        let c = Cuantas { leidas: 1, recordadas: 101, ..Cuantas::default() };
+        assert_eq!(texto_de_sincronizacion(&c, Some(102)), "1 fichero nuevo · 102 sesiones");
+    }
+
+    #[test]
+    fn los_ilegibles_se_cuentan_y_se_dicen() {
+        let c = Cuantas { leidas: 1, no_leidas: 2, ..Cuantas::default() };
+        assert_eq!(
+            texto_de_sincronizacion(&c, Some(5)),
+            "1 fichero nuevo · 5 sesiones · 2 sin leer"
+        );
+    }
 }

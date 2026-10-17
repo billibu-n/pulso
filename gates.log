@@ -1,0 +1,1 @@
+{"ts": "2026-10-17T11:48:40-03:00", "task": "T001", "cmd": "cd motor && cargo test --quiet >/dev/null 2>&1 && grep -q on_sincronizar_garmin src/bin/pulso.rs", "rc": 0, "segundos": 6.59, "motivo": ""}

@@ -1,0 +1,12 @@
+{
+  "project": "pulso",
+  "updated": "2026-10-18T00:00:00-03:00",
+  "dimension": {
+    "size": "mediano",
+    "type": "modernizacion",
+    "connections": "multi-servicio",
+    "uncertainty": "cambiante",
+    "cadence": "iterativa"
+  },
+  "tasks": []
+}
